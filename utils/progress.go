@@ -3,14 +3,15 @@ package utils
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/schollz/progressbar/v3"
 	"golang.org/x/term"
 )
 
 type ProgressManager struct {
-	bar *progressbar.ProgressBar
+	bar     *progressbar.ProgressBar
+	total   int64
+	current int64
 }
 
 func NewProgressManager(total int64, description string) *ProgressManager {
@@ -23,7 +24,6 @@ func NewProgressManager(total int64, description string) *ProgressManager {
 		progressbar.OptionOnCompletion(func() {
 			fmt.Fprint(os.Stderr, "\n")
 		}),
-		progressbar.OptionThrottle(100 * time.Millisecond),
 		progressbar.OptionSetWidth(50),
 		progressbar.OptionSetRenderBlankState(true),
 	}
@@ -31,29 +31,39 @@ func NewProgressManager(total int64, description string) *ProgressManager {
 	if term.IsTerminal(int(os.Stderr.Fd())) {
 		options = append(options,
 			progressbar.OptionUseANSICodes(true),
-			progressbar.OptionClearOnFinish(),
 		)
 	}
 
 	bar := progressbar.NewOptions64(total, options...)
 
-	return &ProgressManager{bar: bar}
+	return &ProgressManager{bar: bar, total: total}
 }
 
 func (pm *ProgressManager) Increment() {
 	if pm.bar != nil {
+		if pm.total > 0 && pm.current >= pm.total {
+			return
+		}
 		pm.bar.Add(1)
+		pm.current++
 	}
 }
 
 func (pm *ProgressManager) SetCurrent(current int64) {
 	if pm.bar != nil {
+		if pm.total > 0 {
+			if current > pm.total {
+				current = pm.total
+			}
+		}
 		pm.bar.Set64(current)
+		pm.current = current
 	}
 }
 
 func (pm *ProgressManager) Finish() {
 	if pm.bar != nil {
 		pm.bar.Finish()
+		pm.bar = nil
 	}
 }

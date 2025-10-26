@@ -1,156 +1,146 @@
-# Oracle to SQLite Migration Tool
+ # Multi-Database Migration Tool
 
-A Go command-line tool that transfers data from Oracle 11g databases to SQLite, with progress tracking and batch processing capabilities.
+ A Go command-line utility that ferries data between Oracle, MySQL, and SQLite databases using declarative tasks. The tool automatically creates target schemas, streams data in batches with progress tracking, and supports flexible routing through named database aliases.
 
-## Features
+ ## Features
 
-- Connects to Oracle 11g using `github.com/sijms/go-ora/v2`
-- Creates SQLite databases using `github.com/mattn/go-sqlite3`
-- Configurable tasks via TOML files
-- Environment variable based configuration
-- Real-time progress bars for data transfer
-- Automatic table creation based on query results
-- Batch processing for memory efficiency
-- Transaction-based data integrity
+ - Connects to Oracle via `github.com/sijms/go-ora/v2`, MySQL via `github.com/go-sql-driver/mysql`, and SQLite via `github.com/mattn/go-sqlite3`
+ - Declarative `task.toml` with alias-based source/target selection and optional index creation
+ - Automatic table DDL generation based on source column metadata
+ - Batch inserts with transactional guarantees and efficient memory usage
+ - Progress bars for each task, including row counts when available
 
-## Installation
+ ## Installation
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd cbd_data_go
-```
+ 1. Clone the repository:
 
-2. Install dependencies:
-```bash
-go mod tidy
-```
+    ```bash
+    git clone <repository-url>
+    cd db-ferry
+    ```
 
-3. Build the application:
-```bash
-go build -o oracle-to-sqlite
-```
+ 2. Install dependencies:
 
-## Configuration
+    ```bash
+    go mod tidy
+    ```
 
-### 1. Environment Variables (.env)
+ 3. Build the application:
 
-Copy `.env.example` to `.env` and configure your Oracle connection:
+    ```bash
+    go build -o db-ferry
+    ```
 
-```env
-# Oracle Database Configuration
-ORACLE_HOST=localhost
-ORACLE_PORT=1521
-ORACLE_SERVICE=ORCL
-ORACLE_USER=your_username
-ORACLE_PASSWORD=your_password
+ ## Configuration (`task.toml`)
 
-# SQLite Database Configuration
-SQLITE_DB_PATH=./data.db
-```
+ All runtime configuration is stored in a single TOML file. Define every database once, then reference the aliases from individual tasks.
 
-### 2. Task Configuration (task.toml)
+ ```toml
+ [[databases]]
+ name = "oracle_hr"
+ type = "oracle"
+ host = "db.example.com"
+ port = "1521"
+ service = "ORCLPDB1"
+ user = "hr"
+ password = "secret"
 
-Copy `task.toml.example` to `task.toml` and define your migration tasks:
+ [[databases]]
+ name = "mysql_dw"
+ type = "mysql"
+ host = "mysql.internal"
+ port = "3306"
+ database = "warehouse"
+ user = "dw_writer"
+ password = "secret"
 
-```toml
-[[tasks]]
-table_name = "employees"
-sql = "SELECT employee_id, first_name, last_name, email, phone_number, hire_date, job_id, salary, department_id FROM employees WHERE department_id = 10"
-ignore = false
+ [[databases]]
+ name = "sqlite_local"
+ type = "sqlite"
+ path = "./data/output.db"
 
-[[tasks]]
-table_name = "departments"
-sql = "SELECT department_id, department_name, manager_id, location_id FROM departments"
-ignore = false
-```
+ [[tasks]]
+ table_name = "employees"
+ sql = "SELECT employee_id, first_name, last_name, department_id FROM employees"
+ source_db = "oracle_hr"
+ target_db = "sqlite_local"
+ ignore = false
 
-## Usage
+ [[tasks.indexes]]
+ name = "idx_employees_name"
+ columns = ["last_name:ASC", "first_name:ASC"]
 
-### Basic Usage
+ [[tasks]]
+ table_name = "department_snapshot"
+ sql = "SELECT * FROM departments"
+ source_db = "oracle_hr"
+ target_db = "mysql_dw"
+ ignore = false
+ ```
 
-```bash
-# Run with default configuration files (.env and task.toml)
-./oracle-to-sqlite
+ ### Database definitions
 
-# Specify custom configuration files
-./oracle-to-sqlite -env custom.env -config custom.toml
+ - `type`: `oracle`, `mysql`, or `sqlite`
+ - Oracle/MySQL require host, port, credentials, and service/database identifiers
+ - SQLite only requires a file `path` (relative or absolute)
 
-# Enable verbose logging
-./oracle-to-sqlite -v
+ ### Task definitions
 
-# Show version information
-./oracle-to-sqlite -version
-```
+ - `sql`: executed against the `source_db`
+ - `source_db` / `target_db`: aliases declared in the `[[databases]]` section
+ - `ignore`: skip execution without removing the task
+ - `[[tasks.indexes]]`: optional index creation statements applied after data load (partial indexes via `where` are supported on SQLite targets)
 
-### Command Line Options
+ ## Usage
 
-- `-env`: Path to environment file (default: `.env`)
-- `-config`: Path to TOML configuration file (default: `task.toml`)
-- `-v`: Enable verbose logging
-- `-version`: Show version information
+ ```bash
+ # Run with default task.toml
+ ./db-ferry
 
-## Data Type Mapping
+ # Specify an alternate configuration file
+ ./db-ferry -config ./configs/task.toml
 
-The tool automatically maps Oracle data types to SQLite:
+ # Enable verbose logging
+ ./db-ferry -v
 
-| Oracle Type | SQLite Type |
-|-------------|-------------|
-| VARCHAR2, CHAR, CLOB | TEXT |
-| NUMBER | INTEGER or REAL (based on precision) |
-| DATE, TIMESTAMP | TEXT (ISO format) |
-| BLOB | BLOB |
+ # Show version information
+ ./db-ferry -version
+ ```
 
-## Features in Detail
+ ### Command line options
 
-### Progress Tracking
+ - `-config`: Path to the TOML configuration file (default: `task.toml`)
+ - `-v`: Enable verbose logging with file/line prefixes
+ - `-version`: Print build version and exit
 
-Each task shows a real-time progress bar with:
-- Row count and processing speed
-- Elapsed and remaining time
-- Task completion percentage
+ ## Data type mapping (high level)
 
-### Error Handling
+ | Source Type (Oracle/MySQL) | Target Mapping |
+ |---------------------------|----------------|
+ | NUMBER / DECIMAL          | INTEGER or REAL (precision-aware) |
+ | VARCHAR / CHAR / TEXT     | TEXT |
+ | DATE / DATETIME / TIMESTAMP | TEXT (ISO 8601) |
+ | BLOB / RAW / BINARY       | BLOB |
 
-- Comprehensive error reporting with context
-- Transaction rollback on failures
-- Graceful handling of NULL values
-- Type conversion safety
+ The processor inspects driver metadata to determine precision, scale, length, and nullability before creating the target table.
 
-### Performance
+ ## Project structure
 
-- Batch processing (1000 rows per batch)
-- Memory-efficient row handling
-- Connection pooling for Oracle
-- Transaction-based SQLite operations
-
-## Project Structure
-
-```
-cbd_data_go/
-├── main.go                 # CLI entry point
-├── go.mod                  # Go module file
-├── .env.example           # Example environment configuration
-├── task.toml.example      # Example task configuration
-├── config/
-│   └── config.go          # Configuration management
-├── database/
-│   ├── oracle.go          # Oracle connection
-│   └── sqlite.go          # SQLite operations
-├── processor/
-│   └── processor.go       # Main data processing logic
-└── utils/
-    └── progress.go        # Progress bar utilities
-```
-
-## Dependencies
-
-- `github.com/sijms/go-ora/v2` - Oracle database driver
-- `github.com/mattn/go-sqlite3` - SQLite database driver
-- `github.com/joho/godotenv` - Environment variable loading
-- `github.com/BurntSushi/toml` - TOML configuration parsing
-- `github.com/schollz/progressbar/v3` - Progress bar display
-
-## License
-
-[Add your license information here]
+ ```
+ db-ferry/
+ ├── main.go                 # CLI entry point
+ ├── go.mod                  # Go module definition
+ ├── task.toml.sample        # Sample configuration with database/task templates
+ ├── config/
+ │   └── config.go           # Configuration loading & validation
+ ├── database/
+ │   ├── interface.go        # Shared interfaces & metadata structs
+ │   ├── manager.go          # Connection registry for aliased DBs
+ │   ├── mysql.go            # MySQL source/target implementation
+ │   ├── oracle.go           # Oracle source/target implementation
+ │   └── sqlite.go           # SQLite source/target implementation
+ ├── processor/
+ │   └── processor.go        # Task execution engine
+ └── utils/
+     └── progress.go         # Progress bar utilities
+ ```

@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
+
+	"db-ferry/config"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -12,8 +15,10 @@ type MySQLDB struct {
 	db *sql.DB
 }
 
-// 确保 MySQLDB 实现了 SourceDB 接口
-var _ SourceDB = (*MySQLDB)(nil)
+var (
+	_ SourceDB = (*MySQLDB)(nil)
+	_ TargetDB = (*MySQLDB)(nil)
+)
 
 func NewMySQLDB(connectionString string) (*MySQLDB, error) {
 	db, err := sql.Open("mysql", connectionString)
@@ -48,29 +53,179 @@ func (m *MySQLDB) Query(sql string) (*sql.Rows, error) {
 func (m *MySQLDB) GetRowCount(sql string) (int, error) {
 	var count int
 	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_query", sql)
-	err := m.db.QueryRow(countSQL).Scan(&count)
-	if err != nil {
+	if err := m.db.QueryRow(countSQL).Scan(&count); err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)
 	}
 	return count, nil
 }
 
-func (m *MySQLDB) GetColumnTypes(sql string) ([]string, error) {
-	rows, err := m.Query(sql)
+func (m *MySQLDB) CreateTable(tableName string, columns []ColumnMetadata) error {
+	if len(columns) == 0 {
+		return fmt.Errorf("no columns provided for table creation")
+	}
+
+	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", m.quoteIdentifier(tableName))
+	log.Printf("Dropping existing MySQL table: %s", dropSQL)
+	if _, err := m.db.Exec(dropSQL); err != nil {
+		return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+	}
+
+	columnDefs := make([]string, len(columns))
+	for i, col := range columns {
+		typeDef := m.mapToMySQLType(col)
+		columnDefs[i] = fmt.Sprintf("%s %s", m.quoteIdentifier(col.Name), typeDef)
+	}
+
+	createSQL := fmt.Sprintf("CREATE TABLE %s (%s)", m.quoteIdentifier(tableName), strings.Join(columnDefs, ", "))
+	log.Printf("Creating new MySQL table: %s", createSQL)
+	if _, err := m.db.Exec(createSQL); err != nil {
+		return fmt.Errorf("failed to create table %s: %w", tableName, err)
+	}
+
+	return nil
+}
+
+func (m *MySQLDB) InsertData(tableName string, columns []ColumnMetadata, values [][]any) error {
+	if len(values) == 0 {
+		return nil
+	}
+
+	tx, err := m.db.Begin()
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer rows.Close()
+	defer tx.Rollback()
 
-	columnTypes, err := rows.ColumnTypes()
+	placeholders := make([]string, len(columns))
+	columnNames := make([]string, len(columns))
+	for i, col := range columns {
+		placeholders[i] = "?"
+		columnNames[i] = m.quoteIdentifier(col.Name)
+	}
+
+	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		m.quoteIdentifier(tableName),
+		strings.Join(columnNames, ", "),
+		strings.Join(placeholders, ", "))
+
+	stmt, err := tx.Prepare(insertSQL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get column types: %w", err)
+		return fmt.Errorf("failed to prepare insert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, row := range values {
+		if _, err := stmt.Exec(row...); err != nil {
+			return fmt.Errorf("failed to insert row: %w", err)
+		}
 	}
 
-	var columnNames []string
-	for _, ct := range columnTypes {
-		columnNames = append(columnNames, ct.Name())
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	return columnNames, nil
+	return nil
+}
+
+func (m *MySQLDB) CreateIndexes(tableName string, indexes []config.IndexConfig) error {
+	if len(indexes) == 0 {
+		return nil
+	}
+
+	for _, idx := range indexes {
+		index := idx
+		if len(index.ParsedColumns) == 0 {
+			if err := index.ParseColumns(); err != nil {
+				return fmt.Errorf("failed to parse index columns for '%s': %w", index.Name, err)
+			}
+		}
+
+		if err := m.createIndex(tableName, index); err != nil {
+			return fmt.Errorf("failed to create index '%s' on table '%s': %w", index.Name, tableName, err)
+		}
+	}
+
+	return nil
+}
+
+func (m *MySQLDB) createIndex(tableName string, index config.IndexConfig) error {
+	dropSQL := fmt.Sprintf("DROP INDEX IF EXISTS %s ON %s", m.quoteIdentifier(index.Name), m.quoteIdentifier(tableName))
+	if _, err := m.db.Exec(dropSQL); err != nil {
+		log.Printf("Warning: failed to drop existing index '%s': %v", index.Name, err)
+	}
+
+	columns := make([]string, len(index.ParsedColumns))
+	for i, col := range index.ParsedColumns {
+		columns[i] = fmt.Sprintf("%s %s", m.quoteIdentifier(col.Name), col.Order)
+	}
+
+	uniqueStr := ""
+	if index.Unique {
+		uniqueStr = "UNIQUE "
+	}
+
+	createSQL := fmt.Sprintf("CREATE %sINDEX %s ON %s (%s)",
+		uniqueStr,
+		m.quoteIdentifier(index.Name),
+		m.quoteIdentifier(tableName),
+		strings.Join(columns, ", "))
+
+	log.Printf("Creating MySQL index: %s", createSQL)
+	if _, err := m.db.Exec(createSQL); err != nil {
+		return fmt.Errorf("failed to create index '%s': %w", index.Name, err)
+	}
+
+	return nil
+}
+
+func (m *MySQLDB) mapToMySQLType(column ColumnMetadata) string {
+	typeName := strings.ToUpper(column.DatabaseType)
+	if typeName == "" {
+		typeName = strings.ToUpper(column.GoType)
+	}
+
+	length := int64(0)
+	if column.LengthValid {
+		length = column.Length
+	}
+
+	precision := int64(0)
+	scale := int64(0)
+	if column.PrecisionScaleValid {
+		precision = column.Precision
+		scale = column.Scale
+	}
+
+	switch {
+	case strings.Contains(typeName, "INT"):
+		return "BIGINT"
+	case strings.Contains(typeName, "DOUBLE"), strings.Contains(typeName, "FLOAT"), strings.Contains(typeName, "REAL"):
+		return "DOUBLE"
+	case strings.Contains(typeName, "DEC"), strings.Contains(typeName, "NUMERIC"), strings.Contains(typeName, "NUMBER"):
+		if precision > 0 {
+			if scale < 0 {
+				scale = 0
+			}
+			return fmt.Sprintf("DECIMAL(%d,%d)", precision, scale)
+		}
+		return "DECIMAL(38,0)"
+	case strings.Contains(typeName, "CHAR"), strings.Contains(typeName, "TEXT"), strings.Contains(typeName, "CLOB"), strings.Contains(typeName, "STRING"):
+		if length > 0 && length <= 65535 {
+			return fmt.Sprintf("VARCHAR(%d)", length)
+		}
+		return "TEXT"
+	case strings.Contains(typeName, "DATE"), strings.Contains(typeName, "TIME"):
+		return "DATETIME"
+	case strings.Contains(typeName, "BLOB"), strings.Contains(typeName, "BINARY"), strings.Contains(typeName, "RAW"):
+		return "LONGBLOB"
+	case strings.Contains(typeName, "BOOL"):
+		return "TINYINT(1)"
+	default:
+		return "TEXT"
+	}
+}
+
+func (m *MySQLDB) quoteIdentifier(name string) string {
+	escaped := strings.ReplaceAll(name, "`", "``")
+	return "`" + escaped + "`"
 }

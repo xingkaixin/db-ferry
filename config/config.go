@@ -2,44 +2,48 @@ package config
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"strings"
 
-	"github.com/joho/godotenv"
 	"github.com/BurntSushi/toml"
 )
 
-type OracleConfig struct {
-	Host     string
-	Port     string
-	Service  string
-	User     string
-	Password string
+// Supported database types.
+const (
+	DatabaseTypeOracle = "oracle"
+	DatabaseTypeMySQL  = "mysql"
+	DatabaseTypeSQLite = "sqlite"
+)
+
+// DatabaseConfig describes a named database connection definition.
+type DatabaseConfig struct {
+	Name string `toml:"name"`
+	Type string `toml:"type"`
+
+	Host     string `toml:"host,omitempty"`
+	Port     string `toml:"port,omitempty"`
+	Service  string `toml:"service,omitempty"`
+	Database string `toml:"database,omitempty"`
+	User     string `toml:"user,omitempty"`
+	Password string `toml:"password,omitempty"`
+	Path     string `toml:"path,omitempty"`
 }
 
-type MySQLConfig struct {
-	Host     string
-	Port     string
-	Database string
-	User     string
-	Password string
-}
-
+// IndexColumn represents a column definition for index creation with order information.
 type IndexColumn struct {
-	Name  string // 列名
-	Order string // "ASC" 或 "DESC"
+	Name  string
+	Order string
 }
 
+// IndexConfig captures index information for a task.
 type IndexConfig struct {
-	Name          string         `toml:"name"`          // 索引名
-	Columns       []string       `toml:"columns"`       // 列配置: "column" 或 "column:1" 或 "column:-1"
-	Unique        bool           `toml:"unique"`        // 是否唯一索引
-	Where         string         `toml:"where"`         // 可选的 WHERE 子句
-	ParsedColumns []IndexColumn `toml:"-"`             // 运行时解析的列信息
+	Name          string        `toml:"name"`
+	Columns       []string      `toml:"columns"`
+	Unique        bool          `toml:"unique"`
+	Where         string        `toml:"where"`
+	ParsedColumns []IndexColumn `toml:"-"`
 }
 
-// ParseColumns 解析列配置字符串，将 "column:1" 转换为 IndexColumn
+// ParseColumns converts shorthand column definitions into structured data.
 func (ic *IndexConfig) ParseColumns() error {
 	ic.ParsedColumns = make([]IndexColumn, len(ic.Columns))
 
@@ -51,135 +55,90 @@ func (ic *IndexConfig) ParseColumns() error {
 			}
 
 			orderSpecifier := strings.TrimSpace(parts[1])
-			if orderSpecifier != "1" && orderSpecifier != "-1" {
-				return fmt.Errorf("invalid order specifier: %s (must be 1 or -1)", orderSpecifier)
-			}
-
-			ic.ParsedColumns[i] = IndexColumn{
-				Name:  strings.TrimSpace(parts[0]),
-				Order: map[string]string{"1": "ASC", "-1": "DESC"}[orderSpecifier],
+			switch orderSpecifier {
+			case "1", "ASC", "asc":
+				ic.ParsedColumns[i] = IndexColumn{Name: strings.TrimSpace(parts[0]), Order: "ASC"}
+			case "-1", "DESC", "desc":
+				ic.ParsedColumns[i] = IndexColumn{Name: strings.TrimSpace(parts[0]), Order: "DESC"}
+			default:
+				return fmt.Errorf("invalid order specifier: %s (must be 1, -1, ASC, or DESC)", orderSpecifier)
 			}
 		} else {
-			// 默认升序
-			ic.ParsedColumns[i] = IndexColumn{
-				Name:  strings.TrimSpace(col),
-				Order: "ASC",
-			}
+			ic.ParsedColumns[i] = IndexColumn{Name: strings.TrimSpace(col), Order: "ASC"}
 		}
 	}
 
 	return nil
 }
 
+// TaskConfig defines a single migration job.
 type TaskConfig struct {
-	TableName  string         `toml:"table_name"`
-	SQL        string         `toml:"sql"`
-	SourceType string         `toml:"source_type,omitempty"` // "oracle" 或 "mysql"，默认为 "oracle"
-	Ignore     bool           `toml:"ignore"`
-	Indexes    []IndexConfig  `toml:"indexes,omitempty"`     // 表级别的索引配置
+	TableName string        `toml:"table_name"`
+	SQL       string        `toml:"sql"`
+	SourceDB  string        `toml:"source_db"`
+	TargetDB  string        `toml:"target_db"`
+	Ignore    bool          `toml:"ignore"`
+	Indexes   []IndexConfig `toml:"indexes,omitempty"`
 }
 
+// Config is the top-level configuration structure decoded from task.toml.
 type Config struct {
-	OracleConfig  OracleConfig
-	MySQLConfig   MySQLConfig
-	SQLiteDBPath  string
-	Tasks         []TaskConfig
+	Databases []DatabaseConfig `toml:"databases"`
+	Tasks     []TaskConfig     `toml:"tasks"`
+
+	databaseMap map[string]DatabaseConfig
 }
 
-func LoadConfig(envPath, tomlPath string) (*Config, error) {
-	// Load .env file
-	if err := godotenv.Load(envPath); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("error loading .env file: %w", err)
-		}
-		log.Printf("Warning: .env file not found at %s", envPath)
-	}
-
-	// Load TOML configuration
-	config := &Config{}
-	if _, err := toml.DecodeFile(tomlPath, config); err != nil {
+// LoadConfig decodes the TOML configuration file and validates its content.
+func LoadConfig(tomlPath string) (*Config, error) {
+	cfg := &Config{}
+	if _, err := toml.DecodeFile(tomlPath, cfg); err != nil {
 		return nil, fmt.Errorf("error decoding TOML file: %w", err)
 	}
 
-	// Parse Oracle configuration from environment
-	config.OracleConfig = OracleConfig{
-		Host:     getEnvOrDefault("ORACLE_HOST", "localhost"),
-		Port:     getEnvOrDefault("ORACLE_PORT", "1521"),
-		Service:  getEnvOrDefault("ORACLE_SERVICE", "ORCL"),
-		User:     getEnvOrDefault("ORACLE_USER", ""),
-		Password: getEnvOrDefault("ORACLE_PASSWORD", ""),
-	}
-
-	// Parse MySQL configuration from environment
-	config.MySQLConfig = MySQLConfig{
-		Host:     getEnvOrDefault("MYSQL_HOST", "localhost"),
-		Port:     getEnvOrDefault("MYSQL_PORT", "3306"),
-		Database: getEnvOrDefault("MYSQL_DATABASE", ""),
-		User:     getEnvOrDefault("MYSQL_USER", ""),
-		Password: getEnvOrDefault("MYSQL_PASSWORD", ""),
-	}
-
-	// Get SQLite database path
-	config.SQLiteDBPath = getEnvOrDefault("SQLITE_DB_PATH", "./data.db")
-
-	// Validate configuration
-	if err := config.Validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	return config, nil
+	return cfg, nil
 }
 
+// Validate ensures configuration integrity and populates runtime helpers.
 func (c *Config) Validate() error {
-	if c.SQLiteDBPath == "" {
-		return fmt.Errorf("SQLITE_DB_PATH is required")
+	if len(c.Databases) == 0 {
+		return fmt.Errorf("at least one database must be defined under [[databases]]")
 	}
 	if len(c.Tasks) == 0 {
-		return fmt.Errorf("at least one task must be defined in %s", "task.toml")
+		return fmt.Errorf("at least one task must be defined under [[tasks]]")
 	}
 
-	// 检查是否有任务使用Oracle，如果有则验证Oracle配置
-	hasOracleTasks := false
-	hasMySQLTasks := false
-	for _, task := range c.Tasks {
-		if task.Ignore {
-			continue
+	c.databaseMap = make(map[string]DatabaseConfig, len(c.Databases))
+	for i, db := range c.Databases {
+		if db.Name == "" {
+			return fmt.Errorf("database definition %d: name is required", i+1)
 		}
-		sourceType := task.SourceType
-		if sourceType == "" {
-			sourceType = "oracle" // 默认值
+		if _, exists := c.databaseMap[db.Name]; exists {
+			return fmt.Errorf("database definition %d: duplicate database name '%s'", i+1, db.Name)
 		}
-		if sourceType == "oracle" {
-			hasOracleTasks = true
-		} else if sourceType == "mysql" {
-			hasMySQLTasks = true
-		} else {
-			return fmt.Errorf("invalid source_type '%s' in task '%s', must be 'oracle' or 'mysql'", sourceType, task.TableName)
+		db.Type = strings.ToLower(db.Type)
+		switch db.Type {
+		case DatabaseTypeOracle:
+			if db.Port == "" {
+				db.Port = "1521"
+			}
+		case DatabaseTypeMySQL:
+			if db.Port == "" {
+				db.Port = "3306"
+			}
 		}
+
+		if err := validateDatabaseConfig(&db); err != nil {
+			return fmt.Errorf("database '%s': %w", db.Name, err)
+		}
+
+		c.databaseMap[db.Name] = db
 	}
 
-	if hasOracleTasks {
-		if c.OracleConfig.User == "" {
-			return fmt.Errorf("ORACLE_USER is required when using Oracle source database")
-		}
-		if c.OracleConfig.Password == "" {
-			return fmt.Errorf("ORACLE_PASSWORD is required when using Oracle source database")
-		}
-	}
-
-	if hasMySQLTasks {
-		if c.MySQLConfig.User == "" {
-			return fmt.Errorf("MYSQL_USER is required when using MySQL source database")
-		}
-		if c.MySQLConfig.Password == "" {
-			return fmt.Errorf("MYSQL_PASSWORD is required when using MySQL source database")
-		}
-		if c.MySQLConfig.Database == "" {
-			return fmt.Errorf("MYSQL_DATABASE is required when using MySQL source database")
-		}
-	}
-
-	// 用于检查索引名重复的 map
 	indexNames := make(map[string]string)
 
 	for i, task := range c.Tasks {
@@ -189,8 +148,29 @@ func (c *Config) Validate() error {
 		if task.SQL == "" {
 			return fmt.Errorf("task %d: sql is required", i+1)
 		}
+		if task.SourceDB == "" {
+			return fmt.Errorf("task %d: source_db is required", i+1)
+		}
+		if task.TargetDB == "" {
+			return fmt.Errorf("task %d: target_db is required", i+1)
+		}
 
-		// 验证索引配置
+		sourceDB, ok := c.databaseMap[task.SourceDB]
+		if !ok {
+			return fmt.Errorf("task %d: source_db '%s' is not defined", i+1, task.SourceDB)
+		}
+		targetDB, ok := c.databaseMap[task.TargetDB]
+		if !ok {
+			return fmt.Errorf("task %d: target_db '%s' is not defined", i+1, task.TargetDB)
+		}
+
+		if err := ensureDatabaseSupportsSource(&sourceDB); err != nil {
+			return fmt.Errorf("task %d: %w", i+1, err)
+		}
+		if err := ensureDatabaseSupportsTarget(&targetDB); err != nil {
+			return fmt.Errorf("task %d: %w", i+1, err)
+		}
+
 		for j, index := range task.Indexes {
 			if index.Name == "" {
 				return fmt.Errorf("task %d, index %d: index name is required", i+1, j+1)
@@ -199,50 +179,98 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("task %d, index %d: at least one column is required", i+1, j+1)
 			}
 
-			// 检查索引名是否重复
 			if existingTable, exists := indexNames[index.Name]; exists {
 				if existingTable == task.TableName {
-					return fmt.Errorf("task %d, index %d: index name '%s' is already defined for table '%s'", i+1, j+1, index.Name, task.TableName)
-				} else {
-					return fmt.Errorf("task %d, index %d: index name '%s' is already used by table '%s'", i+1, j+1, index.Name, existingTable)
+					return fmt.Errorf("task %d, index %d: index name '%s' already defined for table '%s'", i+1, j+1, index.Name, task.TableName)
 				}
+				return fmt.Errorf("task %d, index %d: index name '%s' already used by table '%s'", i+1, j+1, index.Name, existingTable)
 			}
 			indexNames[index.Name] = task.TableName
 
-			// 验证列配置格式
 			if err := index.ParseColumns(); err != nil {
 				return fmt.Errorf("task %d, index %d: %w", i+1, j+1, err)
 			}
+
+			if targetDB.Type != DatabaseTypeSQLite && index.Where != "" {
+				return fmt.Errorf("task %d, index %d: partial indexes (where clause) are only supported for SQLite targets", i+1, j+1)
+			}
 		}
 	}
+
 	return nil
 }
 
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+func validateDatabaseConfig(db *DatabaseConfig) error {
+	if db.Type == "" {
+		return fmt.Errorf("type is required for database")
 	}
-	return defaultValue
+	switch strings.ToLower(db.Type) {
+	case DatabaseTypeOracle:
+		if db.Host == "" {
+			return fmt.Errorf("host is required for Oracle database")
+		}
+		if db.User == "" {
+			return fmt.Errorf("user is required for Oracle database")
+		}
+		if db.Password == "" {
+			return fmt.Errorf("password is required for Oracle database")
+		}
+		if db.Service == "" {
+			return fmt.Errorf("service is required for Oracle database")
+		}
+	case DatabaseTypeMySQL:
+		if db.Host == "" {
+			return fmt.Errorf("host is required for MySQL database")
+		}
+		if db.User == "" {
+			return fmt.Errorf("user is required for MySQL database")
+		}
+		if db.Password == "" {
+			return fmt.Errorf("password is required for MySQL database")
+		}
+		if db.Database == "" {
+			return fmt.Errorf("database is required for MySQL database")
+		}
+	case DatabaseTypeSQLite:
+		if db.Path == "" {
+			return fmt.Errorf("path is required for SQLite database")
+		}
+	default:
+		return fmt.Errorf("unsupported database type '%s'", db.Type)
+	}
+
+	return nil
 }
 
-func (c *Config) GetOracleConnectionString() string {
-	// go-ora/v2 connection string format
-	return fmt.Sprintf("oracle://%s:%s@%s:%s/%s",
-		c.OracleConfig.User,
-		c.OracleConfig.Password,
-		c.OracleConfig.Host,
-		c.OracleConfig.Port,
-		c.OracleConfig.Service,
-	)
+func ensureDatabaseSupportsSource(db *DatabaseConfig) error {
+	switch strings.ToLower(db.Type) {
+	case DatabaseTypeOracle, DatabaseTypeMySQL, DatabaseTypeSQLite:
+		return nil
+	default:
+		return fmt.Errorf("database '%s' of type '%s' cannot be used as source", db.Name, db.Type)
+	}
 }
 
-func (c *Config) GetMySQLConnectionString() string {
-	// go-sql-driver/mysql connection string format
-	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
-		c.MySQLConfig.User,
-		c.MySQLConfig.Password,
-		c.MySQLConfig.Host,
-		c.MySQLConfig.Port,
-		c.MySQLConfig.Database,
-	)
+func ensureDatabaseSupportsTarget(db *DatabaseConfig) error {
+	switch strings.ToLower(db.Type) {
+	case DatabaseTypeOracle, DatabaseTypeMySQL, DatabaseTypeSQLite:
+		return nil
+	default:
+		return fmt.Errorf("database '%s' of type '%s' cannot be used as target", db.Name, db.Type)
+	}
+}
+
+// GetDatabase retrieves a database configuration by name.
+func (c *Config) GetDatabase(name string) (DatabaseConfig, bool) {
+	db, ok := c.databaseMap[name]
+	return db, ok
+}
+
+// DatabasesMap exposes the internal alias map (read-only copy) for consumers.
+func (c *Config) DatabasesMap() map[string]DatabaseConfig {
+	out := make(map[string]DatabaseConfig, len(c.databaseMap))
+	for k, v := range c.databaseMap {
+		out[k] = v
+	}
+	return out
 }

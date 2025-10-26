@@ -1,13 +1,41 @@
-# Example task configuration for Oracle/MySQL to SQLite migration with index support
-# Each task defines a SQL query to execute on the source database and the target SQLite table name
+#########################
+# Database Definitions  #
+#########################
+
+[[databases]]
+name = "oracle_hr"
+type = "oracle"
+host = "ORACLE_HOST"
+port = "1521"
+service = "ORCLPDB1"
+user = "hr"
+password = "secret"
+
+[[databases]]
+name = "mysql_inventory"
+type = "mysql"
+host = "MYSQL_HOST"
+port = "3306"
+database = "inventory"
+user = "inventory_user"
+password = "secret"
+
+[[databases]]
+name = "sqlite_local"
+type = "sqlite"
+path = "./data/output.db"
+
+#########################
+# Task Definitions      #
+#########################
 
 [[tasks]]
 table_name = "employees"
 sql = "SELECT employee_id, first_name, last_name, email, phone_number, hire_date, job_id, salary, department_id FROM employees WHERE department_id = 10"
-source_type = "oracle"  # Optional: "oracle" (default) or "mysql"
+source_db = "oracle_hr"
+target_db = "sqlite_local"
 ignore = false
 
-# Indexes for employees table
 [[tasks.indexes]]
 name = "idx_employee_id"
 columns = ["employee_id"]
@@ -15,20 +43,17 @@ unique = true
 
 [[tasks.indexes]]
 name = "idx_employee_name"
-columns = ["last_name:1", "first_name:-1"]  # last_name ASC, first_name DESC
+columns = ["last_name:ASC", "first_name:DESC"]
 
 [[tasks.indexes]]
 name = "idx_employee_dept_salary"
-columns = ["department_id", "salary:-1"]  # department_id ASC (default), salary DESC
-
-[[tasks.indexes]]
-name = "idx_employee_email"
-columns = ["email"]
-unique = true
+columns = ["department_id", "salary:DESC"]
 
 [[tasks]]
 table_name = "departments"
 sql = "SELECT department_id, department_name, manager_id, location_id FROM departments"
+source_db = "oracle_hr"
+target_db = "mysql_inventory"
 ignore = false
 
 [[tasks.indexes]]
@@ -37,29 +62,16 @@ columns = ["manager_id"]
 
 [[tasks.indexes]]
 name = "idx_dept_name_location"
-columns = ["department_name:1", "location_id:1"]
+columns = ["department_name:ASC", "location_id:ASC"]
 unique = true
 
 [[tasks]]
-table_name = "jobs"
-sql = "SELECT job_id, job_title, min_salary, max_salary FROM jobs"
-ignore = false
-# This table has no indexes configured - indexes are completely optional
-
-[[tasks]]
-table_name = "job_history"
-sql = "SELECT employee_id, start_date, end_date, job_id, department_id FROM job_history"
-source_type = "oracle"  # This Oracle task will be ignored
-ignore = true
-
-# Example MySQL task
-[[tasks]]
 table_name = "products"
 sql = "SELECT product_id, product_name, description, price, created_at, updated_at FROM products WHERE category_id = 5"
-source_type = "mysql"
+source_db = "mysql_inventory"
+target_db = "sqlite_local"
 ignore = false
 
-# Indexes for products table
 [[tasks.indexes]]
 name = "idx_product_id"
 columns = ["product_id"]
@@ -67,44 +79,25 @@ unique = true
 
 [[tasks.indexes]]
 name = "idx_product_name_price"
-columns = ["product_name:1", "price:-1"]  # product_name ASC, price DESC
+columns = ["product_name:ASC", "price:DESC"]
 
 [[tasks.indexes]]
 name = "idx_product_category"
-columns = ["category_id", "price:1"]
+columns = ["category_id", "price:ASC"]
 
-# These indexes will be ignored because the task is ignored
-[[tasks.indexes]]
-name = "idx_job_history_employee"
-columns = ["employee_id:-1"]
+[[tasks]]
+table_name = "archive_orders"
+sql = "SELECT * FROM orders WHERE order_date < DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+source_db = "mysql_inventory"
+target_db = "oracle_hr"
+ignore = true
 
-[[tasks.indexes]]
-name = "idx_job_history_dates"
-columns = ["start_date:1", "end_date:1"]
-unique = true
-
-# Task Configuration Syntax:
-# - table_name: Required. Target SQLite table name
-# - sql: Required. SQL query to execute on source database
-# - source_type: Optional. Source database type: "oracle" (default) or "mysql"
-# - ignore: Optional. Skip this task if true (default: false)
-#
-# Index Configuration Syntax:
-# - name: Required. Unique identifier for the index
-# - columns: Required. Array of column names with optional order specifiers:
-#   * "column" - uses default ASC order
-#   * "column:1" or "column:ASC" - explicit ASC order
-#   * "column:-1" or "column:DESC" - DESC order
-# - unique: Optional. Whether to create a unique index (default: false)
-# - where: Optional. WHERE clause for partial indexes (SQLite feature)
-#
-# Notes:
-# - Indexes are created after table creation and data insertion
-# - If ignore = true, both table data and indexes are skipped
-# - Index names must be unique across all tables
-# - Columns with order specifiers use format "column:1" (ASC) or "column:-1" (DESC)
-# - Source-specific SQL syntax should be used based on source_type
-#
-# You can add as many tasks as needed
-# Tasks will be executed sequentially in the order they appear
-# Set ignore = true to skip a task temporarily
+#########################
+# Notes                #
+#########################
+# - Define all source and target databases in the [[databases]] section using unique names (aliases)
+# - Each task must specify both source_db and target_db aliases referencing entries from the databases section
+# - Supported database types: oracle, mysql, sqlite (SQLite requires only a local file path)
+# - Index definitions are optional; order specifiers accept 1/-1 or ASC/DESC
+# - Partial indexes (where clause) are only supported for SQLite targets
+# - Set ignore = true to temporarily skip a task without removing it

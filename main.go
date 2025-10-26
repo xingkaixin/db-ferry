@@ -6,19 +6,17 @@ import (
 	"log"
 	"os"
 
-	"cbd_data_go/config"
-	"cbd_data_go/database"
-	"cbd_data_go/processor"
+	"db-ferry/config"
+	"db-ferry/database"
+	"db-ferry/processor"
 )
 
 const (
-	defaultEnvPath  = ".env"
 	defaultTomlPath = "task.toml"
 )
 
 func main() {
 	var (
-		envPath  = flag.String("env", defaultEnvPath, "Path to .env file")
 		tomlPath = flag.String("config", defaultTomlPath, "Path to task.toml configuration file")
 		verbose  = flag.Bool("v", false, "Enable verbose logging")
 		version  = flag.Bool("version", false, "Show version information")
@@ -36,67 +34,24 @@ func main() {
 		log.SetFlags(0)
 	}
 
-	log.Println("Starting multi-source to SQLite migration tool...")
+	log.Println("Starting multi-database migration tool...")
 
-	// Load configuration
-	cfg, err := config.LoadConfig(*envPath, *tomlPath)
+	cfg, err := config.LoadConfig(*tomlPath)
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
 	log.Printf("Loaded %d tasks from configuration", len(cfg.Tasks))
 
-	// Initialize source databases
-	var oracleDB *database.OracleDB
-	var mysqlDB *database.MySQLDB
-
-	// Check if we need Oracle connection
-	hasOracleTasks := false
-	hasMySQLTasks := false
-	for _, task := range cfg.Tasks {
-		if task.Ignore {
-			continue
+	manager := database.NewConnectionManager(cfg)
+	proc := processor.NewProcessor(manager, cfg)
+	defer func() {
+		if err := proc.Close(); err != nil {
+			log.Printf("Warning: failed to close resources: %v", err)
 		}
-		sourceType := task.SourceType
-		if sourceType == "" {
-			sourceType = "oracle"
-		}
-		if sourceType == "oracle" {
-			hasOracleTasks = true
-		} else if sourceType == "mysql" {
-			hasMySQLTasks = true
-		}
-	}
+	}()
 
-	// Connect to Oracle database if needed
-	if hasOracleTasks {
-		oracleDB, err = database.NewOracleDB(cfg.GetOracleConnectionString())
-		if err != nil {
-			log.Fatalf("Failed to connect to Oracle database: %v", err)
-		}
-		defer oracleDB.Close()
-	}
-
-	// Connect to MySQL database if needed
-	if hasMySQLTasks {
-		mysqlDB, err = database.NewMySQLDB(cfg.GetMySQLConnectionString())
-		if err != nil {
-			log.Fatalf("Failed to connect to MySQL database: %v", err)
-		}
-		defer mysqlDB.Close()
-	}
-
-	// Connect to SQLite database
-	sqliteDB, err := database.NewSQLiteDB(cfg.SQLiteDBPath)
-	if err != nil {
-		log.Fatalf("Failed to connect to SQLite database: %v", err)
-	}
-	defer sqliteDB.Close()
-
-	// Create processor and run tasks
-	processor := processor.NewProcessor(oracleDB, mysqlDB, sqliteDB, cfg)
-
-	if err := processor.ProcessAllTasks(); err != nil {
+	if err := proc.ProcessAllTasks(); err != nil {
 		log.Fatalf("Failed to process tasks: %v", err)
 	}
 

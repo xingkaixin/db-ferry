@@ -1,9 +1,26 @@
 package database
 
-import "database/sql"
+import (
+	"database/sql"
+
+	"db-ferry/config"
+)
+
+// ColumnMetadata captures column information extracted from a query result set.
+type ColumnMetadata struct {
+	Name                string
+	DatabaseType        string
+	Length              int64
+	LengthValid         bool
+	Precision           int64
+	Scale               int64
+	PrecisionScaleValid bool
+	Nullable            bool
+	NullableValid       bool
+	GoType              string
+}
 
 // SourceDB 定义源数据库的通用接口
-// Oracle和MySQL都需要实现这个接口
 type SourceDB interface {
 	// Close 关闭数据库连接
 	Close() error
@@ -13,7 +30,19 @@ type SourceDB interface {
 
 	// GetRowCount 获取查询结果的行数
 	GetRowCount(sql string) (int, error)
+}
 
-	// GetColumnTypes 获取查询结果的列名
-	GetColumnTypes(sql string) ([]string, error)
+// TargetDB 定义目标数据库的通用接口
+type TargetDB interface {
+	// Close 关闭数据库连接
+	Close() error
+
+	// CreateTable 根据列元数据创建目标表
+	CreateTable(tableName string, columns []ColumnMetadata) error
+
+	// InsertData 批量插入数据
+	InsertData(tableName string, columns []ColumnMetadata, values [][]any) error
+
+	// CreateIndexes 创建索引
+	CreateIndexes(tableName string, indexes []config.IndexConfig) error
 }

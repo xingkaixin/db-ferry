@@ -6,13 +6,19 @@ import (
 	"log"
 	"strings"
 
-	"cbd_data_go/config"
+	"db-ferry/config"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type SQLiteDB struct {
 	db *sql.DB
 }
+
+var (
+	_ SourceDB = (*SQLiteDB)(nil)
+	_ TargetDB = (*SQLiteDB)(nil)
+)
 
 func NewSQLiteDB(dbPath string) (*SQLiteDB, error) {
 	db, err := sql.Open("sqlite3", dbPath)
@@ -35,9 +41,27 @@ func (s *SQLiteDB) Close() error {
 	return nil
 }
 
-func (s *SQLiteDB) CreateTable(tableName string, columns []string, columnTypes []string) error {
-	if len(columns) != len(columnTypes) {
-		return fmt.Errorf("columns and columnTypes length mismatch")
+func (s *SQLiteDB) Query(sql string) (*sql.Rows, error) {
+	log.Printf("Executing SQLite query: %s", sql)
+	rows, err := s.db.Query(sql)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute sqlite query: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *SQLiteDB) GetRowCount(sql string) (int, error) {
+	var count int
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s)", sql)
+	if err := s.db.QueryRow(countSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to get row count: %w", err)
+	}
+	return count, nil
+}
+
+func (s *SQLiteDB) CreateTable(tableName string, columns []ColumnMetadata) error {
+	if len(columns) == 0 {
+		return fmt.Errorf("no columns provided for table creation")
 	}
 
 	// Drop existing table if it exists
@@ -49,9 +73,9 @@ func (s *SQLiteDB) CreateTable(tableName string, columns []string, columnTypes [
 
 	// Create new table
 	var columnDefs []string
-	for i, col := range columns {
-		sqlType := s.mapOracleTypeToSQLite(columnTypes[i])
-		columnDefs = append(columnDefs, fmt.Sprintf(`"%s" %s`, col, sqlType))
+	for _, col := range columns {
+		sqlType := s.mapToSQLiteType(col)
+		columnDefs = append(columnDefs, fmt.Sprintf(`"%s" %s`, col.Name, sqlType))
 	}
 
 	createSQL := fmt.Sprintf("CREATE TABLE \"%s\" (%s)",
@@ -66,7 +90,7 @@ func (s *SQLiteDB) CreateTable(tableName string, columns []string, columnTypes [
 	return nil
 }
 
-func (s *SQLiteDB) InsertData(tableName string, columns []string, values [][]any) error {
+func (s *SQLiteDB) InsertData(tableName string, columns []ColumnMetadata, values [][]any) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -80,13 +104,15 @@ func (s *SQLiteDB) InsertData(tableName string, columns []string, values [][]any
 
 	// Prepare insert statement
 	placeholders := make([]string, len(columns))
-	for i := range placeholders {
+	columnNames := make([]string, len(columns))
+	for i, col := range columns {
 		placeholders[i] = "?"
+		columnNames[i] = col.Name
 	}
 
 	insertSQL := fmt.Sprintf("INSERT INTO \"%s\" (\"%s\") VALUES (%s)",
 		tableName,
-		strings.Join(columns, "\", \""),
+		strings.Join(columnNames, "\", \""),
 		strings.Join(placeholders, ", "))
 
 	stmt, err := tx.Prepare(insertSQL)
@@ -111,15 +137,21 @@ func (s *SQLiteDB) InsertData(tableName string, columns []string, values [][]any
 	return nil
 }
 
-
 // CreateIndexes 为指定表创建所有索引
 func (s *SQLiteDB) CreateIndexes(tableName string, indexes []config.IndexConfig) error {
 	if len(indexes) == 0 {
 		return nil
 	}
 
-	for _, index := range indexes {
-		if err := s.CreateIndex(tableName, index); err != nil {
+	for _, idx := range indexes {
+		index := idx
+		if len(index.ParsedColumns) == 0 {
+			if err := index.ParseColumns(); err != nil {
+				return fmt.Errorf("failed to parse index columns for '%s': %w", index.Name, err)
+			}
+		}
+
+		if err := s.createIndex(tableName, index); err != nil {
 			return fmt.Errorf("failed to create index '%s' on table '%s': %w", index.Name, tableName, err)
 		}
 	}
@@ -127,16 +159,14 @@ func (s *SQLiteDB) CreateIndexes(tableName string, indexes []config.IndexConfig)
 	return nil
 }
 
-// CreateIndex 创建单个索引
-func (s *SQLiteDB) CreateIndex(tableName string, index config.IndexConfig) error {
-	sql, err := s.CreateIndexSQL(tableName, index)
+func (s *SQLiteDB) createIndex(tableName string, index config.IndexConfig) error {
+	sql, err := s.buildIndexSQL(tableName, index)
 	if err != nil {
 		return err
 	}
 
 	log.Printf("Creating index: %s", sql)
-	_, err = s.db.Exec(sql)
-	if err != nil {
+	if _, err := s.db.Exec(sql); err != nil {
 		return fmt.Errorf("failed to execute index creation SQL: %w", err)
 	}
 
@@ -144,12 +174,7 @@ func (s *SQLiteDB) CreateIndex(tableName string, index config.IndexConfig) error
 	return nil
 }
 
-// CreateIndexSQL 生成创建索引的 SQL 语句
-func (s *SQLiteDB) CreateIndexSQL(tableName string, index config.IndexConfig) (string, error) {
-	if err := index.ParseColumns(); err != nil {
-		return "", fmt.Errorf("failed to parse index columns: %w", err)
-	}
-
+func (s *SQLiteDB) buildIndexSQL(tableName string, index config.IndexConfig) (string, error) {
 	var columnDefs []string
 	for _, col := range index.ParsedColumns {
 		columnDefs = append(columnDefs, fmt.Sprintf(`"%s" %s`, col.Name, col.Order))
@@ -173,20 +198,23 @@ func (s *SQLiteDB) CreateIndexSQL(tableName string, index config.IndexConfig) (s
 	return sql, nil
 }
 
-func (s *SQLiteDB) mapOracleTypeToSQLite(oracleType string) string {
-	oracleType = strings.ToUpper(oracleType)
+func (s *SQLiteDB) mapToSQLiteType(column ColumnMetadata) string {
+	typeName := strings.ToUpper(column.DatabaseType)
+	if typeName == "" {
+		typeName = strings.ToUpper(column.GoType)
+	}
 
 	switch {
-	case strings.Contains(oracleType, "VARCHAR2"), strings.Contains(oracleType, "CHAR"), strings.Contains(oracleType, "CLOB"):
+	case strings.Contains(typeName, "CHAR"), strings.Contains(typeName, "TEXT"), strings.Contains(typeName, "CLOB"), strings.Contains(typeName, "STRING"):
 		return "TEXT"
-	case strings.Contains(oracleType, "NUMBER"), strings.Contains(oracleType, "INTEGER"), strings.Contains(oracleType, "DECIMAL"):
-		if strings.Contains(oracleType, "(") && strings.Contains(oracleType, ",") {
-			return "REAL" // For numbers with precision/scale
+	case strings.Contains(typeName, "NUMBER"), strings.Contains(typeName, "INT"), strings.Contains(typeName, "DEC"), strings.Contains(typeName, "NUMERIC"), strings.Contains(typeName, "REAL"), strings.Contains(typeName, "DOUBLE"), strings.Contains(typeName, "FLOAT"), strings.Contains(typeName, "BIT"), strings.Contains(typeName, "BOOL"):
+		if strings.Contains(typeName, "REAL") || strings.Contains(typeName, "DOUBLE") || strings.Contains(typeName, "FLOAT") || (column.PrecisionScaleValid && column.Scale > 0) {
+			return "REAL"
 		}
 		return "INTEGER"
-	case strings.Contains(oracleType, "DATE"), strings.Contains(oracleType, "TIMESTAMP"):
-		return "TEXT" // Store dates as TEXT in ISO format
-	case strings.Contains(oracleType, "BLOB"):
+	case strings.Contains(typeName, "DATE"), strings.Contains(typeName, "TIME"):
+		return "TEXT"
+	case strings.Contains(typeName, "BLOB"), strings.Contains(typeName, "BINARY"), strings.Contains(typeName, "RAW"):
 		return "BLOB"
 	default:
 		return "TEXT"
