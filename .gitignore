@@ -2,3 +2,4 @@
 task.toml
 *.db
 dist
+*.zip
