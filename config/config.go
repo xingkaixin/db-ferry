@@ -12,6 +12,7 @@ const (
 	DatabaseTypeOracle = "oracle"
 	DatabaseTypeMySQL  = "mysql"
 	DatabaseTypeSQLite = "sqlite"
+	DatabaseTypeDuckDB = "duckdb"
 )
 
 // DatabaseConfig describes a named database connection definition.
@@ -231,9 +232,9 @@ func validateDatabaseConfig(db *DatabaseConfig) error {
 		if db.Database == "" {
 			return fmt.Errorf("database is required for MySQL database")
 		}
-	case DatabaseTypeSQLite:
+	case DatabaseTypeSQLite, DatabaseTypeDuckDB:
 		if db.Path == "" {
-			return fmt.Errorf("path is required for SQLite database")
+			return fmt.Errorf("path is required for %s database", db.Type)
 		}
 	default:
 		return fmt.Errorf("unsupported database type '%s'", db.Type)
@@ -244,7 +245,7 @@ func validateDatabaseConfig(db *DatabaseConfig) error {
 
 func ensureDatabaseSupportsSource(db *DatabaseConfig) error {
 	switch strings.ToLower(db.Type) {
-	case DatabaseTypeOracle, DatabaseTypeMySQL, DatabaseTypeSQLite:
+	case DatabaseTypeOracle, DatabaseTypeMySQL, DatabaseTypeSQLite, DatabaseTypeDuckDB:
 		return nil
 	default:
 		return fmt.Errorf("database '%s' of type '%s' cannot be used as source", db.Name, db.Type)
@@ -253,7 +254,7 @@ func ensureDatabaseSupportsSource(db *DatabaseConfig) error {
 
 func ensureDatabaseSupportsTarget(db *DatabaseConfig) error {
 	switch strings.ToLower(db.Type) {
-	case DatabaseTypeOracle, DatabaseTypeMySQL, DatabaseTypeSQLite:
+	case DatabaseTypeOracle, DatabaseTypeMySQL, DatabaseTypeSQLite, DatabaseTypeDuckDB:
 		return nil
 	default:
 		return fmt.Errorf("database '%s' of type '%s' cannot be used as target", db.Name, db.Type)

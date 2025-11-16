@@ -112,6 +112,12 @@ func (m *ConnectionManager) openConnection(dbCfg config.DatabaseConfig) (*connec
 			return nil, err
 		}
 		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
+	case config.DatabaseTypeDuckDB:
+		conn, err := NewDuckDB(dbCfg.Path)
+		if err != nil {
+			return nil, err
+		}
+		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
 	default:
 		return nil, fmt.Errorf("unsupported database type '%s'", dbCfg.Type)
 	}

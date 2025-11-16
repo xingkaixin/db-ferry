@@ -25,6 +25,11 @@ name = "sqlite_local"
 type = "sqlite"
 path = "./data/output.db"
 
+[[databases]]
+name = "duckdb_local"
+type = "duckdb"
+path = "./data/local.duckdb"
+
 #########################
 # Task Definitions      #
 #########################
@@ -97,7 +102,8 @@ ignore = true
 #########################
 # - Define all source and target databases in the [[databases]] section using unique names (aliases)
 # - Each task must specify both source_db and target_db aliases referencing entries from the databases section
-# - Supported database types: oracle, mysql, sqlite (SQLite requires only a local file path)
+# - Supported database types: oracle, mysql, sqlite, duckdb (SQLite/DuckDB only require a path; DuckDB accepts :memory:)
 # - Index definitions are optional; order specifiers accept 1/-1 or ASC/DESC
 # - Partial indexes (where clause) are only supported for SQLite targets
+# - DuckDB connections rely on CGO. Build binaries with CGO_ENABLED=1 if DuckDB aliases are defined.
 # - Set ignore = true to temporarily skip a task without removing it

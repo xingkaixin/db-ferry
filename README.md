@@ -1,10 +1,10 @@
  # Multi-Database Migration Tool
 
- A Go command-line utility that ferries data between Oracle, MySQL, and SQLite databases using declarative tasks. The tool automatically creates target schemas, streams data in batches with progress tracking, and supports flexible routing through named database aliases.
+ A Go command-line utility that ferries data between Oracle, MySQL, SQLite, and DuckDB databases using declarative tasks. The tool automatically creates target schemas, streams data in batches with progress tracking, and supports flexible routing through named database aliases.
 
  ## Features
 
- - Connects to Oracle via `github.com/sijms/go-ora/v2`, MySQL via `github.com/go-sql-driver/mysql`, and SQLite via `github.com/mattn/go-sqlite3`
+ - Connects to Oracle via `github.com/sijms/go-ora/v2`, MySQL via `github.com/go-sql-driver/mysql`, SQLite via `github.com/mattn/go-sqlite3`, and DuckDB via `github.com/duckdb/duckdb-go/v2`
  - Declarative `task.toml` with alias-based source/target selection and optional index creation
  - Automatic table DDL generation based on source column metadata
  - Batch inserts with transactional guarantees and efficient memory usage
@@ -30,6 +30,8 @@
     ```bash
     go build -o db-ferry
     ```
+
+    > DuckDB support relies on CGO. Ensure `CGO_ENABLED=1` and the default C toolchain (clang on macOS, gcc/clang on Linux) are available when building binaries that include DuckDB aliases.
 
  ## Configuration (`task.toml`)
 
@@ -59,6 +61,11 @@
  type = "sqlite"
  path = "./data/output.db"
 
+ [[databases]]
+ name = "duckdb_local"
+ type = "duckdb"
+ path = "./data/local.duckdb"
+
  [[tasks]]
  table_name = "employees"
  sql = "SELECT employee_id, first_name, last_name, department_id FROM employees"
@@ -80,9 +87,9 @@
 
  ### Database definitions
 
- - `type`: `oracle`, `mysql`, or `sqlite`
+ - `type`: `oracle`, `mysql`, `sqlite`, or `duckdb`
  - Oracle/MySQL require host, port, credentials, and service/database identifiers
- - SQLite only requires a file `path` (relative or absolute)
+ - SQLite and DuckDB only require a file `path` (relative or absolute, `:memory:` works for DuckDB)
 
  ### Task definitions
 
@@ -138,6 +145,7 @@
  │   ├── manager.go          # Connection registry for aliased DBs
  │   ├── mysql.go            # MySQL source/target implementation
  │   ├── oracle.go           # Oracle source/target implementation
+ │   ├── duckdb.go           # DuckDB source/target implementation
  │   └── sqlite.go           # SQLite source/target implementation
  ├── processor/
  │   └── processor.go        # Task execution engine
