@@ -96,6 +96,8 @@
  - `sql`: executed against the `source_db`
  - `source_db` / `target_db`: aliases declared in the `[[databases]]` section
  - `ignore`: skip execution without removing the task
+ - `allow_same_table`: allow migrations where `source_db` equals `target_db` (acknowledges table drop risk)
+ - `skip_create_table`: skip dropping/creating the target table (use when the table already exists)
  - `[[tasks.indexes]]`: optional index creation statements applied after data load (partial indexes via `where` are supported on SQLite targets)
 
  ## Usage

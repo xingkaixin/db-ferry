@@ -74,12 +74,16 @@ func (ic *IndexConfig) ParseColumns() error {
 
 // TaskConfig defines a single migration job.
 type TaskConfig struct {
-	TableName string        `toml:"table_name"`
-	SQL       string        `toml:"sql"`
-	SourceDB  string        `toml:"source_db"`
-	TargetDB  string        `toml:"target_db"`
-	Ignore    bool          `toml:"ignore"`
-	Indexes   []IndexConfig `toml:"indexes,omitempty"`
+	TableName string `toml:"table_name"`
+	SQL       string `toml:"sql"`
+	SourceDB  string `toml:"source_db"`
+	TargetDB  string `toml:"target_db"`
+	Ignore    bool   `toml:"ignore"`
+	// AllowSameTable 明确允许同库执行并覆盖目标表（存在数据丢失风险）。
+	AllowSameTable bool `toml:"allow_same_table"`
+	// SkipCreateTable 跳过目标表的 drop/create 操作。
+	SkipCreateTable bool          `toml:"skip_create_table"`
+	Indexes         []IndexConfig `toml:"indexes,omitempty"`
 }
 
 // Config is the top-level configuration structure decoded from task.toml.
@@ -163,6 +167,9 @@ func (c *Config) Validate() error {
 		targetDB, ok := c.databaseMap[task.TargetDB]
 		if !ok {
 			return fmt.Errorf("task %d: target_db '%s' is not defined", i+1, task.TargetDB)
+		}
+		if task.SourceDB == task.TargetDB && !task.AllowSameTable {
+			return fmt.Errorf("task %d: source_db and target_db are both '%s'; set allow_same_table = true to allow same-database migrations", i+1, task.SourceDB)
 		}
 
 		if err := ensureDatabaseSupportsSource(&sourceDB); err != nil {

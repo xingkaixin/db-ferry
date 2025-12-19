@@ -52,7 +52,7 @@ func (o *OracleDB) Query(sql string) (*sql.Rows, error) {
 
 func (o *OracleDB) GetRowCount(sql string) (int, error) {
 	var count int
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s)", sql)
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) count_query", sql)
 	if err := o.db.QueryRow(countSQL).Scan(&count); err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)
 	}
@@ -224,5 +224,7 @@ func (o *OracleDB) mapToOracleType(column ColumnMetadata) string {
 }
 
 func (o *OracleDB) ident(name string) string {
-	return strings.ToUpper(name)
+	upper := strings.ToUpper(name)
+	escaped := strings.ReplaceAll(upper, `"`, `""`)
+	return `"` + escaped + `"`
 }

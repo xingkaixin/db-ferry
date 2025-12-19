@@ -24,6 +24,19 @@ func NewProcessor(manager *database.ConnectionManager, cfg *config.Config) *Proc
 }
 
 func (p *Processor) ProcessAllTasks() error {
+	totalTasks := 0
+	for _, task := range p.config.Tasks {
+		if !task.Ignore {
+			totalTasks++
+		}
+	}
+
+	var taskProgress *utils.ProgressManager
+	if totalTasks > 0 {
+		taskProgress = utils.NewProgressManagerWithUnit(int64(totalTasks), "Processing tasks", "tasks")
+		defer taskProgress.Finish()
+	}
+
 	for i, task := range p.config.Tasks {
 		if task.Ignore {
 			log.Printf("Skipping ignored task: %s", task.TableName)
@@ -35,6 +48,9 @@ func (p *Processor) ProcessAllTasks() error {
 			return fmt.Errorf("failed to process task %s: %w", task.TableName, err)
 		}
 		log.Printf("Successfully completed task: %s", task.TableName)
+		if taskProgress != nil {
+			taskProgress.Increment()
+		}
 	}
 
 	return nil
@@ -64,8 +80,12 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		return fmt.Errorf("failed to extract column metadata: %w", err)
 	}
 
-	if err := targetDB.CreateTable(task.TableName, columnsMeta); err != nil {
-		return fmt.Errorf("failed to prepare target table: %w", err)
+	if task.SkipCreateTable {
+		log.Printf("Skipping table creation for %s", task.TableName)
+	} else {
+		if err := targetDB.CreateTable(task.TableName, columnsMeta); err != nil {
+			return fmt.Errorf("failed to prepare target table: %w", err)
+		}
 	}
 
 	var totalRows int
@@ -150,10 +170,15 @@ func (p *Processor) extractColumnMetadata(rows *sql.Rows) ([]database.ColumnMeta
 
 	metadata := make([]database.ColumnMetadata, len(columnTypes))
 	for i, ct := range columnTypes {
+		scanType := ct.ScanType()
+		goType := ""
+		if scanType != nil {
+			goType = scanType.String()
+		}
 		meta := database.ColumnMetadata{
 			Name:         ct.Name(),
 			DatabaseType: ct.DatabaseTypeName(),
-			GoType:       ct.ScanType().String(),
+			GoType:       goType,
 		}
 
 		if length, ok := ct.Length(); ok {

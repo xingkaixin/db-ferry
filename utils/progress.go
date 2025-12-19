@@ -15,12 +15,19 @@ type ProgressManager struct {
 }
 
 func NewProgressManager(total int64, description string) *ProgressManager {
+	return NewProgressManagerWithUnit(total, description, "rows")
+}
+
+func NewProgressManagerWithUnit(total int64, description, unit string) *ProgressManager {
+	if unit == "" {
+		unit = "rows"
+	}
 	options := []progressbar.Option{
 		progressbar.OptionSetDescription(description),
 		progressbar.OptionSetWriter(os.Stderr),
 		progressbar.OptionShowCount(),
 		progressbar.OptionShowIts(),
-		progressbar.OptionSetItsString("rows"),
+		progressbar.OptionSetItsString(unit),
 		progressbar.OptionOnCompletion(func() {
 			fmt.Fprint(os.Stderr, "\n")
 		}),

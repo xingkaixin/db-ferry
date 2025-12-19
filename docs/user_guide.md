@@ -109,6 +109,9 @@ password = "test_pass"
 - 放到哪里(目标数据库)
 - 存成什么表名
 
+注意: 如果 `source_db` 和 `target_db` 是同一个数据库,需要显式设置 `allow_same_table = true` 才会执行,以避免误删源表。
+如果目标表由你自行创建,可以设置 `skip_create_table = true` 来跳过对目标表的 drop/create 操作。
+
 #### 示例5:简单全表迁移
 
 ```toml

@@ -107,3 +107,5 @@ ignore = true
 # - Partial indexes (where clause) are only supported for SQLite targets
 # - DuckDB connections rely on CGO. Build binaries with CGO_ENABLED=1 if DuckDB aliases are defined.
 # - Set ignore = true to temporarily skip a task without removing it
+# - If source_db equals target_db, set allow_same_table = true to acknowledge table drop risk
+# - Set skip_create_table = true to keep existing target tables and avoid drop/create
