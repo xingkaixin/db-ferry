@@ -24,7 +24,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("Multi-Source to SQLite Migration Tool v1.1.0 (Oracle/MySQL Support)")
+		fmt.Println("Multi-Source to SQLite Migration Tool v0.5.0 (Oracle/MySQL Support)")
 		os.Exit(0)
 	}
 
