@@ -1,4 +1,6 @@
- # Multi-Database Migration Tool
+# Multi-Database Migration Tool
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
  A Go command-line utility that ferries data between Oracle, MySQL, SQLite, and DuckDB databases using declarative tasks. The tool automatically creates target schemas, streams data in batches with progress tracking, and supports flexible routing through named database aliases.
 
