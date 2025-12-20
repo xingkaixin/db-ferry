@@ -113,10 +113,11 @@ password = "test_pass"
 如果目标表由你自行创建,可以设置 `skip_create_table = true` 来跳过对目标表的 drop/create 操作。
 
 高级选项(可选):
-- `mode`: 写入模式,`replace`(默认,会重建表) 或 `append`(追加到已有表)
+- `mode`: 写入模式,`replace`(默认,会重建表)、`append`(追加) 或 `merge`/`upsert`(按键更新或插入)
 - `batch_size`: 每批插入的行数(默认1000)
 - `max_retries`: 批量插入失败时的重试次数(默认0)
-- `validate`: 迁移后校验,目前支持 `row_count`
+- `validate`: 迁移后校验,目前支持 `row_count`(merge 模式会跳过该校验)
+- `merge_keys`: merge/upsert 的匹配键(需要目标表对应唯一约束)
 - `resume_key`: 用于增量/断点续传的字段名
 - `resume_from`: 增量起点的 SQL 字面量(排除该值)
 - `state_file`: 断点状态文件(JSON),自动记录上次迁移的 `resume_key` 值
@@ -763,6 +764,24 @@ validate = "row_count"
 - 首次运行会全量迁移并写入 `state_file`
 - 后续运行会自动从上次最大的 `order_id` 继续
 - 建议在 SQL 中保证 `resume_key` 单调递增(如按主键或时间)
+
+### 技巧6:merge/upsert 合并写入
+
+当目标表需要“存在则更新,不存在则插入”时使用 `merge`:
+
+```toml
+[[tasks]]
+table_name = "客户表"
+sql = "SELECT customer_id, customer_name, email FROM customers"
+source_db = "生产数据库"
+target_db = "本地分析库"
+mode = "merge"
+merge_keys = ["customer_id"]
+```
+
+说明:
+- 目标表需要在 `merge_keys` 上有唯一约束
+- merge 会避免重建表,保留已有数据
 
 ---
 

@@ -141,6 +141,67 @@ func (m *MySQLDB) InsertData(tableName string, columns []ColumnMetadata, values 
 	return nil
 }
 
+func (m *MySQLDB) UpsertData(tableName string, columns []ColumnMetadata, values [][]any, mergeKeys []string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	if len(mergeKeys) == 0 {
+		return fmt.Errorf("merge_keys is required for upsert")
+	}
+
+	keySet := make(map[string]struct{}, len(mergeKeys))
+	for _, key := range mergeKeys {
+		keySet[strings.ToLower(key)] = struct{}{}
+	}
+
+	placeholders := make([]string, len(columns))
+	columnNames := make([]string, len(columns))
+	updateAssignments := make([]string, 0, len(columns))
+	for i, col := range columns {
+		placeholders[i] = "?"
+		columnNames[i] = m.quoteIdentifier(col.Name)
+		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
+			updateAssignments = append(updateAssignments, fmt.Sprintf("%s=VALUES(%s)", m.quoteIdentifier(col.Name), m.quoteIdentifier(col.Name)))
+		}
+	}
+
+	if len(updateAssignments) == 0 {
+		keyName := m.quoteIdentifier(mergeKeys[0])
+		updateAssignments = append(updateAssignments, fmt.Sprintf("%s=%s", keyName, keyName))
+	}
+
+	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) ON DUPLICATE KEY UPDATE %s",
+		m.quoteIdentifier(tableName),
+		strings.Join(columnNames, ", "),
+		strings.Join(placeholders, ", "),
+		strings.Join(updateAssignments, ", "),
+	)
+
+	tx, err := m.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(insertSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare upsert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, row := range values {
+		if _, err := stmt.Exec(row...); err != nil {
+			return fmt.Errorf("failed to upsert row: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (m *MySQLDB) GetTableRowCount(tableName string) (int, error) {
 	var count int
 	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", m.quoteIdentifier(tableName))

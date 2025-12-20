@@ -7,12 +7,12 @@
  ## Features
 
  - Connects to Oracle via `github.com/sijms/go-ora/v2`, MySQL via `github.com/go-sql-driver/mysql`, SQLite via `github.com/mattn/go-sqlite3`, and DuckDB via `github.com/duckdb/duckdb-go/v2`
- - Declarative `task.toml` with alias-based source/target selection and optional index creation
- - Automatic table DDL generation based on source column metadata
- - Batch inserts with transactional guarantees and efficient memory usage
- - Incremental/resumable migrations via resume key and state file
- - Task-level write modes (append/replace), batch size, retries, and row-count validation
- - Progress bars for each task, including row counts when available
+- Declarative `task.toml` with alias-based source/target selection and optional index creation
+- Automatic table DDL generation based on source column metadata
+- Batch inserts with transactional guarantees and efficient memory usage
+- Incremental/resumable migrations via resume key and state file
+- Task-level write modes (append/replace/merge), batch size, retries, and row-count validation
+- Progress bars for each task, including row counts when available
 
  ## Installation
 
@@ -100,11 +100,12 @@
  - `sql`: executed against the `source_db`
  - `source_db` / `target_db`: aliases declared in the `[[databases]]` section
  - `ignore`: skip execution without removing the task
- - `mode`: `replace` (default) or `append`
- - `batch_size`: number of rows per insert batch (default: 1000)
- - `max_retries`: retry count for failed batch inserts (default: 0)
- - `validate`: `row_count` to compare inserted rows vs target table count
- - `resume_key`: column used for incremental/resume filtering
+- `mode`: `replace` (default), `append`, or `merge` (`upsert` is accepted)
+- `batch_size`: number of rows per insert batch (default: 1000)
+- `max_retries`: retry count for failed batch inserts (default: 0)
+- `validate`: `row_count` to compare inserted rows vs target table count (skipped for merge mode)
+- `merge_keys`: columns used to match rows for merge/upsert (requires unique constraint on target)
+- `resume_key`: column used for incremental/resume filtering
  - `resume_from`: SQL literal for the resume filter (exclusive)
  - `state_file`: JSON file to persist the last resume value per task
  - `allow_same_table`: allow migrations where `source_db` equals `target_db` (acknowledges table drop risk)

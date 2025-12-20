@@ -46,6 +46,9 @@ type TargetDB interface {
 	// InsertData 批量插入数据
 	InsertData(tableName string, columns []ColumnMetadata, values [][]any) error
 
+	// UpsertData 批量插入或更新数据
+	UpsertData(tableName string, columns []ColumnMetadata, values [][]any, mergeKeys []string) error
+
 	// GetTableRowCount 获取目标表的行数
 	GetTableRowCount(tableName string) (int, error)
 

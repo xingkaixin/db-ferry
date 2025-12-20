@@ -140,6 +140,74 @@ func (d *DuckDB) InsertData(tableName string, columns []ColumnMetadata, values [
 	return nil
 }
 
+func (d *DuckDB) UpsertData(tableName string, columns []ColumnMetadata, values [][]any, mergeKeys []string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	if len(mergeKeys) == 0 {
+		return fmt.Errorf("merge_keys is required for upsert")
+	}
+
+	keySet := make(map[string]struct{}, len(mergeKeys))
+	for _, key := range mergeKeys {
+		keySet[strings.ToLower(key)] = struct{}{}
+	}
+
+	placeholders := make([]string, len(columns))
+	columnNames := make([]string, len(columns))
+	updateAssignments := make([]string, 0, len(columns))
+	for i, col := range columns {
+		placeholders[i] = "?"
+		columnNames[i] = d.quoteIdentifier(col.Name)
+		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
+			quoted := d.quoteIdentifier(col.Name)
+			updateAssignments = append(updateAssignments, fmt.Sprintf("%s=excluded.%s", quoted, quoted))
+		}
+	}
+
+	conflictCols := make([]string, len(mergeKeys))
+	for i, key := range mergeKeys {
+		conflictCols[i] = d.quoteIdentifier(key)
+	}
+
+	action := "DO NOTHING"
+	if len(updateAssignments) > 0 {
+		action = fmt.Sprintf("DO UPDATE SET %s", strings.Join(updateAssignments, ", "))
+	}
+
+	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) ON CONFLICT(%s) %s",
+		d.quoteIdentifier(tableName),
+		strings.Join(columnNames, ", "),
+		strings.Join(placeholders, ", "),
+		strings.Join(conflictCols, ", "),
+		action,
+	)
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(insertSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare upsert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, row := range values {
+		if _, err := stmt.Exec(row...); err != nil {
+			return fmt.Errorf("failed to upsert row: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (d *DuckDB) GetTableRowCount(tableName string) (int, error) {
 	var count int
 	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", d.quoteIdentifier(tableName))

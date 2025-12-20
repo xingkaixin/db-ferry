@@ -82,6 +82,8 @@ sql = "SELECT product_id, product_name, description, price, created_at, updated_
 source_db = "mysql_inventory"
 target_db = "sqlite_local"
 ignore = false
+mode = "merge"
+merge_keys = ["product_id"]
 
 [[tasks.indexes]]
 name = "idx_product_id"
@@ -113,9 +115,10 @@ ignore = true
 # - Partial indexes (where clause) are only supported for SQLite targets
 # - DuckDB connections rely on CGO. Build binaries with CGO_ENABLED=1 if DuckDB aliases are defined.
 # - Set ignore = true to temporarily skip a task without removing it
-# - mode supports replace (default) or append; append keeps existing rows
+# - mode supports replace (default), append, or merge (upsert)
 # - batch_size and max_retries tune insert performance and resilience
-# - validate = "row_count" compares inserted rows to target table count
+# - validate = "row_count" compares inserted rows to target table count (skipped for merge)
+# - merge_keys are required for merge mode and should match a unique index on target
 # - resume_key + state_file enable incremental/resume; resume_from can override initial start
 # - If source_db equals target_db, set allow_same_table = true to acknowledge table drop risk
 # - Set skip_create_table = true to keep existing target tables and avoid drop/create

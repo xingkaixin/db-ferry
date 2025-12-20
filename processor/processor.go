@@ -105,11 +105,16 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		}
 	}
 
+	mergeKeys, err := resolveMergeKeys(columnsMeta, task.MergeKeys)
+	if err != nil {
+		return err
+	}
+
 	if task.SkipCreateTable {
 		log.Printf("Skipping table creation for %s", task.TableName)
 	} else {
 		switch task.Mode {
-		case config.TaskModeAppend:
+		case config.TaskModeAppend, config.TaskModeMerge:
 			if err := targetDB.EnsureTable(task.TableName, columnsMeta); err != nil {
 				return fmt.Errorf("failed to ensure target table: %w", err)
 			}
@@ -121,6 +126,10 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 	}
 
 	validateRowCount := task.Validate == config.TaskValidateRowCount
+	if validateRowCount && task.Mode == config.TaskModeMerge {
+		log.Printf("Row count validation skipped for merge mode on table %s", task.TableName)
+		validateRowCount = false
+	}
 	targetCountBefore := 0
 	if validateRowCount {
 		count, err := targetDB.GetTableRowCount(task.TableName)
@@ -175,7 +184,7 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		}
 
 		if len(batch) >= batchSize {
-			if err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch); err != nil {
+			if err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys); err != nil {
 				return fmt.Errorf("failed to insert batch: %w", err)
 			}
 			if err := p.updateResumeState(task, lastResumeValue); err != nil {
@@ -186,7 +195,7 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 	}
 
 	if len(batch) > 0 {
-		if err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch); err != nil {
+		if err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys); err != nil {
 			return fmt.Errorf("failed to insert final batch: %w", err)
 		}
 		if err := p.updateResumeState(task, lastResumeValue); err != nil {
@@ -274,10 +283,16 @@ func (p *Processor) updateResumeState(task config.TaskConfig, value any) error {
 	return nil
 }
 
-func (p *Processor) insertBatchWithRetry(targetDB database.TargetDB, task config.TaskConfig, columns []database.ColumnMetadata, batch [][]any) error {
+func (p *Processor) insertBatchWithRetry(targetDB database.TargetDB, task config.TaskConfig, columns []database.ColumnMetadata, batch [][]any, mergeKeys []string) error {
 	attempts := task.MaxRetries + 1
 	for attempt := 1; attempt <= attempts; attempt++ {
-		err := targetDB.InsertData(task.TableName, columns, batch)
+		var err error
+		switch task.Mode {
+		case config.TaskModeMerge:
+			err = targetDB.UpsertData(task.TableName, columns, batch, mergeKeys)
+		default:
+			err = targetDB.InsertData(task.TableName, columns, batch)
+		}
 		if err == nil {
 			return nil
 		}
@@ -369,6 +384,29 @@ func findColumnIndex(columns []database.ColumnMetadata, name string) int {
 		}
 	}
 	return -1
+}
+
+func resolveMergeKeys(columns []database.ColumnMetadata, mergeKeys []string) ([]string, error) {
+	if len(mergeKeys) == 0 {
+		return nil, nil
+	}
+
+	resolved := make([]string, len(mergeKeys))
+	for i, key := range mergeKeys {
+		found := ""
+		for _, col := range columns {
+			if strings.EqualFold(col.Name, key) {
+				found = col.Name
+				break
+			}
+		}
+		if found == "" {
+			return nil, fmt.Errorf("merge_key '%s' not found in query columns", key)
+		}
+		resolved[i] = found
+	}
+
+	return resolved, nil
 }
 
 func (p *Processor) extractColumnMetadata(rows *sql.Rows) ([]database.ColumnMetadata, error) {

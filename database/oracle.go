@@ -145,6 +145,79 @@ func (o *OracleDB) InsertData(tableName string, columns []ColumnMetadata, values
 	return nil
 }
 
+func (o *OracleDB) UpsertData(tableName string, columns []ColumnMetadata, values [][]any, mergeKeys []string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	if len(mergeKeys) == 0 {
+		return fmt.Errorf("merge_keys is required for upsert")
+	}
+
+	keySet := make(map[string]struct{}, len(mergeKeys))
+	for _, key := range mergeKeys {
+		keySet[strings.ToLower(key)] = struct{}{}
+	}
+
+	columnNames := make([]string, len(columns))
+	selectColumns := make([]string, len(columns))
+	updateAssignments := make([]string, 0, len(columns))
+	sourceColumns := make([]string, len(columns))
+	for i, col := range columns {
+		ident := o.ident(col.Name)
+		columnNames[i] = ident
+		selectColumns[i] = fmt.Sprintf(":%d %s", i+1, ident)
+		sourceColumns[i] = "s." + ident
+		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
+			updateAssignments = append(updateAssignments, fmt.Sprintf("t.%s = s.%s", ident, ident))
+		}
+	}
+
+	onParts := make([]string, len(mergeKeys))
+	for i, key := range mergeKeys {
+		ident := o.ident(key)
+		onParts[i] = fmt.Sprintf("t.%s = s.%s", ident, ident)
+	}
+
+	if len(updateAssignments) == 0 {
+		ident := o.ident(mergeKeys[0])
+		updateAssignments = append(updateAssignments, fmt.Sprintf("t.%s = t.%s", ident, ident))
+	}
+
+	mergeSQL := fmt.Sprintf(
+		"MERGE INTO %s t USING (SELECT %s FROM dual) s ON (%s) WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)",
+		o.ident(tableName),
+		strings.Join(selectColumns, ", "),
+		strings.Join(onParts, " AND "),
+		strings.Join(updateAssignments, ", "),
+		strings.Join(columnNames, ", "),
+		strings.Join(sourceColumns, ", "),
+	)
+
+	tx, err := o.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(mergeSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare upsert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, row := range values {
+		if _, err := stmt.Exec(row...); err != nil {
+			return fmt.Errorf("failed to upsert row: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (o *OracleDB) GetTableRowCount(tableName string) (int, error) {
 	var count int
 	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", o.ident(tableName))
