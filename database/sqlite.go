@@ -60,26 +60,38 @@ func (s *SQLiteDB) GetRowCount(sql string) (int, error) {
 }
 
 func (s *SQLiteDB) CreateTable(tableName string, columns []ColumnMetadata) error {
+	return s.createTable(tableName, columns, true)
+}
+
+func (s *SQLiteDB) EnsureTable(tableName string, columns []ColumnMetadata) error {
+	return s.createTable(tableName, columns, false)
+}
+
+func (s *SQLiteDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")
 	}
 
-	// Drop existing table if it exists
-	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS \"%s\"", tableName)
-	log.Printf("Dropping existing table: %s", dropSQL)
-	if _, err := s.db.Exec(dropSQL); err != nil {
-		return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+	if dropExisting {
+		dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS \"%s\"", tableName)
+		log.Printf("Dropping existing table: %s", dropSQL)
+		if _, err := s.db.Exec(dropSQL); err != nil {
+			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+		}
 	}
 
-	// Create new table
 	var columnDefs []string
 	for _, col := range columns {
 		sqlType := s.mapToSQLiteType(col)
 		columnDefs = append(columnDefs, fmt.Sprintf(`"%s" %s`, col.Name, sqlType))
 	}
 
-	createSQL := fmt.Sprintf("CREATE TABLE \"%s\" (%s)",
-		tableName, strings.Join(columnDefs, ", "))
+	createStmt := "CREATE TABLE"
+	if !dropExisting {
+		createStmt = "CREATE TABLE IF NOT EXISTS"
+	}
+	createSQL := fmt.Sprintf("%s \"%s\" (%s)",
+		createStmt, tableName, strings.Join(columnDefs, ", "))
 
 	log.Printf("Creating new SQLite table: %s", createSQL)
 	_, err := s.db.Exec(createSQL)
@@ -135,6 +147,15 @@ func (s *SQLiteDB) InsertData(tableName string, columns []ColumnMetadata, values
 	}
 
 	return nil
+}
+
+func (s *SQLiteDB) GetTableRowCount(tableName string) (int, error) {
+	var count int
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM \"%s\"", tableName)
+	if err := s.db.QueryRow(countSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to get row count for table %s: %w", tableName, err)
+	}
+	return count, nil
 }
 
 // CreateIndexes 为指定表创建所有索引

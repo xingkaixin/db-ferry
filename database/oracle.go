@@ -60,14 +60,32 @@ func (o *OracleDB) GetRowCount(sql string) (int, error) {
 }
 
 func (o *OracleDB) CreateTable(tableName string, columns []ColumnMetadata) error {
+	return o.createTable(tableName, columns, true)
+}
+
+func (o *OracleDB) EnsureTable(tableName string, columns []ColumnMetadata) error {
+	return o.createTable(tableName, columns, false)
+}
+
+func (o *OracleDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")
 	}
 
-	dropSQL := fmt.Sprintf("BEGIN EXECUTE IMMEDIATE 'DROP TABLE %s'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF; END;", o.ident(tableName))
-	log.Printf("Dropping existing Oracle table (if exists): %s", dropSQL)
-	if _, err := o.db.Exec(dropSQL); err != nil {
-		return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+	if dropExisting {
+		dropSQL := fmt.Sprintf("BEGIN EXECUTE IMMEDIATE 'DROP TABLE %s'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF; END;", o.ident(tableName))
+		log.Printf("Dropping existing Oracle table (if exists): %s", dropSQL)
+		if _, err := o.db.Exec(dropSQL); err != nil {
+			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+		}
+	} else {
+		exists, err := o.tableExists(tableName)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
 	}
 
 	columnDefs := make([]string, len(columns))
@@ -125,6 +143,15 @@ func (o *OracleDB) InsertData(tableName string, columns []ColumnMetadata, values
 	}
 
 	return nil
+}
+
+func (o *OracleDB) GetTableRowCount(tableName string) (int, error) {
+	var count int
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", o.ident(tableName))
+	if err := o.db.QueryRow(countSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to get row count for table %s: %w", tableName, err)
+	}
+	return count, nil
 }
 
 func (o *OracleDB) CreateIndexes(tableName string, indexes []config.IndexConfig) error {
@@ -227,4 +254,13 @@ func (o *OracleDB) ident(name string) string {
 	upper := strings.ToUpper(name)
 	escaped := strings.ReplaceAll(upper, `"`, `""`)
 	return `"` + escaped + `"`
+}
+
+func (o *OracleDB) tableExists(tableName string) (bool, error) {
+	var count int
+	query := "SELECT COUNT(*) FROM user_tables WHERE table_name = :1"
+	if err := o.db.QueryRow(query, strings.ToUpper(tableName)).Scan(&count); err != nil {
+		return false, fmt.Errorf("failed to check table %s existence: %w", tableName, err)
+	}
+	return count > 0, nil
 }

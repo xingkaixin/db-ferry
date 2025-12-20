@@ -38,8 +38,16 @@ func (d *DuckDB) CreateTable(tableName string, columns []ColumnMetadata) error {
 	return fmt.Errorf("duckdb is not supported on windows builds")
 }
 
+func (d *DuckDB) EnsureTable(tableName string, columns []ColumnMetadata) error {
+	return fmt.Errorf("duckdb is not supported on windows builds")
+}
+
 func (d *DuckDB) InsertData(tableName string, columns []ColumnMetadata, values [][]any) error {
 	return fmt.Errorf("duckdb is not supported on windows builds")
+}
+
+func (d *DuckDB) GetTableRowCount(tableName string) (int, error) {
+	return 0, fmt.Errorf("duckdb is not supported on windows builds")
 }
 
 func (d *DuckDB) CreateIndexes(tableName string, indexes []config.IndexConfig) error {

@@ -62,13 +62,23 @@ func (d *DuckDB) GetRowCount(sql string) (int, error) {
 }
 
 func (d *DuckDB) CreateTable(tableName string, columns []ColumnMetadata) error {
+	return d.createTable(tableName, columns, true)
+}
+
+func (d *DuckDB) EnsureTable(tableName string, columns []ColumnMetadata) error {
+	return d.createTable(tableName, columns, false)
+}
+
+func (d *DuckDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")
 	}
 
-	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", d.quoteIdentifier(tableName))
-	if _, err := d.db.Exec(dropSQL); err != nil {
-		return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+	if dropExisting {
+		dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", d.quoteIdentifier(tableName))
+		if _, err := d.db.Exec(dropSQL); err != nil {
+			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+		}
 	}
 
 	columnDefs := make([]string, len(columns))
@@ -76,7 +86,11 @@ func (d *DuckDB) CreateTable(tableName string, columns []ColumnMetadata) error {
 		columnDefs[i] = fmt.Sprintf("%s %s", d.quoteIdentifier(col.Name), d.mapToDuckDBType(col))
 	}
 
-	createSQL := fmt.Sprintf("CREATE TABLE %s (%s)", d.quoteIdentifier(tableName), strings.Join(columnDefs, ", "))
+	createStmt := "CREATE TABLE"
+	if !dropExisting {
+		createStmt = "CREATE TABLE IF NOT EXISTS"
+	}
+	createSQL := fmt.Sprintf("%s %s (%s)", createStmt, d.quoteIdentifier(tableName), strings.Join(columnDefs, ", "))
 	if _, err := d.db.Exec(createSQL); err != nil {
 		return fmt.Errorf("failed to create table %s: %w", tableName, err)
 	}
@@ -124,6 +138,15 @@ func (d *DuckDB) InsertData(tableName string, columns []ColumnMetadata, values [
 	}
 
 	return nil
+}
+
+func (d *DuckDB) GetTableRowCount(tableName string) (int, error) {
+	var count int
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", d.quoteIdentifier(tableName))
+	if err := d.db.QueryRow(countSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to get row count for table %s: %w", tableName, err)
+	}
+	return count, nil
 }
 
 func (d *DuckDB) CreateIndexes(tableName string, indexes []config.IndexConfig) error {

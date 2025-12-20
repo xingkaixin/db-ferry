@@ -15,6 +15,18 @@ const (
 	DatabaseTypeDuckDB = "duckdb"
 )
 
+// Supported task modes.
+const (
+	TaskModeReplace = "replace"
+	TaskModeAppend  = "append"
+)
+
+// Supported validation modes.
+const (
+	TaskValidateNone     = "none"
+	TaskValidateRowCount = "row_count"
+)
+
 // DatabaseConfig describes a named database connection definition.
 type DatabaseConfig struct {
 	Name string `toml:"name"`
@@ -74,11 +86,18 @@ func (ic *IndexConfig) ParseColumns() error {
 
 // TaskConfig defines a single migration job.
 type TaskConfig struct {
-	TableName string `toml:"table_name"`
-	SQL       string `toml:"sql"`
-	SourceDB  string `toml:"source_db"`
-	TargetDB  string `toml:"target_db"`
-	Ignore    bool   `toml:"ignore"`
+	TableName  string `toml:"table_name"`
+	SQL        string `toml:"sql"`
+	SourceDB   string `toml:"source_db"`
+	TargetDB   string `toml:"target_db"`
+	Ignore     bool   `toml:"ignore"`
+	Mode       string `toml:"mode"`
+	BatchSize  int    `toml:"batch_size"`
+	MaxRetries int    `toml:"max_retries"`
+	Validate   string `toml:"validate"`
+	ResumeKey  string `toml:"resume_key"`
+	ResumeFrom string `toml:"resume_from"`
+	StateFile  string `toml:"state_file"`
 	// AllowSameTable 明确允许同库执行并覆盖目标表（存在数据丢失风险）。
 	AllowSameTable bool `toml:"allow_same_table"`
 	// SkipCreateTable 跳过目标表的 drop/create 操作。
@@ -172,6 +191,43 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("task %d: source_db and target_db are both '%s'; set allow_same_table = true to allow same-database migrations", i+1, task.SourceDB)
 		}
 
+		task.Mode = strings.ToLower(strings.TrimSpace(task.Mode))
+		if task.Mode == "" {
+			task.Mode = TaskModeReplace
+		}
+		switch task.Mode {
+		case TaskModeReplace, TaskModeAppend:
+		default:
+			return fmt.Errorf("task %d: mode must be %q or %q", i+1, TaskModeReplace, TaskModeAppend)
+		}
+
+		task.Validate = strings.ToLower(strings.TrimSpace(task.Validate))
+		if task.Validate == "" {
+			task.Validate = TaskValidateNone
+		}
+		switch task.Validate {
+		case TaskValidateNone, TaskValidateRowCount:
+		default:
+			return fmt.Errorf("task %d: validate must be %q or %q", i+1, TaskValidateNone, TaskValidateRowCount)
+		}
+
+		if task.BatchSize < 0 {
+			return fmt.Errorf("task %d: batch_size must be >= 0", i+1)
+		}
+		if task.MaxRetries < 0 {
+			return fmt.Errorf("task %d: max_retries must be >= 0", i+1)
+		}
+
+		task.ResumeKey = strings.TrimSpace(task.ResumeKey)
+		task.ResumeFrom = strings.TrimSpace(task.ResumeFrom)
+		task.StateFile = strings.TrimSpace(task.StateFile)
+		if task.StateFile != "" && task.ResumeKey == "" {
+			return fmt.Errorf("task %d: state_file requires resume_key", i+1)
+		}
+		if task.ResumeKey != "" && task.StateFile == "" && task.ResumeFrom == "" {
+			return fmt.Errorf("task %d: resume_key requires resume_from or state_file", i+1)
+		}
+
 		if err := ensureDatabaseSupportsSource(&sourceDB); err != nil {
 			return fmt.Errorf("task %d: %w", i+1, err)
 		}
@@ -203,6 +259,8 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("task %d, index %d: partial indexes (where clause) are only supported for SQLite targets", i+1, j+1)
 			}
 		}
+
+		c.Tasks[i] = task
 	}
 
 	return nil

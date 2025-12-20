@@ -10,6 +10,8 @@
  - Declarative `task.toml` with alias-based source/target selection and optional index creation
  - Automatic table DDL generation based on source column metadata
  - Batch inserts with transactional guarantees and efficient memory usage
+ - Incremental/resumable migrations via resume key and state file
+ - Task-level write modes (append/replace), batch size, retries, and row-count validation
  - Progress bars for each task, including row counts when available
 
  ## Installation
@@ -98,6 +100,13 @@
  - `sql`: executed against the `source_db`
  - `source_db` / `target_db`: aliases declared in the `[[databases]]` section
  - `ignore`: skip execution without removing the task
+ - `mode`: `replace` (default) or `append`
+ - `batch_size`: number of rows per insert batch (default: 1000)
+ - `max_retries`: retry count for failed batch inserts (default: 0)
+ - `validate`: `row_count` to compare inserted rows vs target table count
+ - `resume_key`: column used for incremental/resume filtering
+ - `resume_from`: SQL literal for the resume filter (exclusive)
+ - `state_file`: JSON file to persist the last resume value per task
  - `allow_same_table`: allow migrations where `source_db` equals `target_db` (acknowledges table drop risk)
  - `skip_create_table`: skip dropping/creating the target table (use when the table already exists)
  - `[[tasks.indexes]]`: optional index creation statements applied after data load (partial indexes via `where` are supported on SQLite targets)

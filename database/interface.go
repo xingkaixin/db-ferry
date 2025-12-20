@@ -40,8 +40,14 @@ type TargetDB interface {
 	// CreateTable 根据列元数据创建目标表
 	CreateTable(tableName string, columns []ColumnMetadata) error
 
+	// EnsureTable 创建目标表(如果不存在)
+	EnsureTable(tableName string, columns []ColumnMetadata) error
+
 	// InsertData 批量插入数据
 	InsertData(tableName string, columns []ColumnMetadata, values [][]any) error
+
+	// GetTableRowCount 获取目标表的行数
+	GetTableRowCount(tableName string) (int, error)
 
 	// CreateIndexes 创建索引
 	CreateIndexes(tableName string, indexes []config.IndexConfig) error
