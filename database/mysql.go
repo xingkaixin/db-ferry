@@ -60,14 +60,24 @@ func (m *MySQLDB) GetRowCount(sql string) (int, error) {
 }
 
 func (m *MySQLDB) CreateTable(tableName string, columns []ColumnMetadata) error {
+	return m.createTable(tableName, columns, true)
+}
+
+func (m *MySQLDB) EnsureTable(tableName string, columns []ColumnMetadata) error {
+	return m.createTable(tableName, columns, false)
+}
+
+func (m *MySQLDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")
 	}
 
-	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", m.quoteIdentifier(tableName))
-	log.Printf("Dropping existing MySQL table: %s", dropSQL)
-	if _, err := m.db.Exec(dropSQL); err != nil {
-		return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+	if dropExisting {
+		dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", m.quoteIdentifier(tableName))
+		log.Printf("Dropping existing MySQL table: %s", dropSQL)
+		if _, err := m.db.Exec(dropSQL); err != nil {
+			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+		}
 	}
 
 	columnDefs := make([]string, len(columns))
@@ -76,7 +86,11 @@ func (m *MySQLDB) CreateTable(tableName string, columns []ColumnMetadata) error 
 		columnDefs[i] = fmt.Sprintf("%s %s", m.quoteIdentifier(col.Name), typeDef)
 	}
 
-	createSQL := fmt.Sprintf("CREATE TABLE %s (%s)", m.quoteIdentifier(tableName), strings.Join(columnDefs, ", "))
+	createStmt := "CREATE TABLE"
+	if !dropExisting {
+		createStmt = "CREATE TABLE IF NOT EXISTS"
+	}
+	createSQL := fmt.Sprintf("%s %s (%s)", createStmt, m.quoteIdentifier(tableName), strings.Join(columnDefs, ", "))
 	log.Printf("Creating new MySQL table: %s", createSQL)
 	if _, err := m.db.Exec(createSQL); err != nil {
 		return fmt.Errorf("failed to create table %s: %w", tableName, err)
@@ -125,6 +139,76 @@ func (m *MySQLDB) InsertData(tableName string, columns []ColumnMetadata, values 
 	}
 
 	return nil
+}
+
+func (m *MySQLDB) UpsertData(tableName string, columns []ColumnMetadata, values [][]any, mergeKeys []string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	if len(mergeKeys) == 0 {
+		return fmt.Errorf("merge_keys is required for upsert")
+	}
+
+	keySet := make(map[string]struct{}, len(mergeKeys))
+	for _, key := range mergeKeys {
+		keySet[strings.ToLower(key)] = struct{}{}
+	}
+
+	placeholders := make([]string, len(columns))
+	columnNames := make([]string, len(columns))
+	updateAssignments := make([]string, 0, len(columns))
+	for i, col := range columns {
+		placeholders[i] = "?"
+		columnNames[i] = m.quoteIdentifier(col.Name)
+		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
+			updateAssignments = append(updateAssignments, fmt.Sprintf("%s=VALUES(%s)", m.quoteIdentifier(col.Name), m.quoteIdentifier(col.Name)))
+		}
+	}
+
+	if len(updateAssignments) == 0 {
+		keyName := m.quoteIdentifier(mergeKeys[0])
+		updateAssignments = append(updateAssignments, fmt.Sprintf("%s=%s", keyName, keyName))
+	}
+
+	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) ON DUPLICATE KEY UPDATE %s",
+		m.quoteIdentifier(tableName),
+		strings.Join(columnNames, ", "),
+		strings.Join(placeholders, ", "),
+		strings.Join(updateAssignments, ", "),
+	)
+
+	tx, err := m.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(insertSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare upsert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, row := range values {
+		if _, err := stmt.Exec(row...); err != nil {
+			return fmt.Errorf("failed to upsert row: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (m *MySQLDB) GetTableRowCount(tableName string) (int, error) {
+	var count int
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", m.quoteIdentifier(tableName))
+	if err := m.db.QueryRow(countSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to get row count for table %s: %w", tableName, err)
+	}
+	return count, nil
 }
 
 func (m *MySQLDB) CreateIndexes(tableName string, indexes []config.IndexConfig) error {

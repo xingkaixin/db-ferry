@@ -112,6 +112,16 @@ password = "test_pass"
 注意: 如果 `source_db` 和 `target_db` 是同一个数据库,需要显式设置 `allow_same_table = true` 才会执行,以避免误删源表。
 如果目标表由你自行创建,可以设置 `skip_create_table = true` 来跳过对目标表的 drop/create 操作。
 
+高级选项(可选):
+- `mode`: 写入模式,`replace`(默认,会重建表)、`append`(追加) 或 `merge`/`upsert`(按键更新或插入)
+- `batch_size`: 每批插入的行数(默认1000)
+- `max_retries`: 批量插入失败时的重试次数(默认0)
+- `validate`: 迁移后校验,目前支持 `row_count`(merge 模式会跳过该校验)
+- `merge_keys`: merge/upsert 的匹配键(需要目标表对应唯一约束)
+- `resume_key`: 用于增量/断点续传的字段名
+- `resume_from`: 增量起点的 SQL 字面量(排除该值)
+- `state_file`: 断点状态文件(JSON),自动记录上次迁移的 `resume_key` 值
+
 #### 示例5:简单全表迁移
 
 ```toml
@@ -596,7 +606,7 @@ SELECT * FROM orders WHERE order_date >= '2024-01-01'
 
 ### Q4: 迁移速度如何?
 
-A: db-ferry使用批量插入,每批1000条数据。速度取决于:
+A: db-ferry使用批量插入,默认每批1000条数据(可通过 `batch_size` 调整)。速度取决于:
 - 网络速度(远程数据库)
 - 数据量大小
 - 目标数据库性能
@@ -658,7 +668,7 @@ graph TD
    - 如果已存在,报错并跳过此任务
 
 6. **批量插入数据**:
-   - 每次插入1000行数据
+   - 默认每次插入1000行数据(可配置)
    - 显示进度条,实时查看迁移进度
 
 7. **创建索引**: 如果配置文件中指定了索引,在数据迁移完成后创建
@@ -734,6 +744,45 @@ JOIN customers c ON o.customer_id = c.customer_id
 ...
 ```
 
+### 技巧5:增量/断点续传
+
+使用 `resume_key` 配合 `state_file` 可以实现增量迁移和中断后续传:
+
+```toml
+[[tasks]]
+table_name = "订单增量"
+sql = "SELECT order_id, order_date, total_amount FROM orders"
+source_db = "生产数据库"
+target_db = "本地分析库"
+mode = "append"
+resume_key = "order_id"
+state_file = "./state/orders.json"
+validate = "row_count"
+```
+
+说明:
+- 首次运行会全量迁移并写入 `state_file`
+- 后续运行会自动从上次最大的 `order_id` 继续
+- 建议在 SQL 中保证 `resume_key` 单调递增(如按主键或时间)
+
+### 技巧6:merge/upsert 合并写入
+
+当目标表需要“存在则更新,不存在则插入”时使用 `merge`:
+
+```toml
+[[tasks]]
+table_name = "客户表"
+sql = "SELECT customer_id, customer_name, email FROM customers"
+source_db = "生产数据库"
+target_db = "本地分析库"
+mode = "merge"
+merge_keys = ["customer_id"]
+```
+
+说明:
+- 目标表需要在 `merge_keys` 上有唯一约束
+- merge 会避免重建表,保留已有数据
+
 ---
 
 ## 故障排查
@@ -792,7 +841,7 @@ db-ferry 是一个简单易用的数据迁移工具,核心优势:
 
 ✓ **配置简单**: 一个配置文件搞定所有设置
 ✓ **自动建表**: 无需手动创建表结构
-✓ **批量高效**: 每批1000条,迁移速度快
+✓ **批量高效**: 默认每批1000条,迁移速度快
 ✓ **进度可见**: 实时进度条,一目了然
 ✓ **灵活筛选**: 支持复杂SQL查询和条件过滤
 ✓ **索引管理**: 迁移后自动创建索引

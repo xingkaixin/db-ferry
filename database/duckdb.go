@@ -62,13 +62,23 @@ func (d *DuckDB) GetRowCount(sql string) (int, error) {
 }
 
 func (d *DuckDB) CreateTable(tableName string, columns []ColumnMetadata) error {
+	return d.createTable(tableName, columns, true)
+}
+
+func (d *DuckDB) EnsureTable(tableName string, columns []ColumnMetadata) error {
+	return d.createTable(tableName, columns, false)
+}
+
+func (d *DuckDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")
 	}
 
-	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", d.quoteIdentifier(tableName))
-	if _, err := d.db.Exec(dropSQL); err != nil {
-		return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+	if dropExisting {
+		dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", d.quoteIdentifier(tableName))
+		if _, err := d.db.Exec(dropSQL); err != nil {
+			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+		}
 	}
 
 	columnDefs := make([]string, len(columns))
@@ -76,7 +86,11 @@ func (d *DuckDB) CreateTable(tableName string, columns []ColumnMetadata) error {
 		columnDefs[i] = fmt.Sprintf("%s %s", d.quoteIdentifier(col.Name), d.mapToDuckDBType(col))
 	}
 
-	createSQL := fmt.Sprintf("CREATE TABLE %s (%s)", d.quoteIdentifier(tableName), strings.Join(columnDefs, ", "))
+	createStmt := "CREATE TABLE"
+	if !dropExisting {
+		createStmt = "CREATE TABLE IF NOT EXISTS"
+	}
+	createSQL := fmt.Sprintf("%s %s (%s)", createStmt, d.quoteIdentifier(tableName), strings.Join(columnDefs, ", "))
 	if _, err := d.db.Exec(createSQL); err != nil {
 		return fmt.Errorf("failed to create table %s: %w", tableName, err)
 	}
@@ -124,6 +138,83 @@ func (d *DuckDB) InsertData(tableName string, columns []ColumnMetadata, values [
 	}
 
 	return nil
+}
+
+func (d *DuckDB) UpsertData(tableName string, columns []ColumnMetadata, values [][]any, mergeKeys []string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	if len(mergeKeys) == 0 {
+		return fmt.Errorf("merge_keys is required for upsert")
+	}
+
+	keySet := make(map[string]struct{}, len(mergeKeys))
+	for _, key := range mergeKeys {
+		keySet[strings.ToLower(key)] = struct{}{}
+	}
+
+	placeholders := make([]string, len(columns))
+	columnNames := make([]string, len(columns))
+	updateAssignments := make([]string, 0, len(columns))
+	for i, col := range columns {
+		placeholders[i] = "?"
+		columnNames[i] = d.quoteIdentifier(col.Name)
+		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
+			quoted := d.quoteIdentifier(col.Name)
+			updateAssignments = append(updateAssignments, fmt.Sprintf("%s=excluded.%s", quoted, quoted))
+		}
+	}
+
+	conflictCols := make([]string, len(mergeKeys))
+	for i, key := range mergeKeys {
+		conflictCols[i] = d.quoteIdentifier(key)
+	}
+
+	action := "DO NOTHING"
+	if len(updateAssignments) > 0 {
+		action = fmt.Sprintf("DO UPDATE SET %s", strings.Join(updateAssignments, ", "))
+	}
+
+	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) ON CONFLICT(%s) %s",
+		d.quoteIdentifier(tableName),
+		strings.Join(columnNames, ", "),
+		strings.Join(placeholders, ", "),
+		strings.Join(conflictCols, ", "),
+		action,
+	)
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(insertSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare upsert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, row := range values {
+		if _, err := stmt.Exec(row...); err != nil {
+			return fmt.Errorf("failed to upsert row: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (d *DuckDB) GetTableRowCount(tableName string) (int, error) {
+	var count int
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", d.quoteIdentifier(tableName))
+	if err := d.db.QueryRow(countSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to get row count for table %s: %w", tableName, err)
+	}
+	return count, nil
 }
 
 func (d *DuckDB) CreateIndexes(tableName string, indexes []config.IndexConfig) error {

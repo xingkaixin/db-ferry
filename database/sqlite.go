@@ -60,26 +60,38 @@ func (s *SQLiteDB) GetRowCount(sql string) (int, error) {
 }
 
 func (s *SQLiteDB) CreateTable(tableName string, columns []ColumnMetadata) error {
+	return s.createTable(tableName, columns, true)
+}
+
+func (s *SQLiteDB) EnsureTable(tableName string, columns []ColumnMetadata) error {
+	return s.createTable(tableName, columns, false)
+}
+
+func (s *SQLiteDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")
 	}
 
-	// Drop existing table if it exists
-	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS \"%s\"", tableName)
-	log.Printf("Dropping existing table: %s", dropSQL)
-	if _, err := s.db.Exec(dropSQL); err != nil {
-		return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+	if dropExisting {
+		dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS \"%s\"", tableName)
+		log.Printf("Dropping existing table: %s", dropSQL)
+		if _, err := s.db.Exec(dropSQL); err != nil {
+			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+		}
 	}
 
-	// Create new table
 	var columnDefs []string
 	for _, col := range columns {
 		sqlType := s.mapToSQLiteType(col)
 		columnDefs = append(columnDefs, fmt.Sprintf(`"%s" %s`, col.Name, sqlType))
 	}
 
-	createSQL := fmt.Sprintf("CREATE TABLE \"%s\" (%s)",
-		tableName, strings.Join(columnDefs, ", "))
+	createStmt := "CREATE TABLE"
+	if !dropExisting {
+		createStmt = "CREATE TABLE IF NOT EXISTS"
+	}
+	createSQL := fmt.Sprintf("%s \"%s\" (%s)",
+		createStmt, tableName, strings.Join(columnDefs, ", "))
 
 	log.Printf("Creating new SQLite table: %s", createSQL)
 	_, err := s.db.Exec(createSQL)
@@ -135,6 +147,82 @@ func (s *SQLiteDB) InsertData(tableName string, columns []ColumnMetadata, values
 	}
 
 	return nil
+}
+
+func (s *SQLiteDB) UpsertData(tableName string, columns []ColumnMetadata, values [][]any, mergeKeys []string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	if len(mergeKeys) == 0 {
+		return fmt.Errorf("merge_keys is required for upsert")
+	}
+
+	keySet := make(map[string]struct{}, len(mergeKeys))
+	for _, key := range mergeKeys {
+		keySet[strings.ToLower(key)] = struct{}{}
+	}
+
+	placeholders := make([]string, len(columns))
+	columnNames := make([]string, len(columns))
+	updateAssignments := make([]string, 0, len(columns))
+	for i, col := range columns {
+		placeholders[i] = "?"
+		columnNames[i] = col.Name
+		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
+			updateAssignments = append(updateAssignments, fmt.Sprintf(`"%s"=excluded."%s"`, col.Name, col.Name))
+		}
+	}
+
+	conflictCols := make([]string, len(mergeKeys))
+	for i, key := range mergeKeys {
+		conflictCols[i] = fmt.Sprintf(`"%s"`, key)
+	}
+
+	action := "DO NOTHING"
+	if len(updateAssignments) > 0 {
+		action = fmt.Sprintf("DO UPDATE SET %s", strings.Join(updateAssignments, ", "))
+	}
+
+	insertSQL := fmt.Sprintf("INSERT INTO \"%s\" (\"%s\") VALUES (%s) ON CONFLICT(%s) %s",
+		tableName,
+		strings.Join(columnNames, "\", \""),
+		strings.Join(placeholders, ", "),
+		strings.Join(conflictCols, ", "),
+		action,
+	)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(insertSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare upsert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, row := range values {
+		if _, err := stmt.Exec(row...); err != nil {
+			return fmt.Errorf("failed to upsert row: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (s *SQLiteDB) GetTableRowCount(tableName string) (int, error) {
+	var count int
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM \"%s\"", tableName)
+	if err := s.db.QueryRow(countSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to get row count for table %s: %w", tableName, err)
+	}
+	return count, nil
 }
 
 // CreateIndexes 为指定表创建所有索引

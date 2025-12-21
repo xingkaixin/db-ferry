@@ -60,14 +60,32 @@ func (o *OracleDB) GetRowCount(sql string) (int, error) {
 }
 
 func (o *OracleDB) CreateTable(tableName string, columns []ColumnMetadata) error {
+	return o.createTable(tableName, columns, true)
+}
+
+func (o *OracleDB) EnsureTable(tableName string, columns []ColumnMetadata) error {
+	return o.createTable(tableName, columns, false)
+}
+
+func (o *OracleDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")
 	}
 
-	dropSQL := fmt.Sprintf("BEGIN EXECUTE IMMEDIATE 'DROP TABLE %s'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF; END;", o.ident(tableName))
-	log.Printf("Dropping existing Oracle table (if exists): %s", dropSQL)
-	if _, err := o.db.Exec(dropSQL); err != nil {
-		return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+	if dropExisting {
+		dropSQL := fmt.Sprintf("BEGIN EXECUTE IMMEDIATE 'DROP TABLE %s'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF; END;", o.ident(tableName))
+		log.Printf("Dropping existing Oracle table (if exists): %s", dropSQL)
+		if _, err := o.db.Exec(dropSQL); err != nil {
+			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
+		}
+	} else {
+		exists, err := o.tableExists(tableName)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
 	}
 
 	columnDefs := make([]string, len(columns))
@@ -125,6 +143,88 @@ func (o *OracleDB) InsertData(tableName string, columns []ColumnMetadata, values
 	}
 
 	return nil
+}
+
+func (o *OracleDB) UpsertData(tableName string, columns []ColumnMetadata, values [][]any, mergeKeys []string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	if len(mergeKeys) == 0 {
+		return fmt.Errorf("merge_keys is required for upsert")
+	}
+
+	keySet := make(map[string]struct{}, len(mergeKeys))
+	for _, key := range mergeKeys {
+		keySet[strings.ToLower(key)] = struct{}{}
+	}
+
+	columnNames := make([]string, len(columns))
+	selectColumns := make([]string, len(columns))
+	updateAssignments := make([]string, 0, len(columns))
+	sourceColumns := make([]string, len(columns))
+	for i, col := range columns {
+		ident := o.ident(col.Name)
+		columnNames[i] = ident
+		selectColumns[i] = fmt.Sprintf(":%d %s", i+1, ident)
+		sourceColumns[i] = "s." + ident
+		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
+			updateAssignments = append(updateAssignments, fmt.Sprintf("t.%s = s.%s", ident, ident))
+		}
+	}
+
+	onParts := make([]string, len(mergeKeys))
+	for i, key := range mergeKeys {
+		ident := o.ident(key)
+		onParts[i] = fmt.Sprintf("t.%s = s.%s", ident, ident)
+	}
+
+	if len(updateAssignments) == 0 {
+		ident := o.ident(mergeKeys[0])
+		updateAssignments = append(updateAssignments, fmt.Sprintf("t.%s = t.%s", ident, ident))
+	}
+
+	mergeSQL := fmt.Sprintf(
+		"MERGE INTO %s t USING (SELECT %s FROM dual) s ON (%s) WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)",
+		o.ident(tableName),
+		strings.Join(selectColumns, ", "),
+		strings.Join(onParts, " AND "),
+		strings.Join(updateAssignments, ", "),
+		strings.Join(columnNames, ", "),
+		strings.Join(sourceColumns, ", "),
+	)
+
+	tx, err := o.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(mergeSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare upsert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, row := range values {
+		if _, err := stmt.Exec(row...); err != nil {
+			return fmt.Errorf("failed to upsert row: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (o *OracleDB) GetTableRowCount(tableName string) (int, error) {
+	var count int
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", o.ident(tableName))
+	if err := o.db.QueryRow(countSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to get row count for table %s: %w", tableName, err)
+	}
+	return count, nil
 }
 
 func (o *OracleDB) CreateIndexes(tableName string, indexes []config.IndexConfig) error {
@@ -227,4 +327,13 @@ func (o *OracleDB) ident(name string) string {
 	upper := strings.ToUpper(name)
 	escaped := strings.ReplaceAll(upper, `"`, `""`)
 	return `"` + escaped + `"`
+}
+
+func (o *OracleDB) tableExists(tableName string) (bool, error) {
+	var count int
+	query := "SELECT COUNT(*) FROM user_tables WHERE table_name = :1"
+	if err := o.db.QueryRow(query, strings.ToUpper(tableName)).Scan(&count); err != nil {
+		return false, fmt.Errorf("failed to check table %s existence: %w", tableName, err)
+	}
+	return count > 0, nil
 }

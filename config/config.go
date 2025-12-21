@@ -15,6 +15,20 @@ const (
 	DatabaseTypeDuckDB = "duckdb"
 )
 
+// Supported task modes.
+const (
+	TaskModeReplace = "replace"
+	TaskModeAppend  = "append"
+	TaskModeMerge   = "merge"
+	TaskModeUpsert  = "upsert"
+)
+
+// Supported validation modes.
+const (
+	TaskValidateNone     = "none"
+	TaskValidateRowCount = "row_count"
+)
+
 // DatabaseConfig describes a named database connection definition.
 type DatabaseConfig struct {
 	Name string `toml:"name"`
@@ -74,11 +88,19 @@ func (ic *IndexConfig) ParseColumns() error {
 
 // TaskConfig defines a single migration job.
 type TaskConfig struct {
-	TableName string `toml:"table_name"`
-	SQL       string `toml:"sql"`
-	SourceDB  string `toml:"source_db"`
-	TargetDB  string `toml:"target_db"`
-	Ignore    bool   `toml:"ignore"`
+	TableName  string   `toml:"table_name"`
+	SQL        string   `toml:"sql"`
+	SourceDB   string   `toml:"source_db"`
+	TargetDB   string   `toml:"target_db"`
+	Ignore     bool     `toml:"ignore"`
+	Mode       string   `toml:"mode"`
+	BatchSize  int      `toml:"batch_size"`
+	MaxRetries int      `toml:"max_retries"`
+	Validate   string   `toml:"validate"`
+	MergeKeys  []string `toml:"merge_keys"`
+	ResumeKey  string   `toml:"resume_key"`
+	ResumeFrom string   `toml:"resume_from"`
+	StateFile  string   `toml:"state_file"`
 	// AllowSameTable 明确允许同库执行并覆盖目标表（存在数据丢失风险）。
 	AllowSameTable bool `toml:"allow_same_table"`
 	// SkipCreateTable 跳过目标表的 drop/create 操作。
@@ -172,6 +194,58 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("task %d: source_db and target_db are both '%s'; set allow_same_table = true to allow same-database migrations", i+1, task.SourceDB)
 		}
 
+		task.Mode = strings.ToLower(strings.TrimSpace(task.Mode))
+		if task.Mode == "" {
+			task.Mode = TaskModeReplace
+		}
+		switch task.Mode {
+		case TaskModeReplace, TaskModeAppend, TaskModeMerge, TaskModeUpsert:
+		default:
+			return fmt.Errorf("task %d: mode must be %q, %q, %q, or %q", i+1, TaskModeReplace, TaskModeAppend, TaskModeMerge, TaskModeUpsert)
+		}
+		if task.Mode == TaskModeUpsert {
+			task.Mode = TaskModeMerge
+		}
+
+		normalizedKeys, err := normalizeKeys(task.MergeKeys)
+		if err != nil {
+			return fmt.Errorf("task %d: %w", i+1, err)
+		}
+		task.MergeKeys = normalizedKeys
+		if task.Mode == TaskModeMerge && len(task.MergeKeys) == 0 {
+			return fmt.Errorf("task %d: merge_keys is required when mode is %q", i+1, TaskModeMerge)
+		}
+		if task.Mode != TaskModeMerge && len(task.MergeKeys) > 0 {
+			return fmt.Errorf("task %d: merge_keys is only valid when mode is %q", i+1, TaskModeMerge)
+		}
+
+		task.Validate = strings.ToLower(strings.TrimSpace(task.Validate))
+		if task.Validate == "" {
+			task.Validate = TaskValidateNone
+		}
+		switch task.Validate {
+		case TaskValidateNone, TaskValidateRowCount:
+		default:
+			return fmt.Errorf("task %d: validate must be %q or %q", i+1, TaskValidateNone, TaskValidateRowCount)
+		}
+
+		if task.BatchSize < 0 {
+			return fmt.Errorf("task %d: batch_size must be >= 0", i+1)
+		}
+		if task.MaxRetries < 0 {
+			return fmt.Errorf("task %d: max_retries must be >= 0", i+1)
+		}
+
+		task.ResumeKey = strings.TrimSpace(task.ResumeKey)
+		task.ResumeFrom = strings.TrimSpace(task.ResumeFrom)
+		task.StateFile = strings.TrimSpace(task.StateFile)
+		if task.StateFile != "" && task.ResumeKey == "" {
+			return fmt.Errorf("task %d: state_file requires resume_key", i+1)
+		}
+		if task.ResumeKey != "" && task.StateFile == "" && task.ResumeFrom == "" {
+			return fmt.Errorf("task %d: resume_key requires resume_from or state_file", i+1)
+		}
+
 		if err := ensureDatabaseSupportsSource(&sourceDB); err != nil {
 			return fmt.Errorf("task %d: %w", i+1, err)
 		}
@@ -203,6 +277,8 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("task %d, index %d: partial indexes (where clause) are only supported for SQLite targets", i+1, j+1)
 			}
 		}
+
+		c.Tasks[i] = task
 	}
 
 	return nil
@@ -281,4 +357,27 @@ func (c *Config) DatabasesMap() map[string]DatabaseConfig {
 		out[k] = v
 	}
 	return out
+}
+
+func normalizeKeys(keys []string) ([]string, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	normalized := make([]string, 0, len(keys))
+	seen := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			return nil, fmt.Errorf("merge_keys contains empty value")
+		}
+		lower := strings.ToLower(trimmed)
+		if _, exists := seen[lower]; exists {
+			return nil, fmt.Errorf("merge_keys contains duplicate key '%s'", trimmed)
+		}
+		seen[lower] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+
+	return normalized, nil
 }
