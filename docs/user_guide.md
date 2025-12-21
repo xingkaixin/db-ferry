@@ -6,7 +6,7 @@ db-ferry 是一个数据搬运工具,它可以帮助你把数据从一个数据�
 
 ### 它能做什么?
 
-- 支持 Oracle、MySQL 和 SQLite 三种数据库之间的数据迁移
+- 支持 Oracle、MySQL、PostgreSQL、SQL Server、SQLite 和 DuckDB 之间的数据迁移
 - 自动创建目标表结构(无需手动建表)
 - 支持批量数据迁移,效率高
 - 提供进度条,实时查看迁移状态
@@ -68,6 +68,8 @@ name = "本地数据文件"
 type = "sqlite"
 path = "./mydata.db"          # 数据库文件路径(可以是相对或绝对路径)
 ```
+
+PostgreSQL 和 SQL Server 的配置方式与 MySQL 类似,使用 `type = "postgresql"` 或 `type = "sqlserver"` 并填写 `host`、`port`、`database`、`user`、`password` 即可。
 
 #### 示例4:同时定义多个数据库
 

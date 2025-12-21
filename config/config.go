@@ -9,10 +9,12 @@ import (
 
 // Supported database types.
 const (
-	DatabaseTypeOracle = "oracle"
-	DatabaseTypeMySQL  = "mysql"
-	DatabaseTypeSQLite = "sqlite"
-	DatabaseTypeDuckDB = "duckdb"
+	DatabaseTypeOracle     = "oracle"
+	DatabaseTypeMySQL      = "mysql"
+	DatabaseTypeSQLite     = "sqlite"
+	DatabaseTypeDuckDB     = "duckdb"
+	DatabaseTypePostgreSQL = "postgresql"
+	DatabaseTypeSQLServer  = "sqlserver"
 )
 
 // Supported task modes.
@@ -156,6 +158,14 @@ func (c *Config) Validate() error {
 		case DatabaseTypeMySQL:
 			if db.Port == "" {
 				db.Port = "3306"
+			}
+		case DatabaseTypePostgreSQL:
+			if db.Port == "" {
+				db.Port = "5432"
+			}
+		case DatabaseTypeSQLServer:
+			if db.Port == "" {
+				db.Port = "1433"
 			}
 		}
 
@@ -315,6 +325,32 @@ func validateDatabaseConfig(db *DatabaseConfig) error {
 		if db.Database == "" {
 			return fmt.Errorf("database is required for MySQL database")
 		}
+	case DatabaseTypePostgreSQL:
+		if db.Host == "" {
+			return fmt.Errorf("host is required for PostgreSQL database")
+		}
+		if db.User == "" {
+			return fmt.Errorf("user is required for PostgreSQL database")
+		}
+		if db.Password == "" {
+			return fmt.Errorf("password is required for PostgreSQL database")
+		}
+		if db.Database == "" {
+			return fmt.Errorf("database is required for PostgreSQL database")
+		}
+	case DatabaseTypeSQLServer:
+		if db.Host == "" {
+			return fmt.Errorf("host is required for SQL Server database")
+		}
+		if db.User == "" {
+			return fmt.Errorf("user is required for SQL Server database")
+		}
+		if db.Password == "" {
+			return fmt.Errorf("password is required for SQL Server database")
+		}
+		if db.Database == "" {
+			return fmt.Errorf("database is required for SQL Server database")
+		}
 	case DatabaseTypeSQLite, DatabaseTypeDuckDB:
 		if db.Path == "" {
 			return fmt.Errorf("path is required for %s database", db.Type)
@@ -328,7 +364,7 @@ func validateDatabaseConfig(db *DatabaseConfig) error {
 
 func ensureDatabaseSupportsSource(db *DatabaseConfig) error {
 	switch strings.ToLower(db.Type) {
-	case DatabaseTypeOracle, DatabaseTypeMySQL, DatabaseTypeSQLite, DatabaseTypeDuckDB:
+	case DatabaseTypeOracle, DatabaseTypeMySQL, DatabaseTypeSQLite, DatabaseTypeDuckDB, DatabaseTypePostgreSQL, DatabaseTypeSQLServer:
 		return nil
 	default:
 		return fmt.Errorf("database '%s' of type '%s' cannot be used as source", db.Name, db.Type)
@@ -337,7 +373,7 @@ func ensureDatabaseSupportsSource(db *DatabaseConfig) error {
 
 func ensureDatabaseSupportsTarget(db *DatabaseConfig) error {
 	switch strings.ToLower(db.Type) {
-	case DatabaseTypeOracle, DatabaseTypeMySQL, DatabaseTypeSQLite, DatabaseTypeDuckDB:
+	case DatabaseTypeOracle, DatabaseTypeMySQL, DatabaseTypeSQLite, DatabaseTypeDuckDB, DatabaseTypePostgreSQL, DatabaseTypeSQLServer:
 		return nil
 	default:
 		return fmt.Errorf("database '%s' of type '%s' cannot be used as target", db.Name, db.Type)

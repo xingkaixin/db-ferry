@@ -118,6 +118,18 @@ func (m *ConnectionManager) openConnection(dbCfg config.DatabaseConfig) (*connec
 			return nil, err
 		}
 		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
+	case config.DatabaseTypePostgreSQL:
+		conn, err := NewPostgresDB(buildPostgresDSN(dbCfg))
+		if err != nil {
+			return nil, err
+		}
+		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
+	case config.DatabaseTypeSQLServer:
+		conn, err := NewSQLServerDB(buildSQLServerDSN(dbCfg))
+		if err != nil {
+			return nil, err
+		}
+		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
 	default:
 		return nil, fmt.Errorf("unsupported database type '%s'", dbCfg.Type)
 	}
@@ -142,5 +154,25 @@ func buildMySQLDSN(dbCfg config.DatabaseConfig) string {
 		dbCfg.Port,
 		dbCfg.Database,
 		params,
+	)
+}
+
+func buildPostgresDSN(dbCfg config.DatabaseConfig) string {
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s",
+		dbCfg.Host,
+		dbCfg.Port,
+		dbCfg.User,
+		dbCfg.Password,
+		dbCfg.Database,
+	)
+}
+
+func buildSQLServerDSN(dbCfg config.DatabaseConfig) string {
+	return fmt.Sprintf("sqlserver://%s:%s@%s:%s?database=%s",
+		dbCfg.User,
+		dbCfg.Password,
+		dbCfg.Host,
+		dbCfg.Port,
+		dbCfg.Database,
 	)
 }

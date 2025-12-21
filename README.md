@@ -2,11 +2,11 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
- A Go command-line utility that ferries data between Oracle, MySQL, SQLite, and DuckDB databases using declarative tasks. The tool automatically creates target schemas, streams data in batches with progress tracking, and supports flexible routing through named database aliases.
+ A Go command-line utility that ferries data between Oracle, MySQL, PostgreSQL, SQL Server, SQLite, and DuckDB databases using declarative tasks. The tool automatically creates target schemas, streams data in batches with progress tracking, and supports flexible routing through named database aliases.
 
  ## Features
 
- - Connects to Oracle via `github.com/sijms/go-ora/v2`, MySQL via `github.com/go-sql-driver/mysql`, SQLite via `github.com/mattn/go-sqlite3`, and DuckDB via `github.com/duckdb/duckdb-go/v2`
+ - Connects to Oracle via `github.com/sijms/go-ora/v2`, MySQL via `github.com/go-sql-driver/mysql`, PostgreSQL via `github.com/lib/pq`, SQL Server via `github.com/denisenkom/go-mssqldb`, SQLite via `github.com/mattn/go-sqlite3`, and DuckDB via `github.com/duckdb/duckdb-go/v2`
 - Declarative `task.toml` with alias-based source/target selection and optional index creation
 - Automatic table DDL generation based on source column metadata
 - Batch inserts with transactional guarantees and efficient memory usage
@@ -91,8 +91,8 @@
 
  ### Database definitions
 
- - `type`: `oracle`, `mysql`, `sqlite`, or `duckdb`
- - Oracle/MySQL require host, port, credentials, and service/database identifiers
+ - `type`: `oracle`, `mysql`, `postgresql`, `sqlserver`, `sqlite`, or `duckdb`
+ - Oracle requires host, port, credentials, and service; MySQL/PostgreSQL/SQL Server require host, port, credentials, and database
  - SQLite and DuckDB only require a file `path` (relative or absolute, `:memory:` works for DuckDB)
 
  ### Task definitions
@@ -136,7 +136,7 @@
 
  ## Data type mapping (high level)
 
- | Source Type (Oracle/MySQL) | Target Mapping |
+ | Source Type (Oracle/MySQL/PostgreSQL/SQL Server) | Target Mapping |
  |---------------------------|----------------|
  | NUMBER / DECIMAL          | INTEGER or REAL (precision-aware) |
  | VARCHAR / CHAR / TEXT     | TEXT |
@@ -160,6 +160,8 @@
  │   ├── mysql.go            # MySQL source/target implementation
  │   ├── oracle.go           # Oracle source/target implementation
  │   ├── duckdb.go           # DuckDB source/target implementation
+ │   ├── postgres.go         # PostgreSQL source/target implementation
+ │   ├── sqlserver.go        # SQL Server source/target implementation
  │   └── sqlite.go           # SQLite source/target implementation
  ├── processor/
  │   └── processor.go        # Task execution engine
