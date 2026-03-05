@@ -3,3 +3,4 @@ task.toml
 *.db
 dist
 *.zip
+.cache
