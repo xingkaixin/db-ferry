@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- 新增 `justfile`，统一提供 `fmt`/`fmt-check`/`lint`/`test`/`build`/`check` 开发命令
+- CI 新增质量检查阶段：`gofmt` 格式检查、`golangci-lint`、`go test`
+
 ## 0.5.0 - 2025-12-19
 - 增加同库迁移显式开关与跳过建表开关
 - 任务进度统计过滤忽略任务，并新增整体任务进度条

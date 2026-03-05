@@ -134,6 +134,33 @@
  - `-v`: Enable verbose logging with file/line prefixes
  - `-version`: Print build version and exit
 
+ ## Development Commands
+
+ `db-ferry` provides a `justfile` with common Go quality checks:
+
+ ```bash
+ # list all recipes
+ just
+
+ # format all go files
+ just fmt
+
+ # check formatting
+ just fmt-check
+
+ # run lint checks (golangci-lint)
+ just lint
+
+ # run tests
+ just test
+
+ # build all packages
+ just build
+
+ # run full local quality gate: fmt-check + lint + test
+ just check
+ ```
+
  ## Data type mapping (high level)
 
  | Source Type (Oracle/MySQL/PostgreSQL/SQL Server) | Target Mapping |
