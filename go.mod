@@ -4,6 +4,7 @@ go 1.25.2
 
 require (
 	github.com/BurntSushi/toml v1.5.0
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/duckdb/duckdb-go/v2 v2.5.1
 	github.com/go-sql-driver/mysql v1.9.3
@@ -16,7 +17,6 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect
 	github.com/apache/arrow-go/v18 v18.4.1 // indirect
 	github.com/duckdb/duckdb-go-bindings v0.1.22 // indirect
 	github.com/duckdb/duckdb-go-bindings/darwin-amd64 v0.1.22 // indirect
