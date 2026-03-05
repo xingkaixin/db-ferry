@@ -3,6 +3,8 @@
 ## Unreleased
 - 新增 `justfile`，统一提供 `fmt`/`fmt-check`/`lint`/`test`/`build`/`check` 开发命令
 - CI 新增质量检查阶段：`gofmt` 格式检查、`golangci-lint`、`go test`
+- 新增覆盖率门禁脚本 `scripts/coverage-check.sh`，并接入 `just test-cover` 与 CI 质量阶段
+- 新增核心模块测试（`main`、`config`、`database`、`processor`、`utils`），覆盖率门槛固定为全局 `>=80%`、分包 `>=70%`
 
 ## 0.5.0 - 2025-12-19
 - 增加同库迁移显式开关与跳过建表开关

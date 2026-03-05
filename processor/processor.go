@@ -18,6 +18,8 @@ type Processor struct {
 	stateFiles map[string]*stateFile
 }
 
+var sleepFn = time.Sleep
+
 func NewProcessor(manager *database.ConnectionManager, cfg *config.Config) *Processor {
 	return &Processor{
 		manager:    manager,
@@ -301,7 +303,7 @@ func (p *Processor) insertBatchWithRetry(targetDB database.TargetDB, task config
 		}
 		wait := time.Duration(attempt) * time.Second
 		log.Printf("Insert batch failed (attempt %d/%d): %v; retrying in %s", attempt, attempts, err, wait)
-		time.Sleep(wait)
+		sleepFn(wait)
 	}
 
 	return nil

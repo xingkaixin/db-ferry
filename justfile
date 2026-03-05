@@ -33,8 +33,13 @@ test:
     mkdir -p .cache/go-build
     GOCACHE=$(pwd)/.cache/go-build {{go_cmd}} test ./...
 
+test-cover:
+    mkdir -p .cache/go-build
+    mkdir -p .cache/coverage
+    GO_BIN=$({{go_cmd}} env GOROOT)/bin/go GOCACHE=$(pwd)/.cache/go-build bash scripts/coverage-check.sh
+
 build:
     mkdir -p .cache/go-build
     CGO_ENABLED=1 GOCACHE=$(pwd)/.cache/go-build {{go_cmd}} build .
 
-check: fmt-check lint test
+check: fmt-check lint test-cover

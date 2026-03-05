@@ -154,12 +154,20 @@
  # run tests
  just test
 
+ # run coverage gate (global >=80%, each package >=70%)
+ just test-cover
+
  # build all packages
  just build
 
- # run full local quality gate: fmt-check + lint + test
+ # run full local quality gate: fmt-check + lint + test-cover
  just check
  ```
+
+ Coverage rules:
+ - Global coverage must be `>= 80%`
+ - Each package coverage must be `>= 70%`
+ - Any package without test files is treated as failure in `test-cover`
 
  ## Data type mapping (high level)
 
