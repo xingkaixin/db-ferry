@@ -1,0 +1,18 @@
+{
+  "name": "db-ferry-linux-x64",
+  "version": "0.0.0-dev",
+  "description": "Prebuilt db-ferry binary for linux x64",
+  "license": "MIT",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/db-ferry"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
