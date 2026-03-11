@@ -16,6 +16,7 @@ if (!packageDir) {
 const manifestPath = join(packageDir, "package.json");
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 const spec = `${manifest.name}@${manifest.version}`;
+const publishTarget = packageDir === "." ? "." : `./${packageDir.replace(/^\.?\//, "")}`;
 
 try {
   await execFileAsync("npm", ["view", spec, "version"], { stdio: "ignore" });
@@ -23,8 +24,8 @@ try {
 } catch {
   console.log(`[publish] publishing ${spec}`);
   const args = ["publish"];
-  if (packageDir !== ".") {
-    args.push(packageDir);
+  if (publishTarget !== ".") {
+    args.push(publishTarget);
   }
   args.push("--access", "public");
 
