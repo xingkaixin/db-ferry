@@ -40,8 +40,8 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 	flags.SetOutput(stderr)
 
 	var (
-		tomlPath = flags.String("config", defaultTomlPath, "Path to task.toml configuration file")
-		verbose  = flags.Bool("v", false, "Enable verbose logging")
+		tomlPath    = flags.String("config", defaultTomlPath, "Path to task.toml configuration file")
+		verbose     = flags.Bool("v", false, "Enable verbose logging")
 		showVersion = flags.Bool("version", false, "Show version information")
 	)
 

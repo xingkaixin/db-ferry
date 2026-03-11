@@ -47,7 +47,7 @@
 6. PR / 分支 CI 由 [test.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/test.yml) 执行质量门禁（`just fmt-check`、`just lint`、`just test-cover`）
 
 ## 发布流程（简版）
-- GitHub Actions 触发条件：`push main` 或 `v*` tag，见 [build.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/build.yml)。
+- GitHub Actions 触发条件：`v*` tag push，见 [build.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/build.yml)。
 - PR / 分支测试与发布拆分：测试见 [test.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/test.yml)，构建发布见 [build.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/build.yml)。
 - 构建矩阵：Linux `amd64/arm64`、macOS `amd64/arm64`、Windows `amd64`。
 - npm 发布采用主包 `db-ferry` + 平台包 `db-ferry-{os}-{arch}` 的结构；tag 发布时先发平台包，再发主包。
