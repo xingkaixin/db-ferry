@@ -35,7 +35,7 @@
  | Linux | arm64 | `db-ferry-linux-arm64` | Included via main `db-ferry` package |
  | macOS | x64 | `db-ferry-darwin-x64` | Included via main `db-ferry` package |
  | macOS | arm64 | `db-ferry-darwin-arm64` | Included via main `db-ferry` package |
- | Windows | x64 | `db-ferry-win32-x64` | Included via main `db-ferry` package |
+| Windows | x64 | `db-ferry-windows-x64` | Included via main `db-ferry` package; renamed from `db-ferry-win32-x64` to avoid npm spam detection |
 
  > Windows arm64 npm binaries are not published yet. DuckDB remains unsupported on Windows builds.
 
@@ -195,9 +195,10 @@
 
  ## Release
 
- - Tag pushes matching `v*` trigger multi-platform binary builds and npm publishing
- - npm publishing expects a repository secret named `NPM_TOKEN`
- - Published package layout uses one public main package (`db-ferry`) plus per-platform binary packages via `optionalDependencies`
+- Tag pushes matching `v*` trigger multi-platform binary builds and npm publishing
+- npm publishing expects a repository secret named `NPM_TOKEN`
+- Published package layout uses one public main package (`db-ferry`) plus per-platform binary packages via `optionalDependencies`
+- npm publish steps skip package versions that already exist, so a fixed workflow can rerun the same tag release to backfill only the missing packages
 
  Coverage rules:
  - Global coverage must be `>= 80%`

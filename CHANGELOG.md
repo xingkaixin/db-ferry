@@ -3,8 +3,9 @@
 ## [0.6.0] - 2026-03-11
 - Added npm binary distribution scaffolding: a main `db-ferry` package plus platform packages named `db-ferry-{os}-{arch}`, supporting both `npm install -g db-ferry` and `npx db-ferry`
 - Updated the build workflow to produce per-platform binaries and publish npm packages automatically on tag releases
+- Renamed the Windows npm binary package to `db-ferry-windows-x64` to avoid npm spam detection, and made npm publishing resumable for reruns of the same tag
 - Changed `-version` to print an injected build version so Git tags, Go binaries, and npm package versions share one source of truth
-- Added a standalone GitHub Actions test workflow `test.yml` for PRs and non-tag pushes, running `just fmt-check`, `just lint`, and `just test-cover`
+- Added a standalone GitHub Actions test workflow `test.yml` for PRs and non-tag pushes, running `just fmt-check`, `golangci-lint-action`, and `scripts/coverage-check.sh`
 - Added `db-ferry config init` to generate the built-in `task.toml` sample in the current directory and fail if the target file already exists
 - Added a `justfile` with shared development commands: `fmt`, `fmt-check`, `lint`, `test`, `build`, and `check`
 - Added a CI quality stage covering `gofmt`, `golangci-lint`, and `go test`

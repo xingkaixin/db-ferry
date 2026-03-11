@@ -36,7 +36,7 @@ db-ferry -version
 npx db-ferry -version
 ```
 
-当前 npm 预编译二进制支持 Linux/macOS 的 x64 与 arm64,以及 Windows x64。Windows arm64 暂未提供 npm 二进制包; Windows 上若配置 DuckDB 仍会报“不支持”。
+当前 npm 预编译二进制支持 Linux/macOS 的 x64 与 arm64,以及 Windows x64。Windows x64 对应的平台包名为 `db-ferry-windows-x64`。Windows arm64 暂未提供 npm 二进制包; Windows 上若配置 DuckDB 仍会报“不支持”。
 
 先在当前目录执行下面的命令生成示例配置:
 

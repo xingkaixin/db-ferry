@@ -23,6 +23,6 @@
     "db-ferry-darwin-x64": "0.0.0-dev",
     "db-ferry-linux-arm64": "0.0.0-dev",
     "db-ferry-linux-x64": "0.0.0-dev",
-    "db-ferry-win32-x64": "0.0.0-dev"
+    "db-ferry-windows-x64": "0.0.0-dev"
   }
 }

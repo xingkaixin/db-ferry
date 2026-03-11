@@ -15,7 +15,7 @@ const packageJsonFiles = [
   "npm/db-ferry-darwin-x64/package.json",
   "npm/db-ferry-linux-arm64/package.json",
   "npm/db-ferry-linux-x64/package.json",
-  "npm/db-ferry-win32-x64/package.json",
+  "npm/db-ferry-windows-x64/package.json",
 ];
 
 for (const file of packageJsonFiles) {

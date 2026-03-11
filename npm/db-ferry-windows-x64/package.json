@@ -1,5 +1,5 @@
 {
-  "name": "db-ferry-win32-x64",
+  "name": "db-ferry-windows-x64",
   "version": "0.0.0-dev",
   "description": "Prebuilt db-ferry binary for windows x64",
   "license": "MIT",

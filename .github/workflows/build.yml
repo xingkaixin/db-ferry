@@ -1,5 +1,8 @@
 name: build
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
     tags:
@@ -12,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.25.2"
 
@@ -32,7 +35,7 @@ jobs:
           fi
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.10.1
           args: --timeout=5m ./...
@@ -72,7 +75,7 @@ jobs:
             goarch: arm64
             binary_name: db-ferry
             archive_suffix: darwin-arm64
-          - package_name: db-ferry-win32-x64
+          - package_name: db-ferry-windows-x64
             runner: windows-latest
             goos: windows
             goarch: amd64
@@ -81,12 +84,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.25.2"
 
@@ -165,12 +168,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
       - name: Download build artifacts
@@ -187,19 +190,19 @@ jobs:
           node scripts/prepare-npm-package.mjs npm/db-ferry-linux-arm64 .artifacts/db-ferry-linux-arm64-artifacts/db-ferry
           node scripts/prepare-npm-package.mjs npm/db-ferry-darwin-x64 .artifacts/db-ferry-darwin-x64-artifacts/db-ferry
           node scripts/prepare-npm-package.mjs npm/db-ferry-darwin-arm64 .artifacts/db-ferry-darwin-arm64-artifacts/db-ferry
-          node scripts/prepare-npm-package.mjs npm/db-ferry-win32-x64 .artifacts/db-ferry-win32-x64-artifacts/db-ferry.exe
+          node scripts/prepare-npm-package.mjs npm/db-ferry-windows-x64 .artifacts/db-ferry-windows-x64-artifacts/db-ferry.exe
 
       - name: Publish platform packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm publish ./npm/db-ferry-linux-x64 --access public
-          npm publish ./npm/db-ferry-linux-arm64 --access public
-          npm publish ./npm/db-ferry-darwin-x64 --access public
-          npm publish ./npm/db-ferry-darwin-arm64 --access public
-          npm publish ./npm/db-ferry-win32-x64 --access public
+          node scripts/publish-npm-package.mjs npm/db-ferry-linux-x64
+          node scripts/publish-npm-package.mjs npm/db-ferry-linux-arm64
+          node scripts/publish-npm-package.mjs npm/db-ferry-darwin-x64
+          node scripts/publish-npm-package.mjs npm/db-ferry-darwin-arm64
+          node scripts/publish-npm-package.mjs npm/db-ferry-windows-x64
 
       - name: Publish main package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+        run: node scripts/publish-npm-package.mjs .

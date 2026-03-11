@@ -3,8 +3,9 @@
 ## [0.6.0] - 2026-03-11
 - 新增 npm 二进制分发骨架：主包 `db-ferry` + 平台包 `db-ferry-{os}-{arch}`，支持 `npm install -g db-ferry` 与 `npx db-ferry`
 - 构建工作流改为按平台产出独立二进制，并在 tag 发布时自动发布 npm 包
+- 将 Windows npm 二进制包名调整为 `db-ferry-windows-x64` 以避开 npm spam detection，并让 npm 发布支持同一 tag 的失败重跑补发
 - `-version` 改为输出可注入的构建版本，统一 Git tag、Go 二进制与 npm 包版本真源
-- 新增独立 GitHub Actions 测试工作流 `test.yml`，对 PR 和非 tag push 执行 `just fmt-check`、`just lint`、`just test-cover`
+- 新增独立 GitHub Actions 测试工作流 `test.yml`，对 PR 和非 tag push 执行 `just fmt-check`、`golangci-lint-action` 与 `scripts/coverage-check.sh`
 - 新增 `db-ferry config init`，可在当前目录生成内置 `task.toml` 示例文件，若目标文件已存在则报错退出
 - 新增 `justfile`，统一提供 `fmt`/`fmt-check`/`lint`/`test`/`build`/`check` 开发命令
 - CI 新增质量检查阶段：`gofmt` 格式检查、`golangci-lint`、`go test`

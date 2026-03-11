@@ -13,7 +13,7 @@ if (!packageDir || !sourceBinary) {
   process.exit(1);
 }
 
-const isWindows = packageDir.includes("win32");
+const isWindows = sourceBinary.endsWith(".exe");
 const targetBinary = join(
   packageDir,
   "bin",

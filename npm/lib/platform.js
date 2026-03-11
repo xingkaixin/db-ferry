@@ -23,7 +23,7 @@ const PLATFORM_SPECS = {
   },
   "win32-x64": {
     supported: true,
-    packageName: "db-ferry-win32-x64",
+    packageName: "db-ferry-windows-x64",
     binaryRelativePath: "bin/db-ferry.exe",
   },
   "win32-arm64": {
