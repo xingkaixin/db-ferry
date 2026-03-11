@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"io"
@@ -13,10 +14,16 @@ import (
 )
 
 const (
-	defaultTomlPath = "task.toml"
+	defaultTomlPath      = "task.toml"
+	configCommandName    = "config"
+	configInitCommand    = "init"
+	configTemplateTarget = "task.toml"
 )
 
 var exitFn = os.Exit
+
+//go:embed task.toml.sample
+var defaultTaskTemplate string
 
 func main() {
 	code, err := run(os.Args[1:], os.Stdout, os.Stderr)
@@ -51,6 +58,10 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 		log.SetFlags(0)
 	}
 
+	if remainingArgs := flags.Args(); len(remainingArgs) > 0 {
+		return runCommand(remainingArgs, stdout)
+	}
+
 	log.Println("Starting multi-database migration tool...")
 
 	cfg, err := config.LoadConfig(*tomlPath)
@@ -73,5 +84,45 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 	}
 
 	log.Println("All tasks completed successfully!")
+	return 0, nil
+}
+
+func runCommand(args []string, stdout io.Writer) (int, error) {
+	switch args[0] {
+	case configCommandName:
+		return runConfigCommand(args[1:], stdout)
+	default:
+		return 2, fmt.Errorf("unknown command: %s", args[0])
+	}
+}
+
+func runConfigCommand(args []string, stdout io.Writer) (int, error) {
+	if len(args) == 0 {
+		return 2, fmt.Errorf("missing config subcommand")
+	}
+
+	switch args[0] {
+	case configInitCommand:
+		if len(args) > 1 {
+			return 2, fmt.Errorf("config init does not accept additional arguments")
+		}
+		return initConfigTemplate(stdout)
+	default:
+		return 2, fmt.Errorf("unknown config subcommand: %s", args[0])
+	}
+}
+
+func initConfigTemplate(stdout io.Writer) (int, error) {
+	if _, err := os.Stat(configTemplateTarget); err == nil {
+		return 1, fmt.Errorf("%s already exists in current directory", configTemplateTarget)
+	} else if !os.IsNotExist(err) {
+		return 1, fmt.Errorf("failed to check %s: %w", configTemplateTarget, err)
+	}
+
+	if err := os.WriteFile(configTemplateTarget, []byte(defaultTaskTemplate), 0o644); err != nil {
+		return 1, fmt.Errorf("failed to write %s: %w", configTemplateTarget, err)
+	}
+
+	fmt.Fprintf(stdout, "Created %s in current directory\n", configTemplateTarget)
 	return 0, nil
 }

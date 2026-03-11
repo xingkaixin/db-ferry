@@ -87,6 +87,78 @@ func TestRunConfigError(t *testing.T) {
 	}
 }
 
+func TestRunConfigInitCreatesTaskToml(t *testing.T) {
+	dir := t.TempDir()
+	chdirForTest(t, dir)
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, runErr := run([]string{"config", "init"}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run() error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run() code = %d, want 0", code)
+	}
+	if got := out.String(); !strings.Contains(got, "Created task.toml") {
+		t.Fatalf("unexpected output: %q", got)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "task.toml"))
+	if err != nil {
+		t.Fatalf("read generated config error = %v", err)
+	}
+	if string(got) != defaultTaskTemplate {
+		t.Fatalf("generated config does not match sample")
+	}
+}
+
+func TestRunConfigInitFailsWhenTaskTomlExists(t *testing.T) {
+	dir := t.TempDir()
+	chdirForTest(t, dir)
+
+	original := []byte("existing = true\n")
+	if err := os.WriteFile(filepath.Join(dir, "task.toml"), original, 0o644); err != nil {
+		t.Fatalf("write existing config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"config", "init"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error when task.toml exists")
+	}
+	if code != 1 {
+		t.Fatalf("run() code = %d, want 1", code)
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, readErr := os.ReadFile(filepath.Join(dir, "task.toml"))
+	if readErr != nil {
+		t.Fatalf("read existing config error = %v", readErr)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("existing task.toml was modified")
+	}
+}
+
+func TestRunConfigInitRejectsExtraArgs(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"config", "init", "extra"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for extra args")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "does not accept additional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunHappyPath(t *testing.T) {
 	oldWriter := log.Writer()
 	log.SetOutput(io.Discard)
@@ -155,4 +227,21 @@ func TestRunHappyPath(t *testing.T) {
 	if cnt != 2 {
 		t.Fatalf("target row count = %d, want 2", cnt)
 	}
+}
+
+func chdirForTest(t *testing.T, dir string) {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory error = %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("change working directory error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatalf("restore working directory error = %v", err)
+		}
+	})
 }

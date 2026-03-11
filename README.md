@@ -115,6 +115,9 @@
  ## Usage
 
  ```bash
+ # Generate task.toml from the built-in sample in the current directory
+ ./db-ferry config init
+
  # Run with default task.toml
  ./db-ferry
 
@@ -130,6 +133,7 @@
 
  ### Command line options
 
+ - `config init`: Create `task.toml` in the current directory from the built-in sample; fails if the file already exists
  - `-config`: Path to the TOML configuration file (default: `task.toml`)
  - `-v`: Enable verbose logging with file/line prefixes
  - `-version`: Print build version and exit
