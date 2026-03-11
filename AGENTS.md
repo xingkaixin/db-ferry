@@ -44,7 +44,7 @@
 3. 跑构建检查：`GOCACHE=$(pwd)/.cache/go-build mise x go@1.25.2 -- go build ./...`
 4. 若改动配置/行为：同步更新 `README.md`、`docs/user_guide.md`、`CHANGELOG.md`、`CHANGELOG_zh.md`
 5. 提交信息建议沿用既有风格：`feat: ...`、`fix: ...`、`ci: ...`
-6. PR / 分支 CI 由 [test.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/test.yml) 执行质量门禁（`just fmt-check`、`just lint`、`just test-cover`）
+6. PR / 分支 CI 由 [test.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/test.yml) 执行质量门禁（`just fmt-check`、`golangci-lint-action`、`scripts/coverage-check.sh`）
 
 ## 发布流程（简版）
 - GitHub Actions 触发条件：`v*` tag push，见 [build.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/build.yml)。

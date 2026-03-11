@@ -37,7 +37,13 @@ jobs:
         run: just fmt-check
 
       - name: Run golangci-lint
-        run: just lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.10.1
+          args: --timeout=5m ./...
 
       - name: Run coverage gate
-        run: just test-cover
+        run: |
+          GO_BIN="$(go env GOROOT)/bin/go" \
+          GOCACHE="$(pwd)/.cache/go-build" \
+          bash scripts/coverage-check.sh
