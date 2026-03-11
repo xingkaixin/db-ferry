@@ -4,8 +4,8 @@ import "testing"
 
 func TestProgressManagerWithTotal(t *testing.T) {
 	pm := NewProgressManagerWithUnit(2, "test", "")
-	if pm == nil {
-		t.Fatalf("NewProgressManagerWithUnit() returned nil")
+	if pm.bar == nil {
+		t.Fatal("NewProgressManagerWithUnit() should initialize progress bar")
 	}
 
 	pm.Increment()

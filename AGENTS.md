@@ -41,9 +41,11 @@
 3. 跑构建检查：`GOCACHE=$(pwd)/.cache/go-build mise x go@1.25.2 -- go build ./...`
 4. 若改动配置/行为：同步更新 `README.md`、`docs/user_guide.md`、`CHANGELOG.md`
 5. 提交信息建议沿用既有风格：`feat: ...`、`fix: ...`、`ci: ...`
+6. PR / 分支 CI 由 [test.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/test.yml) 执行质量门禁（`just fmt-check`、`just lint`、`just test-cover`）
 
 ## 发布流程（简版）
 - GitHub Actions 触发条件：`push main` 或 `v*` tag，见 [build.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/build.yml)。
+- PR / 分支测试与发布拆分：测试见 [test.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/test.yml)，构建发布见 [build.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/build.yml)。
 - 构建矩阵：Linux amd64、Windows amd64、macOS universal（amd64+arm64）。
 - 产物命名：`db-ferry-<version>-<platform>.tgz`（上传为 artifact）。
 

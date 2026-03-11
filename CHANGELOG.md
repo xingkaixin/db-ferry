@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- 新增独立 GitHub Actions 测试工作流 `test.yml`，对 PR 和非 tag push 执行 `just fmt-check`、`just lint`、`just test-cover`
 - 新增 `db-ferry config init`，可在当前目录生成内置 `task.toml` 示例文件，若目标文件已存在则报错退出
 - 新增 `justfile`，统一提供 `fmt`/`fmt-check`/`lint`/`test`/`build`/`check` 开发命令
 - CI 新增质量检查阶段：`gofmt` 格式检查、`golangci-lint`、`go test`
