@@ -16,6 +16,31 @@
 
  ## Installation
 
+ ### Install from npm
+
+ `db-ferry` can be installed globally or executed directly with `npx`:
+
+ ```bash
+ npm install -g db-ferry
+ db-ferry -version
+
+ npx db-ferry -version
+ ```
+
+ Supported npm binary packages:
+
+ | Platform | Arch | npm package | Notes |
+ |----------|------|-------------|-------|
+ | Linux | x64 | `db-ferry-linux-x64` | Included via main `db-ferry` package |
+ | Linux | arm64 | `db-ferry-linux-arm64` | Included via main `db-ferry` package |
+ | macOS | x64 | `db-ferry-darwin-x64` | Included via main `db-ferry` package |
+ | macOS | arm64 | `db-ferry-darwin-arm64` | Included via main `db-ferry` package |
+ | Windows | x64 | `db-ferry-win32-x64` | Included via main `db-ferry` package |
+
+ > Windows arm64 npm binaries are not published yet. DuckDB remains unsupported on Windows builds.
+
+ ### Build from source
+
  1. Clone the repository:
 
     ```bash
@@ -116,19 +141,19 @@
 
  ```bash
  # Generate task.toml from the built-in sample in the current directory
- ./db-ferry config init
+ db-ferry config init
 
  # Run with default task.toml
- ./db-ferry
+ db-ferry
 
  # Specify an alternate configuration file
- ./db-ferry -config ./configs/task.toml
+ db-ferry -config ./configs/task.toml
 
  # Enable verbose logging
- ./db-ferry -v
+ db-ferry -v
 
  # Show version information
- ./db-ferry -version
+ db-ferry -version
  ```
 
  ### Command line options
@@ -167,6 +192,12 @@
  # run full local quality gate: fmt-check + lint + test-cover
  just check
  ```
+
+ ## Release
+
+ - Tag pushes matching `v*` trigger multi-platform binary builds and npm publishing
+ - npm publishing expects a repository secret named `NPM_TOKEN`
+ - Published package layout uses one public main package (`db-ferry`) plus per-platform binary packages via `optionalDependencies`
 
  Coverage rules:
  - Global coverage must be `>= 80%`

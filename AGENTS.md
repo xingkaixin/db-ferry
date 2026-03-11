@@ -22,6 +22,9 @@
   - [config.go](/Users/Kevin/workspace/projects/work/db-ferry/config/config.go) 的 `TaskConfig` 与 `Validate()`
   - [task.toml.sample](/Users/Kevin/workspace/projects/work/db-ferry/task.toml.sample)
   - [README.md](/Users/Kevin/workspace/projects/work/db-ferry/README.md) 与 [user_guide.md](/Users/Kevin/workspace/projects/work/db-ferry/docs/user_guide.md)
+- 维护 changelog 时，必须同步：
+  - [CHANGELOG.md](/Users/Kevin/workspace/projects/work/db-ferry/CHANGELOG.md) 英文版
+  - [CHANGELOG_zh.md](/Users/Kevin/workspace/projects/work/db-ferry/CHANGELOG_zh.md) 中文版
 - 新增数据库类型时，必须同步：
   - [config.go](/Users/Kevin/workspace/projects/work/db-ferry/config/config.go) 类型常量与 `validateDatabaseConfig`
   - [manager.go](/Users/Kevin/workspace/projects/work/db-ferry/database/manager.go) 的 `openConnection`
@@ -39,14 +42,15 @@
 1. 确认工具链：`mise x go@1.25.2 -- go version`
 2. 跑编译级回归：`GOCACHE=$(pwd)/.cache/go-build mise x go@1.25.2 -- go test ./...`
 3. 跑构建检查：`GOCACHE=$(pwd)/.cache/go-build mise x go@1.25.2 -- go build ./...`
-4. 若改动配置/行为：同步更新 `README.md`、`docs/user_guide.md`、`CHANGELOG.md`
+4. 若改动配置/行为：同步更新 `README.md`、`docs/user_guide.md`、`CHANGELOG.md`、`CHANGELOG_zh.md`
 5. 提交信息建议沿用既有风格：`feat: ...`、`fix: ...`、`ci: ...`
 6. PR / 分支 CI 由 [test.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/test.yml) 执行质量门禁（`just fmt-check`、`just lint`、`just test-cover`）
 
 ## 发布流程（简版）
 - GitHub Actions 触发条件：`push main` 或 `v*` tag，见 [build.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/build.yml)。
 - PR / 分支测试与发布拆分：测试见 [test.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/test.yml)，构建发布见 [build.yml](/Users/Kevin/workspace/projects/work/db-ferry/.github/workflows/build.yml)。
-- 构建矩阵：Linux amd64、Windows amd64、macOS universal（amd64+arm64）。
+- 构建矩阵：Linux `amd64/arm64`、macOS `amd64/arm64`、Windows `amd64`。
+- npm 发布采用主包 `db-ferry` + 平台包 `db-ferry-{os}-{arch}` 的结构；tag 发布时先发平台包，再发主包。
 - 产物命名：`db-ferry-<version>-<platform>.tgz`（上传为 artifact）。
 
 ## 常见坑

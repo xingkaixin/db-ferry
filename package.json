@@ -1,0 +1,28 @@
+{
+  "name": "db-ferry",
+  "version": "0.0.0-dev",
+  "description": "Prebuilt db-ferry CLI distributed through npm",
+  "license": "MIT",
+  "bin": {
+    "db-ferry": "npm/bin/db-ferry.js"
+  },
+  "files": [
+    "npm/bin",
+    "npm/lib",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "optionalDependencies": {
+    "db-ferry-darwin-arm64": "0.0.0-dev",
+    "db-ferry-darwin-x64": "0.0.0-dev",
+    "db-ferry-linux-arm64": "0.0.0-dev",
+    "db-ferry-linux-x64": "0.0.0-dev",
+    "db-ferry-win32-x64": "0.0.0-dev"
+  }
+}

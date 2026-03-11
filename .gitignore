@@ -8,3 +8,8 @@ dist
 
 # dist
 db-ferry
+npm/db-ferry-darwin-arm64/bin/db-ferry
+npm/db-ferry-darwin-x64/bin/db-ferry
+npm/db-ferry-linux-arm64/bin/db-ferry
+npm/db-ferry-linux-x64/bin/db-ferry
+npm/db-ferry-win32-x64/bin/db-ferry.exe

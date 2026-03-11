@@ -1,30 +1,33 @@
 # Changelog
 
-## Unreleased
-- 新增独立 GitHub Actions 测试工作流 `test.yml`，对 PR 和非 tag push 执行 `just fmt-check`、`just lint`、`just test-cover`
-- 新增 `db-ferry config init`，可在当前目录生成内置 `task.toml` 示例文件，若目标文件已存在则报错退出
-- 新增 `justfile`，统一提供 `fmt`/`fmt-check`/`lint`/`test`/`build`/`check` 开发命令
-- CI 新增质量检查阶段：`gofmt` 格式检查、`golangci-lint`、`go test`
-- 新增覆盖率门禁脚本 `scripts/coverage-check.sh`，并接入 `just test-cover` 与 CI 质量阶段
-- 新增核心模块测试（`main`、`config`、`database`、`processor`、`utils`），覆盖率门槛固定为全局 `>=80%`、分包 `>=70%`
+## [0.6.0] - 2026-03-11
+- Added npm binary distribution scaffolding: a main `db-ferry` package plus platform packages named `db-ferry-{os}-{arch}`, supporting both `npm install -g db-ferry` and `npx db-ferry`
+- Updated the build workflow to produce per-platform binaries and publish npm packages automatically on tag releases
+- Changed `-version` to print an injected build version so Git tags, Go binaries, and npm package versions share one source of truth
+- Added a standalone GitHub Actions test workflow `test.yml` for PRs and non-tag pushes, running `just fmt-check`, `just lint`, and `just test-cover`
+- Added `db-ferry config init` to generate the built-in `task.toml` sample in the current directory and fail if the target file already exists
+- Added a `justfile` with shared development commands: `fmt`, `fmt-check`, `lint`, `test`, `build`, and `check`
+- Added a CI quality stage covering `gofmt`, `golangci-lint`, and `go test`
+- Added the coverage gate script `scripts/coverage-check.sh` and wired it into `just test-cover` and the CI quality stage
+- Added core module tests for `main`, `config`, `database`, `processor`, and `utils`, with fixed coverage thresholds of `>=80%` globally and `>=70%` per package
 
-## 0.5.0 - 2025-12-19
-- 增加同库迁移显式开关与跳过建表开关
-- 任务进度统计过滤忽略任务，并新增整体任务进度条
-- 修复列类型扫描空指针与 Oracle 行数统计别名问题
-- Oracle 标识符统一引用，降低保留字/特殊字符风险
-- 更新使用文档与示例配置
+## [0.5.0] - 2025-12-19
+- Added an explicit opt-in flag for same-database migrations and a flag to skip table creation
+- Filtered ignored tasks out of progress totals and added an overall task progress bar
+- Fixed nil pointer column type scanning and the Oracle row count alias issue
+- Unified Oracle identifier quoting to reduce reserved-word and special-character risks
+- Updated the usage documentation and sample configuration
 
-## 0.4.0 - 2025-11-16
-- 新增 DuckDB 支持
-- 改进跨平台构建流程
+## [0.4.0] - 2025-11-16
+- Added DuckDB support
+- Improved the cross-platform build workflow
 
-## 0.3.0 - 2025-11-14
-- 增加面向非技术用户的完整使用手册
+## [0.3.0] - 2025-11-14
+- Added a complete user guide for non-technical users
 
-## 0.2.0 - 2025-10-26
-- 引入别名配置与多数据库路由能力
-- 增强跨平台构建支持
+## [0.2.0] - 2025-10-26
+- Introduced alias-based configuration and multi-database routing
+- Improved cross-platform build support
 
-## 0.1.0 - 2025-10-26
-- 初始数据迁移工具搭建
+## [0.1.0] - 2025-10-26
+- Initial data migration tool release

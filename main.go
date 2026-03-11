@@ -20,6 +20,8 @@ const (
 	configTemplateTarget = "task.toml"
 )
 
+var version = "dev"
+
 var exitFn = os.Exit
 
 //go:embed task.toml.sample
@@ -40,15 +42,15 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 	var (
 		tomlPath = flags.String("config", defaultTomlPath, "Path to task.toml configuration file")
 		verbose  = flags.Bool("v", false, "Enable verbose logging")
-		version  = flags.Bool("version", false, "Show version information")
+		showVersion = flags.Bool("version", false, "Show version information")
 	)
 
 	if err := flags.Parse(args); err != nil {
 		return 2, err
 	}
 
-	if *version {
-		fmt.Fprintln(stdout, "Multi-Source to SQLite Migration Tool v0.5.0 (Oracle/MySQL Support)")
+	if *showVersion {
+		fmt.Fprintf(stdout, "db-ferry %s\n", version)
 		return 0, nil
 	}
 

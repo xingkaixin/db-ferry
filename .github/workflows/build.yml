@@ -44,28 +44,42 @@ jobs:
 
   build:
     needs: quality
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.package_name }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: linux-amd64
-            os: ubuntu-latest
+          - package_name: db-ferry-linux-x64
+            runner: ubuntu-latest
             goos: linux
             goarch: amd64
-            bin: db-ferry
+            binary_name: db-ferry
             archive_suffix: linux-amd64
-          - name: windows-amd64
-            os: windows-latest
+          - package_name: db-ferry-linux-arm64
+            runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            binary_name: db-ferry
+            archive_suffix: linux-arm64
+          - package_name: db-ferry-darwin-x64
+            runner: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            binary_name: db-ferry
+            archive_suffix: darwin-amd64
+          - package_name: db-ferry-darwin-arm64
+            runner: macos-15
+            goos: darwin
+            goarch: arm64
+            binary_name: db-ferry
+            archive_suffix: darwin-arm64
+          - package_name: db-ferry-win32-x64
+            runner: windows-latest
             goos: windows
             goarch: amd64
-            bin: db-ferry.exe
+            binary_name: db-ferry.exe
             archive_suffix: windows-amd64
-          - name: mac-universal
-            os: macos-latest
-            bin: db-ferry
-            archive_suffix: darwin-universal
 
     steps:
       - name: Checkout
@@ -79,7 +93,7 @@ jobs:
           go-version: "1.25.2"
 
       - name: Install MSYS2 (Windows)
-        if: matrix.os == 'windows-latest'
+        if: startsWith(matrix.runner, 'windows')
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -90,7 +104,7 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Set artifact name
+      - name: Set version metadata
         shell: bash
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
@@ -101,53 +115,93 @@ jobs:
             short_sha=$(git rev-parse --short=7 HEAD)
             version="${latest_tag}-${short_sha}"
           fi
-          echo "VERSION=${version}" >> $GITHUB_ENV
-          echo "ARCHIVE_NAME=db-ferry-${version}-${{ matrix.archive_suffix }}.tgz" >> $GITHUB_ENV
 
-      - name: Build (Linux)
-        if: matrix.name == 'linux-amd64'
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          echo "ARCHIVE_NAME=db-ferry-${version}-${{ matrix.archive_suffix }}.tgz" >> "$GITHUB_ENV"
+
+      - name: Build (Unix)
+        if: ${{ !startsWith(matrix.runner, 'windows') }}
         env:
           CGO_ENABLED: "1"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          go build -o dist/${{ matrix.bin }}
+          go build -ldflags "-X main.version=${VERSION}" -o "dist/${{ matrix.binary_name }}"
 
       - name: Build (Windows)
-        if: matrix.name == 'windows-amd64'
+        if: startsWith(matrix.runner, 'windows')
         shell: msys2 {0}
         env:
           CGO_ENABLED: "1"
-          GOOS: windows
-          GOARCH: amd64
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          go build -o dist/${{ matrix.bin }}
+          go build -ldflags "-X main.version=${VERSION}" -o "dist/${{ matrix.binary_name }}"
 
-      - name: Build (macOS universal)
-        if: matrix.name == 'mac-universal'
-        env:
-          CGO_ENABLED: "1"
+      - name: Package (Unix)
+        if: ${{ !startsWith(matrix.runner, 'windows') }}
         run: |
-          mkdir -p dist
-          GOOS=darwin GOARCH=amd64 go build -o dist/db-ferry-darwin-amd64
-          GOOS=darwin GOARCH=arm64 go build -o dist/db-ferry-darwin-arm64
-          lipo -create -output dist/${{ matrix.bin }} dist/db-ferry-darwin-amd64 dist/db-ferry-darwin-arm64
-
-      - name: Package (Linux/macOS)
-        if: matrix.os != 'windows-latest'
-        run: |
-          tar -czf dist/${{ env.ARCHIVE_NAME }} -C dist ${{ matrix.bin }}
+          tar -czf "dist/${ARCHIVE_NAME}" -C dist "${{ matrix.binary_name }}"
 
       - name: Package (Windows)
-        if: matrix.os == 'windows-latest'
+        if: startsWith(matrix.runner, 'windows')
         shell: msys2 {0}
         run: |
-          tar -czf dist/${{ env.ARCHIVE_NAME }} -C dist ${{ matrix.bin }}
+          tar -czf "dist/${ARCHIVE_NAME}" -C dist "${{ matrix.binary_name }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARCHIVE_NAME }}
-          path: dist/${{ env.ARCHIVE_NAME }}
+          name: ${{ matrix.package_name }}-artifacts
+          path: dist/
+
+  publish-npm:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .artifacts
+
+      - name: Set npm package versions
+        run: node scripts/set-npm-version.mjs "${GITHUB_REF_NAME#v}"
+
+      - name: Stage platform binaries
+        run: |
+          node scripts/prepare-npm-package.mjs npm/db-ferry-linux-x64 .artifacts/db-ferry-linux-x64-artifacts/db-ferry
+          node scripts/prepare-npm-package.mjs npm/db-ferry-linux-arm64 .artifacts/db-ferry-linux-arm64-artifacts/db-ferry
+          node scripts/prepare-npm-package.mjs npm/db-ferry-darwin-x64 .artifacts/db-ferry-darwin-x64-artifacts/db-ferry
+          node scripts/prepare-npm-package.mjs npm/db-ferry-darwin-arm64 .artifacts/db-ferry-darwin-arm64-artifacts/db-ferry
+          node scripts/prepare-npm-package.mjs npm/db-ferry-win32-x64 .artifacts/db-ferry-win32-x64-artifacts/db-ferry.exe
+
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish ./npm/db-ferry-linux-x64 --access public
+          npm publish ./npm/db-ferry-linux-arm64 --access public
+          npm publish ./npm/db-ferry-darwin-x64 --access public
+          npm publish ./npm/db-ferry-darwin-arm64 --access public
+          npm publish ./npm/db-ferry-win32-x64 --access public
+
+      - name: Publish main package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

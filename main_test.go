@@ -63,7 +63,7 @@ func TestRunVersion(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("run() code = %d, want 0", code)
 	}
-	if got := out.String(); !strings.Contains(got, "Multi-Source to SQLite Migration Tool") {
+	if got := out.String(); !strings.Contains(got, "db-ferry dev") {
 		t.Fatalf("unexpected version output: %q", got)
 	}
 }
