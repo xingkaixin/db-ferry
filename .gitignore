@@ -7,7 +7,7 @@ dist
 
 
 # dist
-db-ferry
+/db-ferry
 npm/db-ferry-darwin-arm64/bin/db-ferry
 npm/db-ferry-darwin-x64/bin/db-ferry
 npm/db-ferry-linux-arm64/bin/db-ferry
