@@ -43,3 +43,10 @@ build:
     CGO_ENABLED=1 GOCACHE=$(pwd)/.cache/go-build {{go_cmd}} build .
 
 check: fmt-check lint test-cover
+
+
+# Deploy the static web site to Cloudflare Pages
+deploy-web:
+    @echo "🌐 Deploying web/ to Cloudflare Pages..."
+    wrangler pages deploy web --project-name=db-ferry --commit-dirty=true
+    @echo "✅ Web deployment complete!"
