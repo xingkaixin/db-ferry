@@ -1,8 +1,5 @@
 name: Test
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 on:
   pull_request:
     branches:
@@ -27,9 +24,6 @@ jobs:
         with:
           go-version: "1.25.2"
 
-      - name: Setup just
-        uses: extractions/setup-just@v3.1.0
-
       - name: Create cache directories
         run: |
           mkdir -p .cache/go-build
@@ -37,7 +31,15 @@ jobs:
           mkdir -p .cache/coverage
 
       - name: Verify formatting
-        run: just fmt-check
+        run: |
+          files=$(find . -type f -name '*.go' -not -path './.cache/*' -not -path './dist/*')
+          if [ -z "$files" ]; then exit 0; fi
+          unformatted=$(gofmt -l $files)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files:"
+            echo "$unformatted"
+            exit 1
+          fi
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
