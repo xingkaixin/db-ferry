@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>db-ferry — Cross-Database Migration Tool</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* ===== Theme tokens — palette from logo SVG ===== */
+    :root {
+      --bg: #050a12;
+      --bg-raised: #0a1220;
+      --bg-raised-hover: #0e1a2e;
+      --bg-code: #08101c;
+      --border: #1a2a40;
+      --border-glow: #2a4a6a;
+      --text: #e2ecf4;
+      --text-dim: #6b8299;
+      --accent: #49bfd0;
+      --accent-hover: #5ed4e7;
+      --accent-dim: rgba(73,191,208,.12);
+      --accent-glow: rgba(73,191,208,.25);
+      --teal: #28a0b8;
+      --green: #3fb950;
+      --nav-bg: rgba(5,10,18,.78);
+      --glass: rgba(10,18,32,.55);
+      --glass-border: rgba(73,191,208,.12);
+      --shadow-color: rgba(73,191,208,.06);
+      --logo-url: url("logo.svg");
+    }
+
+    [data-theme="light"] {
+      --bg: #f0f5fa;
+      --bg-raised: #ffffff;
+      --bg-raised-hover: #f8fbfe;
+      --bg-code: #eaf0f7;
+      --border: #d4e0ec;
+      --border-glow: #a8c0d8;
+      --text: #1a2838;
+      --text-dim: #5a7088;
+      --accent: #2088a0;
+      --accent-hover: #187088;
+      --accent-dim: rgba(32,136,160,.08);
+      --accent-glow: rgba(32,136,160,.15);
+      --teal: #1a7890;
+      --green: #1a7f37;
+      --nav-bg: rgba(240,245,250,.82);
+      --glass: rgba(255,255,255,.6);
+      --glass-border: rgba(32,136,160,.12);
+      --shadow-color: rgba(32,136,160,.06);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'PingFang SC', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      transition: background .4s, color .4s;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    code, pre, .mono {
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    }
+
+    a { color: var(--accent); text-decoration: none; transition: color .15s; }
+    a:hover { color: var(--accent-hover); }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ===== Background mesh grid ===== */
+    .bg-mesh {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(73,191,208,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(73,191,208,.03) 1px, transparent 1px);
+      background-size: 64px 64px;
+    }
+
+    [data-theme="light"] .bg-mesh {
+      background-image:
+        linear-gradient(rgba(32,136,160,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(32,136,160,.04) 1px, transparent 1px);
+    }
+
+    /* ===== Ambient glow orbs ===== */
+    .glow-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(100px);
+      pointer-events: none;
+      z-index: -1;
+      transition: opacity .6s;
+    }
+
+    .glow-orb-1 {
+      width: 500px;
+      height: 500px;
+      top: -150px;
+      left: -100px;
+      background: radial-gradient(circle, rgba(40,160,184,.12) 0%, transparent 70%);
+    }
+
+    .glow-orb-2 {
+      width: 600px;
+      height: 600px;
+      bottom: -200px;
+      right: -150px;
+      background: radial-gradient(circle, rgba(73,191,208,.08) 0%, transparent 70%);
+    }
+
+    .glow-orb-3 {
+      width: 400px;
+      height: 400px;
+      top: 40%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: radial-gradient(circle, rgba(73,191,208,.05) 0%, transparent 70%);
+      animation: orbPulse 8s ease-in-out infinite;
+    }
+
+    @keyframes orbPulse {
+      0%, 100% { opacity: .6; transform: translateX(-50%) scale(1); }
+      50% { opacity: 1; transform: translateX(-50%) scale(1.15); }
+    }
+
+    /* ===== Nav ===== */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(16px) saturate(1.4);
+      -webkit-backdrop-filter: blur(16px) saturate(1.4);
+      background: var(--nav-bg);
+      border-bottom: 1px solid var(--border);
+      transition: background .4s, border-color .4s;
+    }
+
+    .nav-inner {
+      max-width: 960px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+      padding: 0 24px;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+
+    .nav-logo svg {
+      width: 28px;
+      height: 28px;
+    }
+
+    .nav-logo-text {
+      font-family: 'SF Mono', 'Cascadia Code', monospace;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -.5px;
+      color: var(--accent);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: .82rem;
+      font-weight: 500;
+      color: var(--text-dim);
+      background: transparent;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all .2s;
+      font-family: inherit;
+    }
+
+    .nav-btn:hover {
+      background: var(--glass);
+      border-color: var(--glass-border);
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .nav-btn svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    /* ===== Hero ===== */
+    .hero {
+      text-align: center;
+      padding: 100px 24px 90px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -60px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(circle, rgba(73,191,208,.07) 0%, rgba(40,160,184,.03) 40%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-logo-wrap {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    .hero-logo-wrap svg {
+      width: 120px;
+      height: 120px;
+      filter: drop-shadow(0 0 30px rgba(73,191,208,.2));
+      animation: logoFloat 6s ease-in-out infinite;
+    }
+
+    @keyframes logoFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    .hero-name {
+      font-family: 'SF Mono', 'Cascadia Code', monospace;
+      font-size: 3.8rem;
+      font-weight: 800;
+      letter-spacing: -3px;
+      background: linear-gradient(135deg, #49bfd0, #28a0b8, #49bfd0);
+      background-size: 200% 200%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: gradientShift 6s ease-in-out infinite;
+      line-height: 1.1;
+    }
+
+    @keyframes gradientShift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+
+    .hero-slogan {
+      font-size: 1.35rem;
+      color: var(--text-dim);
+      margin: 14px 0 28px;
+      font-weight: 400;
+      letter-spacing: .3px;
+    }
+
+    .hero-desc {
+      max-width: 560px;
+      margin: 0 auto 40px;
+      color: var(--text-dim);
+      font-size: 1.02rem;
+      line-height: 1.75;
+    }
+
+    .hero-desc code {
+      background: var(--bg-code);
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: .9em;
+      color: var(--accent);
+      border: 1px solid var(--border);
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 10px;
+      font-size: .93rem;
+      font-weight: 600;
+      transition: all .25s;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      letter-spacing: .1px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #3aaac0, #49bfd0);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(73,191,208,.2), 0 1px 3px rgba(0,0,0,.2);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #2a90a8, #3aaac0);
+      box-shadow: 0 6px 28px rgba(73,191,208,.25), 0 1px 3px rgba(0,0,0,.2);
+      text-decoration: none;
+      transform: translateY(-2px);
+    }
+
+    .btn-outline {
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: var(--glass);
+      backdrop-filter: blur(8px);
+    }
+    .btn-outline:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      text-decoration: none;
+      transform: translateY(-2px);
+    }
+
+    /* ===== Section ===== */
+    section { padding: 90px 0; }
+
+    .section-label {
+      text-align: center;
+      font-size: .72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: var(--accent);
+      margin-bottom: 12px;
+      opacity: .7;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 10px;
+      letter-spacing: -.5px;
+    }
+
+    .section-sub {
+      text-align: center;
+      color: var(--text-dim);
+      margin-bottom: 52px;
+      font-size: .98rem;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      position: relative;
+    }
+
+    .divider::after {
+      content: '';
+      position: absolute;
+      top: -1px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+
+    /* ===== Features ===== */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .feature-card {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px 24px;
+      transition: all .3s cubic-bezier(.4,0,.2,1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      padding: 1px;
+      background: linear-gradient(135deg, transparent 40%, rgba(73,191,208,.15), transparent 60%);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      opacity: 0;
+      transition: opacity .3s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--border-glow);
+      background: var(--bg-raised-hover);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 32px var(--shadow-color);
+    }
+
+    .feature-card:hover::before { opacity: 1; }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--accent-dim);
+      border: 1px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      margin-bottom: 14px;
+    }
+
+    .feature-card h3 {
+      font-size: 1rem;
+      margin-bottom: 8px;
+      font-weight: 700;
+      letter-spacing: -.2px;
+    }
+
+    .feature-card p {
+      color: var(--text-dim);
+      font-size: .9rem;
+      line-height: 1.55;
+    }
+
+    .db-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 14px;
+    }
+
+    .db-tag {
+      background: var(--accent-dim);
+      color: var(--accent);
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: .75rem;
+      font-weight: 600;
+      font-family: 'SF Mono', monospace;
+      border: 1px solid var(--glass-border);
+    }
+
+    .feature-code {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-top: 14px;
+      font-size: .78rem;
+      line-height: 1.55;
+      color: var(--accent);
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    /* ===== Quick Start ===== */
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 36px;
+      position: relative;
+    }
+
+    .steps::before {
+      content: '';
+      position: absolute;
+      left: 19px;
+      top: 44px;
+      bottom: 24px;
+      width: 2px;
+      background: linear-gradient(to bottom, var(--accent), var(--border));
+      border-radius: 1px;
+    }
+
+    .step {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent-dim), rgba(73,191,208,.18));
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: .95rem;
+      position: relative;
+      z-index: 1;
+      border: 1px solid var(--glass-border);
+    }
+
+    .step-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .step-content h3 {
+      font-size: 1.15rem;
+      margin-bottom: 6px;
+      font-weight: 700;
+      letter-spacing: -.2px;
+    }
+
+    .step-content > p {
+      color: var(--text-dim);
+      margin-bottom: 14px;
+      font-size: .93rem;
+    }
+
+    .code-block {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      font-size: .84rem;
+      line-height: 1.7;
+      color: var(--text);
+      white-space: pre;
+      transition: background .4s, border-color .4s;
+    }
+
+    .code-block .comment { color: var(--text-dim); }
+    .code-block .cmd { color: var(--green); }
+    .code-block .mgr { color: var(--accent); }
+    .code-block .flag { color: #5ed4e7; }
+
+    /* ===== Code block with copy ===== */
+    .code-wrap {
+      position: relative;
+    }
+
+    .code-wrap .copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-raised);
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0;
+      transition: all .2s;
+      padding: 0;
+    }
+
+    .code-wrap:hover .copy-btn {
+      opacity: 1;
+    }
+
+    .copy-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .copy-btn.copied {
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    .copy-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* ===== Tabs ===== */
+    .tabs {
+      margin-bottom: 4px;
+    }
+
+    .tab-list {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0;
+    }
+
+    .tabs > .tab-list > .tab-btn {
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    .tab-btn {
+      padding: 8px 18px;
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: all .2s;
+      font-family: inherit;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .no-install-label {
+      font-size: .82rem;
+      color: var(--text-dim);
+      margin: 16px 0 8px;
+    }
+
+    /* ===== Databases ===== */
+    .db-list {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    .db-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 22px;
+      min-width: 150px;
+      transition: all .3s cubic-bezier(.4,0,.2,1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .db-item::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0;
+      transition: opacity .3s;
+    }
+
+    .db-item:hover {
+      border-color: var(--border-glow);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px var(--shadow-color);
+    }
+
+    .db-item:hover::after { opacity: 1; }
+
+    .db-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: .65rem;
+      color: #fff;
+      flex-shrink: 0;
+      letter-spacing: -.3px;
+    }
+
+    .db-icon.oracle { background: linear-gradient(135deg, #f80000, #c74634); }
+    .db-icon.mysql { background: linear-gradient(135deg, #00758f, #00a4c4); }
+    .db-icon.postgres { background: linear-gradient(135deg, #336791, #4169e1); }
+    .db-icon.sqlserver { background: linear-gradient(135deg, #a91d22, #cc2927); }
+    .db-icon.sqlite { background: linear-gradient(135deg, #044a64, #003b57); }
+    .db-icon.duckdb { background: linear-gradient(135deg, #fcd34d, #eab308); color: #333; }
+
+    .db-name {
+      font-weight: 600;
+      font-size: .9rem;
+    }
+
+    /* ===== Footer ===== */
+    footer {
+      padding: 48px 0;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      color: var(--text-dim);
+      font-size: .85rem;
+      transition: border-color .4s;
+      position: relative;
+    }
+
+    footer a { color: var(--text-dim); }
+    footer a:hover { color: var(--accent); text-decoration: underline; }
+
+    footer .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 28px;
+      margin-bottom: 16px;
+    }
+
+    footer .footer-logo {
+      width: 20px;
+      height: 20px;
+      vertical-align: middle;
+      margin-right: 4px;
+      opacity: .5;
+    }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 768px) {
+      .hero { padding: 70px 24px 50px; }
+      .hero-logo-wrap svg { width: 90px; height: 90px; }
+      .hero-name { font-size: 2.6rem; letter-spacing: -2px; }
+      .hero-slogan { font-size: 1.1rem; }
+
+      .section-title { font-size: 1.6rem; }
+
+      .features-grid { grid-template-columns: 1fr; }
+
+      .steps::before { display: none; }
+      .step { flex-direction: column; gap: 14px; }
+
+      .install-grid { grid-template-columns: 1fr; }
+      .no-install-row { grid-template-columns: 1fr; }
+
+      .db-list { gap: 10px; }
+      .db-item { min-width: 140px; padding: 12px 16px; }
+    }
+
+    @media (max-width: 480px) {
+      .hero-actions { flex-direction: column; align-items: center; }
+      .hero-name { font-size: 2.2rem; }
+      .nav-logo-text { font-size: .95rem; }
+      .nav-btn span.hide-mobile { display: none; }
+      .db-list { gap: 8px; }
+      .db-item { min-width: 0; flex: 1; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="bg-mesh"></div>
+  <div class="glow-orb glow-orb-1"></div>
+  <div class="glow-orb glow-orb-2"></div>
+  <div class="glow-orb glow-orb-3"></div>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">
+        <svg viewBox="0 0 250 250" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="m243.9 15.63-59.97 32.08-3.02 3.41-3.97 2.27-7.91 2.8 2.7 3.01 9.22 5.71 1.29 2.5v10.31l16.56 9.4-0.55 15.29-6.02 11.95-7.5 5.9-12.89 8.1-0.76 3.76 12.85 0.44 29.5 0.77 30.31-15.22 0.16-102.5z" fill="url(#nav_g1)"/>
+          <path d="m6.12 135.6 90.53-47.71v6.49l-31.69 16.81-11.85 12.89-1.15 13.51 15.65 19.5 1.7 7.79 6.4-2 11-0.7 18.35-3.35 15.65-6.74 64.9-34.26v29.76l-163.9 85.5h-15.59v-97.49z" fill="url(#nav_g2)"/>
+          <path d="m149.2 199.1h-71.75c-4.87 0-7 3.29-7 7 0 4.29 2.75 6.6 6.5 6.6h72.25c5.1 0 6.9-4 6.9-6.81 0-4-2.4-6.79-6.9-6.79z" fill="#FEFFFE" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
+          <path d="m125.1 202.1h-47c-3.2 0-4.7 2.1-4.7 4 0 2.5 1.3 4.1 4.2 4.1h47.5c2.8 0 4-2 4-4 0-2.21-1.4-4.1-4-4.1z" fill="url(#nav_g3)"/>
+          <defs>
+            <linearGradient id="nav_g1" x1="171.7" x2="244" y1="42.82" y2="107.3" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#49BFD0"/><stop stop-color="#209DAE"/>
+            </linearGradient>
+            <linearGradient id="nav_g2" x1="15.61" x2="67.61" y1="114.1" y2="208.6" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#286196"/><stop stop-color="#274A88"/>
+            </linearGradient>
+            <linearGradient id="nav_g3" x1="73.41" x2="129.1" y1="206.2" y2="206.2" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#54A7CC"/><stop stop-color="#58D795"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="nav-logo-text">db-ferry</span>
+      </a>
+      <div class="nav-actions">
+        <button class="nav-btn" id="langToggle" onclick="toggleLang()">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8ZM5.05 9.45C5.15 9.5 6.68 10 8 10s2.85-.5 2.95-.55a.75.75 0 00-.1-1.05C10.05 8.8 8.53 9.3 8 9.3s-2.05-.5-2.85-1.1a.75.75 0 00-1.05.1.75.75 0 00.1 1.05h.85ZM9.5 6.5a1 1 0 11-2 0 1 1 0 012 0ZM4.5 6.5a1 1 0 11-2 0 1 1 0 012 0Z"/></svg>
+          <span class="lang-label">English</span>
+        </button>
+        <button class="nav-btn" id="themeToggle" onclick="toggleTheme()">
+          <svg id="themeIcon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13ZM0 8a8 8 0 1116 0 8 8 0 01-16 0Zm8-3a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 5Zm0 7.5a.75.75 0 01-.75-.75v-1.5a.75.75 0 011.5 0v1.5a.75.75 0 01-.75.75Z"/></svg>
+          <span class="hide-mobile" id="themeLabel">Light</span>
+        </button>
+        <a href="https://github.com/xingkaixin/db-ferry" class="nav-btn" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8Z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-logo-wrap">
+      <svg viewBox="0 0 250 250" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="m243.9 15.63-59.97 32.08-3.02 3.41-3.97 2.27-7.91 2.8 2.7 3.01 9.22 5.71 1.29 2.5v10.31l16.56 9.4-0.55 15.29-6.02 11.95-7.5 5.9-12.89 8.1-0.76 3.76 12.85 0.44 29.5 0.77 30.31-15.22 0.16-102.5z" fill="url(#hero_p0)"/>
+        <path d="m6.12 135.6 90.53-47.71v6.49l-31.69 16.81-11.85 12.89-1.15 13.51 15.65 19.5 1.7 7.79 6.4-2 11-0.7 18.35-3.35 15.65-6.74 64.9-34.26v29.76l-163.9 85.5h-15.59v-97.49z" fill="url(#hero_p1)"/>
+        <path d="m149.2 199.1h-71.75c-4.87 0-7 3.29-7 7 0 4.29 2.75 6.6 6.5 6.6h72.25c5.1 0 6.9-4 6.9-6.81 0-4-2.4-6.79-6.9-6.79z" fill="#FEFFFE" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
+        <path d="m125.1 202.1h-47c-3.2 0-4.7 2.1-4.7 4 0 2.5 1.3 4.1 4.2 4.1h47.5c2.8 0 4-2 4-4 0-2.21-1.4-4.1-4-4.1z" fill="url(#hero_p2)"/>
+        <path d="m196.6 87.12-15.5-8.5v-11.5l-23.5-14-18.5 11-3 3-16.5 6.5-52.5 36.5c-8.5 5-14 12.5-14 21.5v6l14.5 19.5c2.5 2.5 2.5 5 2.5 7.5 6-3.5 11.5-4.5 18.5-4 9.5 1 19.5-2 25-5l75.5-40.5 7.5-12.5v-15.5z" fill="url(#hero_p3)"/>
+        <path d="m121.1 118.2c11.88 0 20-4.76 20-9.5v-38c0-5.4-9.12-10-20-10-11.44 0-20 4.6-20 10v38c0 4.74 8.12 9.5 20 9.5z" fill="url(#hero_p4)"/>
+        <path d="m121.1 79.72c11.44 0 19.5-4.5 19.5-9.5 0-4.5-9.06-9-19.5-9-11.44 0-19.5 4.5-19.5 9 0 5 8.06 9.5 19.5 9.5z" fill="#A3D7E8" stroke="#12283C" stroke-miterlimit="10" stroke-width="2"/>
+        <path d="m101.1 87.22c0 5 8.56 9 20 9 10.94 0 19.5-4 19.5-9v8.5c0 5-9.06 8.5-19.5 8.5-11.44 0-20-3.5-20-8.5v-8.5z" fill="url(#hero_p5)" stroke="#12283C" stroke-miterlimit="10" stroke-width="1.5"/>
+        <path d="m101.1 98.22c0 5 8.56 9 20 9 10.94 0 19.5-4 19.5-9v8.5c0 5-9.06 8.5-19.5 8.5-11.44 0-20-3.5-20-8.5v-8.5z" fill="url(#hero_p6)" stroke="#12283C" stroke-miterlimit="10" stroke-width="1.5"/>
+        <path d="m139.6 67.22 19.5 12 19.5-12-22-13-17 11v2z" fill="#F0F3F7" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
+        <path d="m158.1 50.22v16" stroke="#12283C" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"/>
+        <path d="m142.1 70.22 17 9.5v27l-17-10v-26.5z" fill="#CED7E2" stroke="#12283C" stroke-miterlimit="10" stroke-width="2"/>
+        <path d="m143.1 77.22 10.5 6v6.5l-10.5-6.5v-6z" fill="#4998BE" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
+        <path d="m159.6 79.72 19-11.5v28l-19 11v-27.5z" fill="#F0F3F7" stroke="#12283C" stroke-miterlimit="10" stroke-width="2"/>
+        <path d="m164.6 83.22 9-5.5v8.5l-9 4v-7z" fill="#4998BE" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
+        <path d="m40.71 69.72c11.88 0 21.5-4.76 20-10v-31.5c0-5.4-8.62-9.5-20-9.5s-19.5 4.1-19.5 9.5v31.5c0 5.24 7.62 10 19.5 10z" fill="#CED7E2" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
+        <path d="m207.9 186.7c10.93 0 20.3-5 20.3-9.6v-31.9c0-4.6-9.37-8.5-20.3-8.5-10.94 0-19.3 3.9-19.3 8.5v31.9c0 4.6 8.36 9.6 19.3 9.6z" fill="url(#hero_p7)" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
+        <path d="m40.71 36.22c10.94 0 20-4.01 20-8.5 0-4.5-9.06-9-20-9s-19 4.5-19 9c0 4.49 8.06 8.5 19 8.5z" fill="#E1E8EF" stroke="#12283C" stroke-miterlimit="10" stroke-width="2"/>
+        <path d="m202.6 45.22v1.5" opacity=".5" stroke="#B7F9E0" stroke-linecap="round" stroke-width="2"/>
+        <path d="m177.1 110.2c2.33 0 3-2.5 3-3.5 0-1.5-1-2.5-2-2.5-2 0-3 2.5-3 3.5 0 1.5 1 2.5 2 2.5z" fill="#2874A6" stroke="#12283C" stroke-miterlimit="10" stroke-width="2"/>
+        <defs>
+          <linearGradient id="hero_p0" x1="171.7" x2="244" y1="42.82" y2="107.3" gradientUnits="userSpaceOnUse"><stop stop-color="#49BFD0"/><stop stop-color="#209DAE"/></linearGradient>
+          <linearGradient id="hero_p1" x1="15.61" x2="67.61" y1="114.1" y2="208.6" gradientUnits="userSpaceOnUse"><stop stop-color="#286196"/><stop stop-color="#274A88"/></linearGradient>
+          <linearGradient id="hero_p2" x1="73.41" x2="129.1" y1="206.2" y2="206.2" gradientUnits="userSpaceOnUse"><stop stop-color="#54A7CC"/><stop stop-color="#58D795"/></linearGradient>
+          <linearGradient id="hero_p3" x1="113.6" x2="113.6" y1="53.12" y2="164.6" gradientUnits="userSpaceOnUse"><stop stop-color="#39A9C1"/><stop stop-color="#39467A"/></linearGradient>
+          <linearGradient id="hero_p4" x1="101.1" x2="141.1" y1="89.47" y2="89.47" gradientUnits="userSpaceOnUse"><stop stop-color="#F0F3F7"/><stop stop-color="#95A4B0"/></linearGradient>
+          <linearGradient id="hero_p5" x1="101.1" x2="140.6" y1="95.72" y2="95.72" gradientUnits="userSpaceOnUse"><stop stop-color="#93C8EA"/><stop stop-color="#33649A"/></linearGradient>
+          <linearGradient id="hero_p6" x1="101.1" x2="140.6" y1="106.7" y2="106.7" gradientUnits="userSpaceOnUse"><stop stop-color="#93C8EA"/><stop stop-color="#33649A"/></linearGradient>
+          <linearGradient id="hero_p7" x1="188.6" x2="228.2" y1="161.7" y2="161.7" gradientUnits="userSpaceOnUse"><stop stop-color="#F0F3F7"/><stop stop-color="#95A4B0"/></linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <div class="hero-name">db-ferry</div>
+    <p class="hero-slogan" data-i18n="hero-slogan">跨数据库数据迁移工具</p>
+    <p class="hero-desc" data-i18n="hero-desc">
+      Go CLI 工具，通过声明式 <code>task.toml</code> 配置，在 Oracle、MySQL、PostgreSQL、SQL Server、SQLite 和 DuckDB 之间批量迁移数据。
+    </p>
+    <div class="hero-actions">
+      <a href="https://www.npmjs.com/package/db-ferry" class="btn btn-primary" data-i18n="cta-install" target="_blank" rel="noopener noreferrer">npm install db-ferry</a>
+      <a href="https://github.com/xingkaixin/db-ferry" class="btn btn-outline" data-i18n="cta-github" target="_blank" rel="noopener noreferrer">GitHub Repo</a>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section>
+    <div class="container">
+      <div class="section-label" data-i18n="features-label">Features</div>
+      <h2 class="section-title" data-i18n="features-title">特性</h2>
+      <p class="section-sub" data-i18n="features-sub">简洁高效的数据库迁移体验</p>
+      <div class="features-grid">
+
+        <div class="feature-card">
+          <div class="feature-icon">🔌</div>
+          <h3 data-i18n="feat-multi-title">多数据库支持</h3>
+          <p data-i18n="feat-multi-desc">连接 6 种主流数据库，灵活配置源和目标。</p>
+          <div class="db-tags">
+            <span class="db-tag">Oracle</span>
+            <span class="db-tag">MySQL</span>
+            <span class="db-tag">PostgreSQL</span>
+            <span class="db-tag">SQL Server</span>
+            <span class="db-tag">SQLite</span>
+            <span class="db-tag">DuckDB</span>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📋</div>
+          <h3 data-i18n="feat-config-title">声明式配置</h3>
+          <p data-i18n="feat-config-desc">一个 <code>task.toml</code> 文件定义所有数据库和迁移任务。</p>
+          <div class="feature-code">[[tasks]]
+table_name = "employees"
+sql = "SELECT * FROM employees"
+source_db = "oracle_hr"
+target_db = "sqlite_local"</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🏗️</div>
+          <h3 data-i18n="feat-ddl-title">自动建表</h3>
+          <p data-i18n="feat-ddl-desc">根据源表元数据自动生成目标表 DDL，无需手动创建表结构。</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3 data-i18n="feat-batch-title">批量流式传输</h3>
+          <p data-i18n="feat-batch-desc">分批插入、事务保证、实时进度条，高效处理大量数据。</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <h3 data-i18n="feat-increment-title">增量迁移</h3>
+          <p data-i18n="feat-increment-desc">通过 <code>resume_key</code> 和 <code>state_file</code> 实现断点续传。</p>
+          <div class="feature-code">resume_key = "id"
+resume_from = "1000000"
+state_file = "state.json"</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🖥️</div>
+          <h3 data-i18n="feat-crossplatform-title">全平台支持</h3>
+          <p data-i18n="feat-crossplatform-desc">通过 npm 安装，支持 macOS、Linux 和 Windows。</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- Quick Start -->
+  <section>
+    <div class="container">
+      <div class="section-label" data-i18n="qs-label">Quick Start</div>
+      <h2 class="section-title" data-i18n="qs-title">快速开始</h2>
+      <p class="section-sub" data-i18n="qs-sub">三步开始跨数据库数据迁移</p>
+      <div class="steps">
+
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h3 data-i18n="qs-install-title">安装</h3>
+            <p data-i18n="qs-install-desc">选择你喜欢的包管理器全局安装，或无需安装直接运行。</p>
+
+            <div class="tabs">
+              <div class="tab-list">
+                <button class="tab-btn active" data-tab="install" data-i18n="qs-tab-install">Install</button>
+                <button class="tab-btn" data-tab="run" data-i18n="qs-tab-run">Run</button>
+              </div>
+              <div class="tab-panel active" data-tabpanel="install">
+                <div class="tab-list" style="margin-top:8px; border-bottom:1px solid var(--border);">
+                  <button class="tab-btn active" data-subtab="install-pkg" data-pkg="npm">npm</button>
+                  <button class="tab-btn" data-subtab="install-pkg" data-pkg="pnpm">pnpm</button>
+                  <button class="tab-btn" data-subtab="install-pkg" data-pkg="bun">bun</button>
+                </div>
+                <div class="tab-panel active" data-subtabpanel="install-pkg" data-pkg="npm">
+                  <div class="code-wrap">
+                    <pre class="code-block"><span class="mgr">npm</span> install <span class="flag">-g</span> db-ferry</pre>
+                    <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
+                  </div>
+                </div>
+                <div class="tab-panel" data-subtabpanel="install-pkg" data-pkg="pnpm">
+                  <div class="code-wrap">
+                    <pre class="code-block"><span class="mgr">pnpm</span> add <span class="flag">-g</span> db-ferry</pre>
+                    <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
+                  </div>
+                </div>
+                <div class="tab-panel" data-subtabpanel="install-pkg" data-pkg="bun">
+                  <div class="code-wrap">
+                    <pre class="code-block"><span class="mgr">bun</span> add <span class="flag">-g</span> db-ferry</pre>
+                    <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
+                  </div>
+                </div>
+              </div>
+              <div class="tab-panel" data-tabpanel="run">
+                <div class="tab-list" style="margin-top:8px; border-bottom:1px solid var(--border);">
+                  <button class="tab-btn active" data-subtab="run-pkg" data-pkg="npx">npx</button>
+                  <button class="tab-btn" data-subtab="run-pkg" data-pkg="bunx">bunx</button>
+                </div>
+                <div class="tab-panel active" data-subtabpanel="run-pkg" data-pkg="npx">
+                  <div class="code-wrap">
+                    <pre class="code-block"><span class="mgr">npx</span> db-ferry</pre>
+                    <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
+                  </div>
+                </div>
+                <div class="tab-panel" data-subtabpanel="run-pkg" data-pkg="bunx">
+                  <div class="code-wrap">
+                    <pre class="code-block"><span class="mgr">bunx</span> db-ferry</pre>
+                    <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h3 data-i18n="qs-config-title">初始化配置</h3>
+            <p data-i18n="qs-config-desc">生成示例 <code>task.toml</code> 配置文件。</p>
+            <div class="code-wrap">
+              <pre class="code-block"><span class="mgr">db-ferry</span> config init
+
+<span class="comment"># 生成 task.toml，编辑后填入你的数据库连接信息</span></pre>
+              <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h3 data-i18n="qs-run-title">运行迁移</h3>
+            <p data-i18n="qs-run-desc">执行配置文件中的所有迁移任务。</p>
+            <div class="code-wrap">
+              <pre class="code-block"><span class="mgr">db-ferry</span>
+
+<span class="comment"># 指定配置文件</span>
+<span class="mgr">db-ferry</span> <span class="flag">-config</span> ./configs/task.toml
+
+<span class="comment"># 详细日志</span>
+<span class="mgr">db-ferry</span> <span class="flag">-v</span></pre>
+              <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- Databases -->
+  <section>
+    <div class="container">
+      <div class="section-label" data-i18n="dbs-label">Supported Databases</div>
+      <h2 class="section-title" data-i18n="dbs-title">支持的数据库</h2>
+      <p class="section-sub" data-i18n="dbs-sub">在以下数据库之间自由迁移数据</p>
+      <div class="db-list">
+        <div class="db-item">
+          <div class="db-icon oracle">ORA</div>
+          <span class="db-name">Oracle</span>
+        </div>
+        <div class="db-item">
+          <div class="db-icon mysql">MySQL</div>
+          <span class="db-name">MySQL</span>
+        </div>
+        <div class="db-item">
+          <div class="db-icon postgres">PG</div>
+          <span class="db-name">PostgreSQL</span>
+        </div>
+        <div class="db-item">
+          <div class="db-icon sqlserver">MSS</div>
+          <span class="db-name">SQL Server</span>
+        </div>
+        <div class="db-item">
+          <div class="db-icon sqlite">SQLite</div>
+          <span class="db-name">SQLite</span>
+        </div>
+        <div class="db-item">
+          <div class="db-icon duckdb">Duck</div>
+          <span class="db-name">DuckDB</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/xingkaixin/db-ferry" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://www.npmjs.com/package/db-ferry" target="_blank" rel="noopener noreferrer">npm</a>
+        <a href="https://github.com/xingkaixin/db-ferry/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>
+      </div>
+      <p data-i18n="footer-text">db-ferry &mdash; 跨数据库数据迁移工具，使用 Go 构建。</p>
+    </div>
+  </footer>
+
+<script>
+  const i18n = {
+    zh: {
+      'hero-slogan': '跨数据库数据迁移工具',
+      'hero-desc': 'Go CLI 工具，通过声明式 <code>task.toml</code> 配置，在 Oracle、MySQL、PostgreSQL、SQL Server、SQLite 和 DuckDB 之间批量迁移数据。',
+      'cta-install': 'npm install db-ferry',
+      'cta-github': 'GitHub Repo',
+      'features-label': 'Features',
+      'features-title': '特性',
+      'features-sub': '简洁高效的数据库迁移体验',
+      'feat-multi-title': '多数据库支持',
+      'feat-multi-desc': '连接 6 种主流数据库，灵活配置源和目标。',
+      'feat-config-title': '声明式配置',
+      'feat-config-desc': '一个 <code>task.toml</code> 文件定义所有数据库和迁移任务。',
+      'feat-ddl-title': '自动建表',
+      'feat-ddl-desc': '根据源表元数据自动生成目标表 DDL，无需手动创建表结构。',
+      'feat-batch-title': '批量流式传输',
+      'feat-batch-desc': '分批插入、事务保证、实时进度条，高效处理大量数据。',
+      'feat-increment-title': '增量迁移',
+      'feat-increment-desc': '通过 <code>resume_key</code> 和 <code>state_file</code> 实现断点续传。',
+      'feat-crossplatform-title': '全平台支持',
+      'feat-crossplatform-desc': '通过 npm 安装，支持 macOS、Linux 和 Windows。',
+      'qs-label': 'Quick Start',
+      'qs-title': '快速开始',
+      'qs-sub': '三步开始跨数据库数据迁移',
+      'qs-install-title': '安装',
+      'qs-install-desc': '选择你喜欢的包管理器全局安装，或无需安装直接运行。',
+      'qs-noinstall-hint': '无需安装，直接运行：',
+      'qs-tab-install': '安装',
+      'qs-tab-run': '运行',
+      'qs-config-title': '初始化配置',
+      'qs-config-desc': '生成示例 <code>task.toml</code> 配置文件。',
+      'qs-run-title': '运行迁移',
+      'qs-run-desc': '执行配置文件中的所有迁移任务。',
+      'dbs-label': 'Supported Databases',
+      'dbs-title': '支持的数据库',
+      'dbs-sub': '在以下数据库之间自由迁移数据',
+      'footer-text': 'db-ferry &mdash; 跨数据库数据迁移工具，使用 Go 构建。'
+    },
+    en: {
+      'hero-slogan': 'Cross-Database Data Migration Tool',
+      'hero-desc': 'A Go CLI tool that ferries data between Oracle, MySQL, PostgreSQL, SQL Server, SQLite, and DuckDB using declarative <code>task.toml</code> configuration.',
+      'cta-install': 'npm install db-ferry',
+      'cta-github': 'GitHub Repo',
+      'features-label': 'Features',
+      'features-title': 'Features',
+      'features-sub': 'Simple and efficient database migration',
+      'feat-multi-title': 'Multi-Database Support',
+      'feat-multi-desc': 'Connect to 6 major databases with flexible source and target configuration.',
+      'feat-config-title': 'Declarative Config',
+      'feat-config-desc': 'Define all databases and migration tasks in a single <code>task.toml</code> file.',
+      'feat-ddl-title': 'Auto Table Creation',
+      'feat-ddl-desc': 'Automatically generate target table DDL from source metadata — no manual setup needed.',
+      'feat-batch-title': 'Batch Streaming',
+      'feat-batch-desc': 'Batch inserts with transactional guarantees and real-time progress bars for large datasets.',
+      'feat-increment-title': 'Incremental Migration',
+      'feat-increment-desc': 'Resume from any point with <code>resume_key</code> and <code>state_file</code> persistence.',
+      'feat-crossplatform-title': 'Cross-Platform',
+      'feat-crossplatform-desc': 'Install via npm, supports macOS, Linux, and Windows.',
+      'qs-label': 'Quick Start',
+      'qs-title': 'Quick Start',
+      'qs-sub': 'Three steps to start migrating data',
+      'qs-install-title': 'Install',
+      'qs-install-desc': 'Choose your preferred package manager for a global install, or run without installing.',
+      'qs-noinstall-hint': 'Run without installing:',
+      'qs-tab-install': 'Install',
+      'qs-tab-run': 'Run',
+      'qs-config-title': 'Initialize Config',
+      'qs-config-desc': 'Generate a sample <code>task.toml</code> configuration file.',
+      'qs-run-title': 'Run Migration',
+      'qs-run-desc': 'Execute all migration tasks defined in the config file.',
+      'dbs-label': 'Supported Databases',
+      'dbs-title': 'Supported Databases',
+      'dbs-sub': 'Migrate data freely between these databases',
+      'footer-text': 'db-ferry — Cross-database data migration tool, built with Go.'
+    }
+  };
+
+  let lang = localStorage.getItem('dbferry-lang') || 'zh';
+  let theme = localStorage.getItem('dbferry-theme') || 'dark';
+
+  function applyLang() {
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    const labels = i18n[lang];
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      if (labels[key]) el.innerHTML = labels[key];
+    });
+    const langLabel = document.querySelector('.lang-label');
+    langLabel.textContent = lang === 'zh' ? 'English' : '中文';
+  }
+
+  function toggleLang() {
+    lang = lang === 'zh' ? 'en' : 'zh';
+    localStorage.setItem('dbferry-lang', lang);
+    applyLang();
+  }
+
+  function applyTheme() {
+    document.documentElement.setAttribute('data-theme', theme);
+    const label = document.getElementById('themeLabel');
+    if (label) label.textContent = theme === 'dark' ? 'Light' : 'Dark';
+    const icon = document.getElementById('themeIcon');
+    if (icon) {
+      if (theme === 'dark') {
+        icon.innerHTML = '<path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13ZM0 8a8 8 0 1116 0 8 8 0 01-16 0Z"/>';
+      } else {
+        icon.innerHTML = '<path d="M8 1.5a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 1.5ZM8 11.5a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5a.75.75 0 01.75-.75ZM1.5 8a.75.75 0 01.75-.75h1.5a.75.75 0 010 1.5H2.25A.75.75 0 011.5 8ZM11.5 8a.75.75 0 01.75-.75h1.5a.75.75 0 010 1.5h-1.5a.75.75 0 01-.75-.75ZM11.65 4.35a.75.75 0 011.06 0l1.06 1.06a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06ZM3.24 10.85a.75.75 0 011.06 0l1.06 1.06a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06ZM11.65 11.65a.75.75 0 010 1.06l-1.06 1.06a.75.75 0 01-1.06-1.06l1.06-1.06a.75.75 0 011.06 0ZM3.24 5.15a.75.75 0 010-1.06l1.06-1.06a.75.75 0 011.06 1.06L4.3 5.15a.75.75 0 01-1.06 0ZM8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5Z"/>';
+      }
+    }
+  }
+
+  function toggleTheme() {
+    theme = theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('dbferry-theme', theme);
+    applyTheme();
+  }
+
+  // ===== Tabs =====
+  document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group = btn.closest('.tabs');
+      group.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      group.querySelectorAll('[data-tabpanel]').forEach(p => p.classList.remove('active'));
+      group.querySelector(`[data-tabpanel="${btn.dataset.tab}"]`).classList.add('active');
+    });
+  });
+
+  document.querySelectorAll('.tab-btn[data-subtab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const subtab = btn.dataset.subtab;
+      const pkg = btn.dataset.pkg;
+      const container = btn.closest('[data-tabpanel]') || btn.closest('.tabs');
+      container.querySelectorAll(`.tab-btn[data-subtab="${subtab}"]`).forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      container.querySelectorAll(`[data-subtabpanel="${subtab}"]`).forEach(p => p.classList.remove('active'));
+      container.querySelector(`[data-subtabpanel="${subtab}"][data-pkg="${pkg}"]`).classList.add('active');
+    });
+  });
+
+  // ===== Copy to clipboard =====
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.previousElementSibling.textContent.trim();
+      navigator.clipboard.writeText(code).then(() => {
+        btn.classList.add('copied');
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg>';
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.innerHTML = orig;
+        }, 1500);
+      });
+    });
+  });
+
+  applyLang();
+  applyTheme();
+</script>
+</body>
+</html>
