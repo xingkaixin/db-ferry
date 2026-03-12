@@ -624,6 +624,11 @@
       letter-spacing: .5px;
     }
 
+    .tabs-lower > .tab-list > .tab-btn {
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
     .tab-btn {
       padding: 8px 18px;
       font-size: .78rem;
@@ -1087,6 +1092,59 @@ state_file = "state.json"</div>
     </div>
   </section>
 
+  <hr class="divider">
+
+  <!-- Skills -->
+  <section>
+    <div class="container">
+      <div class="section-label" data-i18n="skills-label">Skills</div>
+      <h2 class="section-title" data-i18n="skills-title">Skills 集成</h2>
+      <p class="section-sub" data-i18n="skills-sub">为 AI 助手注入 db-ferry 的迁移能力</p>
+      <div class="features-grid" style="grid-template-columns: repeat(2, 1fr);">
+
+        <div class="feature-card">
+          <div class="feature-icon">🧠</div>
+          <h3 data-i18n="skills-what-title">什么是 Skills？</h3>
+          <p data-i18n="skills-what-desc">Skills 是 AI 助手的技能扩展包。安装后，AI 能直接理解 db-ferry 的配置语法、命令用法和最佳实践，无需反复查阅文档。</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3 data-i18n="skills-why-title">为什么需要？</h3>
+          <p data-i18n="skills-why-desc">
+            <strong>更准：</strong>AI 掌握精确的 task.toml 字段和类型，不会生成错误配置。<br>
+            <strong>更快：</strong>直接给出可用的迁移命令和配置片段。<br>
+            <strong>更全：</strong>内置支持的数据库列表、连接串格式、增量迁移等高级用法。
+          </p>
+        </div>
+
+      </div>
+
+      <div style="margin-top: 40px;">
+        <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; letter-spacing: -.2px;" data-i18n="skills-install-title">安装方式</h3>
+        <div class="tabs tabs-lower">
+          <div class="tab-list">
+            <button class="tab-btn active" data-tab="skills-npx" data-i18n="skills-tab-npx">npx</button>
+            <button class="tab-btn" data-tab="skills-bunx" data-i18n="skills-tab-bunx">bunx</button>
+          </div>
+          <div class="tab-panel active" data-tabpanel="skills-npx">
+            <div class="code-wrap">
+              <pre class="code-block"><span class="mgr">npx</span> skills add xingkaixin/db-ferry</pre>
+              <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z\"/><path d=\"M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z\"/></svg></button>
+            </div>
+          </div>
+          <div class="tab-panel" data-tabpanel="skills-bunx">
+            <div class="code-wrap">
+              <pre class="code-block"><span class="mgr">bunx</span> skills add xingkaixin/db-ferry</pre>
+              <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z\"/><path d=\"M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z\"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <p class="no-install-label" data-i18n="skills-hint">安装后，在任何 AI 对话中直接描述你的迁移需求即可。</p>
+      </div>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer>
     <div class="container">
@@ -1136,6 +1194,17 @@ state_file = "state.json"</div>
       'dbs-label': 'Supported Databases',
       'dbs-title': '支持的数据库',
       'dbs-sub': '在以下数据库之间自由迁移数据',
+      'skills-label': 'Skills',
+      'skills-title': 'Skills 集成',
+      'skills-sub': '为 AI 助手注入 db-ferry 的迁移能力',
+      'skills-what-title': '什么是 Skills？',
+      'skills-what-desc': 'Skills 是 AI 助手的技能扩展包。安装后，AI 能直接理解 db-ferry 的配置语法、命令用法和最佳实践，无需反复查阅文档。',
+      'skills-why-title': '为什么需要？',
+      'skills-why-desc': '<strong>更准：</strong>AI 掌握精确的 task.toml 字段和类型，不会生成错误配置。<br><strong>更快：</strong>直接给出可用的迁移命令和配置片段。<br><strong>更全：</strong>内置支持的数据库列表、连接串格式、增量迁移等高级用法。',
+      'skills-install-title': '安装方式',
+      'skills-tab-npx': 'npx',
+      'skills-tab-bunx': 'bunx',
+      'skills-hint': '安装后，在任何 AI 对话中直接描述你的迁移需求即可。',
       'footer-text': 'db-ferry &mdash; 跨数据库数据迁移工具，使用 Go 构建。'
     },
     en: {
@@ -1173,6 +1242,17 @@ state_file = "state.json"</div>
       'dbs-label': 'Supported Databases',
       'dbs-title': 'Supported Databases',
       'dbs-sub': 'Migrate data freely between these databases',
+      'skills-label': 'Skills',
+      'skills-title': 'Skills Integration',
+      'skills-sub': 'Equip your AI assistant with db-ferry migration power',
+      'skills-what-title': 'What are Skills?',
+      'skills-what-desc': 'Skills are plugin packs that extend an AI assistant\'s capabilities. Once installed, the AI understands db-ferry\'s config syntax, commands, and best practices — no need to repeatedly check the docs.',
+      'skills-why-title': 'Why use it?',
+      'skills-why-desc': '<strong>More accurate:</strong> AI knows exact task.toml fields and types, no wrong configs.<br><strong>Faster:</strong> Get ready-to-use migration commands and config snippets instantly.<br><strong>More complete:</strong> Built-in knowledge of supported databases, connection strings, incremental migration, and more.',
+      'skills-install-title': 'Install',
+      'skills-tab-npx': 'npx',
+      'skills-tab-bunx': 'bunx',
+      'skills-hint': 'Once installed, just describe your migration needs in any AI conversation.',
       'footer-text': 'db-ferry — Cross-database data migration tool, built with Go.'
     }
   };
