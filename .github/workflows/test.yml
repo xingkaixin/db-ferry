@@ -28,7 +28,7 @@ jobs:
           go-version: "1.25.2"
 
       - name: Setup just
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@v3.1.0
 
       - name: Create cache directories
         run: |

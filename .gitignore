@@ -13,3 +13,7 @@ npm/db-ferry-darwin-x64/bin/db-ferry
 npm/db-ferry-linux-arm64/bin/db-ferry
 npm/db-ferry-linux-x64/bin/db-ferry
 npm/db-ferry-win32-x64/bin/db-ferry.exe
+
+
+# agent
+.claude
