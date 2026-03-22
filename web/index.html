@@ -7,1340 +7,1540 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <link rel="manifest" href="manifest.json">
-  <!-- Cloudflare Web Analytics -->
+  <link rel="preconnect" href="https://fonts.googleapis.cn">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.cn/css2?family=Space+Grotesk:wght@400;500;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
   <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "da8e71b95633452388bd295d5641c627"}'></script>
-  <!-- End Cloudflare Web Analytics -->
   <style>
-    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    *, *::before, *::after { box-sizing: border-box; }
 
-    /* ===== Theme tokens — palette from logo SVG ===== */
     :root {
-      --bg: #050a12;
-      --bg-raised: #0a1220;
-      --bg-raised-hover: #0e1a2e;
-      --bg-code: #08101c;
-      --border: #1a2a40;
-      --border-glow: #2a4a6a;
-      --text: #e2ecf4;
-      --text-dim: #6b8299;
-      --accent: #49bfd0;
-      --accent-hover: #5ed4e7;
-      --accent-dim: rgba(73,191,208,.12);
-      --accent-glow: rgba(73,191,208,.25);
-      --teal: #28a0b8;
-      --green: #3fb950;
-      --nav-bg: rgba(5,10,18,.78);
-      --glass: rgba(10,18,32,.55);
-      --glass-border: rgba(73,191,208,.12);
-      --shadow-color: rgba(73,191,208,.06);
-      --logo-url: url("logo.svg");
+      --bg: #07101b;
+      --bg-soft: rgba(10, 18, 31, 0.82);
+      --panel: rgba(11, 19, 31, 0.7);
+      --panel-strong: rgba(14, 24, 39, 0.92);
+      --line: rgba(121, 164, 204, 0.2);
+      --line-strong: rgba(121, 164, 204, 0.34);
+      --text: #eff5fb;
+      --text-dim: #93a7bd;
+      --accent: #63cadd;
+      --accent-strong: #3ea0c4;
+      --accent-soft: rgba(99, 202, 221, 0.16);
+      --success: #79d7a0;
+      --shadow: 0 30px 80px rgba(0, 0, 0, 0.28);
+      --hero-glow: radial-gradient(circle at 50% 35%, rgba(99, 202, 221, 0.18), transparent 45%);
+      --surface-glow: linear-gradient(135deg, rgba(99, 202, 221, 0.12), rgba(56, 96, 158, 0.06));
     }
 
     [data-theme="light"] {
-      --bg: #f0f5fa;
-      --bg-raised: #ffffff;
-      --bg-raised-hover: #f8fbfe;
-      --bg-code: #eaf0f7;
-      --border: #d4e0ec;
-      --border-glow: #a8c0d8;
-      --text: #1a2838;
-      --text-dim: #5a7088;
-      --accent: #2088a0;
-      --accent-hover: #187088;
-      --accent-dim: rgba(32,136,160,.08);
-      --accent-glow: rgba(32,136,160,.15);
-      --teal: #1a7890;
-      --green: #1a7f37;
-      --nav-bg: rgba(240,245,250,.82);
-      --glass: rgba(255,255,255,.6);
-      --glass-border: rgba(32,136,160,.12);
-      --shadow-color: rgba(32,136,160,.06);
+      --bg: #eef4fa;
+      --bg-soft: rgba(255, 255, 255, 0.74);
+      --panel: rgba(255, 255, 255, 0.78);
+      --panel-strong: rgba(255, 255, 255, 0.92);
+      --line: rgba(50, 93, 132, 0.16);
+      --line-strong: rgba(50, 93, 132, 0.28);
+      --text: #162435;
+      --text-dim: #5f7388;
+      --accent: #1d89a1;
+      --accent-strong: #165f80;
+      --accent-soft: rgba(29, 137, 161, 0.1);
+      --success: #1e8a4e;
+      --shadow: 0 24px 64px rgba(40, 78, 116, 0.14);
+      --hero-glow: radial-gradient(circle at 50% 35%, rgba(29, 137, 161, 0.12), transparent 45%);
+      --surface-glow: linear-gradient(135deg, rgba(29, 137, 161, 0.08), rgba(72, 110, 171, 0.04));
     }
 
     html { scroll-behavior: smooth; }
 
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'PingFang SC', sans-serif;
-      background: var(--bg);
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(circle at top, rgba(85, 169, 214, 0.08), transparent 34%),
+        linear-gradient(180deg, var(--bg), #03070d);
       color: var(--text);
-      line-height: 1.6;
-      transition: background .4s, color .4s;
+      font-family: "Space Grotesk", "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+      line-height: 1.55;
       -webkit-font-smoothing: antialiased;
     }
 
-    code, pre, .mono {
-      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    code, pre, .mono, .nav-brand span {
+      font-family: "IBM Plex Mono", "SFMono-Regular", "Cascadia Code", monospace;
     }
 
-    a { color: var(--accent); text-decoration: none; transition: color .15s; }
-    a:hover { color: var(--accent-hover); }
-
-    .container {
-      max-width: 960px;
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-
-    /* ===== Background mesh grid ===== */
-    .bg-mesh {
-      position: fixed;
-      inset: 0;
-      z-index: -1;
-      pointer-events: none;
-      background-image:
-        linear-gradient(rgba(73,191,208,.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(73,191,208,.03) 1px, transparent 1px);
-      background-size: 64px 64px;
-    }
-
-    [data-theme="light"] .bg-mesh {
-      background-image:
-        linear-gradient(rgba(32,136,160,.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(32,136,160,.04) 1px, transparent 1px);
-    }
-
-    /* ===== Ambient glow orbs ===== */
-    .glow-orb {
-      position: fixed;
-      border-radius: 50%;
-      filter: blur(100px);
-      pointer-events: none;
-      z-index: -1;
-      transition: opacity .6s;
-    }
-
-    .glow-orb-1 {
-      width: 500px;
-      height: 500px;
-      top: -150px;
-      left: -100px;
-      background: radial-gradient(circle, rgba(40,160,184,.12) 0%, transparent 70%);
-    }
-
-    .glow-orb-2 {
-      width: 600px;
-      height: 600px;
-      bottom: -200px;
-      right: -150px;
-      background: radial-gradient(circle, rgba(73,191,208,.08) 0%, transparent 70%);
-    }
-
-    .glow-orb-3 {
-      width: 400px;
-      height: 400px;
-      top: 40%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: radial-gradient(circle, rgba(73,191,208,.05) 0%, transparent 70%);
-      animation: orbPulse 8s ease-in-out infinite;
-    }
-
-    @keyframes orbPulse {
-      0%, 100% { opacity: .6; transform: translateX(-50%) scale(1); }
-      50% { opacity: 1; transform: translateX(-50%) scale(1.15); }
-    }
-
-    /* ===== Nav ===== */
-    .nav {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      backdrop-filter: blur(16px) saturate(1.4);
-      -webkit-backdrop-filter: blur(16px) saturate(1.4);
-      background: var(--nav-bg);
-      border-bottom: 1px solid var(--border);
-      transition: background .4s, border-color .4s;
-    }
-
-    .nav-inner {
-      max-width: 960px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 56px;
-      padding: 0 24px;
-    }
-
-    .nav-logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    a {
+      color: inherit;
       text-decoration: none;
     }
 
-    .nav-logo svg {
-      width: 28px;
-      height: 28px;
+    button {
+      font: inherit;
+      color: inherit;
     }
 
-    .nav-logo-text {
-      font-family: 'SF Mono', 'Cascadia Code', monospace;
-      font-size: 1.1rem;
-      font-weight: 700;
-      letter-spacing: -.5px;
-      color: var(--accent);
+    img { display: block; max-width: 100%; }
+
+    .page-shell {
+      position: relative;
+      overflow: clip;
+    }
+
+    .page-shell::before,
+    .page-shell::after {
+      content: "";
+      position: fixed;
+      inset: auto;
+      pointer-events: none;
+      z-index: -2;
+      filter: blur(90px);
+      opacity: 0.9;
+    }
+
+    .page-shell::before {
+      width: 34rem;
+      height: 34rem;
+      top: -8rem;
+      right: -10rem;
+      background: rgba(99, 202, 221, 0.14);
+    }
+
+    .page-shell::after {
+      width: 28rem;
+      height: 28rem;
+      bottom: 8rem;
+      left: -10rem;
+      background: rgba(59, 104, 177, 0.18);
+    }
+
+    .grid-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: -3;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.6), transparent 92%);
+    }
+
+    [data-theme="light"] .grid-overlay {
+      background-image:
+        linear-gradient(rgba(21, 47, 73, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(21, 47, 73, 0.04) 1px, transparent 1px);
+    }
+
+    .container {
+      width: min(1160px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    .site-nav {
+      position: fixed;
+      top: 18px;
+      left: 0;
+      right: 0;
+      z-index: 20;
+    }
+
+    .site-nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 14px 18px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--bg-soft);
+      backdrop-filter: blur(18px) saturate(140%);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14);
+    }
+
+    .nav-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .nav-brand img {
+      width: 30px;
+      height: 30px;
     }
 
     .nav-actions {
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .nav-btn,
+    .hero-actions .btn,
+    .copy-btn,
+    .segment-btn {
+      border: 1px solid transparent;
+      background: transparent;
+      cursor: pointer;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
     }
 
     .nav-btn {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: .82rem;
-      font-weight: 500;
+      gap: 8px;
+      padding: 8px 12px;
       color: var(--text-dim);
-      background: transparent;
-      border: 1px solid transparent;
-      cursor: pointer;
-      transition: all .2s;
-      font-family: inherit;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.02);
     }
 
-    .nav-btn:hover {
-      background: var(--glass);
-      border-color: var(--glass-border);
+    .nav-btn:hover,
+    .nav-btn:focus-visible {
       color: var(--text);
-      text-decoration: none;
+      border-color: var(--line);
+      background: rgba(255, 255, 255, 0.05);
+      transform: translateY(-1px);
+      outline: none;
     }
 
-    .nav-btn svg {
-      width: 16px;
-      height: 16px;
-      flex-shrink: 0;
+    .nav-btn svg,
+    .copy-btn svg {
+      width: 15px;
+      height: 15px;
+      flex: 0 0 auto;
     }
 
-    /* ===== Hero ===== */
     .hero {
-      text-align: center;
-      padding: 100px 24px 90px;
       position: relative;
-      overflow: hidden;
+      min-height: 100svh;
+      padding: 112px 0 56px;
+      display: flex;
+      align-items: center;
     }
 
     .hero::before {
-      content: '';
+      content: "";
       position: absolute;
-      top: -60px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 700px;
-      height: 700px;
-      background: radial-gradient(circle, rgba(73,191,208,.07) 0%, rgba(40,160,184,.03) 40%, transparent 70%);
-      pointer-events: none;
+      inset: 0;
+      background: var(--hero-glow);
+      z-index: -1;
     }
 
-    .hero-logo-wrap {
-      display: flex;
-      justify-content: center;
-      margin-bottom: 20px;
+    .hero-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.94fr) minmax(320px, 0.86fr);
+      gap: 34px;
+      align-items: center;
     }
 
-    .hero-logo-wrap svg {
-      width: 120px;
-      height: 120px;
-      filter: drop-shadow(0 0 30px rgba(73,191,208,.2));
-      animation: logoFloat 6s ease-in-out infinite;
+    .hero-copy {
+      max-width: 36rem;
     }
 
-    @keyframes logoFloat {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-8px); }
-    }
-
-    .hero-name {
-      font-family: 'SF Mono', 'Cascadia Code', monospace;
-      font-size: 3.8rem;
-      font-weight: 800;
-      letter-spacing: -3px;
-      background: linear-gradient(135deg, #49bfd0, #28a0b8, #49bfd0);
-      background-size: 200% 200%;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      animation: gradientShift 6s ease-in-out infinite;
-      line-height: 1.1;
-    }
-
-    @keyframes gradientShift {
-      0%, 100% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-    }
-
-    .hero-slogan {
-      font-size: 1.35rem;
-      color: var(--text-dim);
-      margin: 14px 0 28px;
-      font-weight: 400;
-      letter-spacing: .3px;
-    }
-
-    .hero-desc {
-      max-width: 560px;
-      margin: 0 auto 40px;
-      color: var(--text-dim);
-      font-size: 1.02rem;
-      line-height: 1.75;
-    }
-
-    .hero-desc code {
-      background: var(--bg-code);
-      padding: 2px 7px;
-      border-radius: 5px;
-      font-size: .9em;
+    .eyebrow,
+    .section-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.76rem;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
       color: var(--accent);
-      border: 1px solid var(--border);
+    }
+
+    .eyebrow::before,
+    .section-label::before {
+      content: "";
+      width: 42px;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.6;
+    }
+
+    .hero h1 {
+      margin: 18px 0 14px;
+      font-size: clamp(3.4rem, 9vw, 7.1rem);
+      line-height: 0.94;
+      letter-spacing: -0.06em;
+      font-weight: 700;
+    }
+
+    .hero h1 span {
+      display: block;
+      color: var(--text);
+    }
+
+    .hero h1 em {
+      display: block;
+      font-style: normal;
+      color: var(--accent);
+      text-shadow: 0 0 24px rgba(99, 202, 221, 0.16);
+    }
+
+    .hero-lead {
+      max-width: 30rem;
+      margin: 0;
+      font-size: 1.05rem;
+      color: var(--text-dim);
     }
 
     .hero-actions {
       display: flex;
-      gap: 14px;
-      justify-content: center;
       flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 28px;
     }
 
     .btn {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      padding: 12px 24px;
-      border-radius: 10px;
-      font-size: .93rem;
-      font-weight: 600;
-      transition: all .25s;
-      border: none;
-      cursor: pointer;
-      font-family: inherit;
-      letter-spacing: .1px;
+      justify-content: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 0 18px;
+      border-radius: 999px;
+      font-weight: 500;
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, #3aaac0, #49bfd0);
-      color: #fff;
-      box-shadow: 0 4px 20px rgba(73,191,208,.2), 0 1px 3px rgba(0,0,0,.2);
-    }
-    .btn-primary:hover {
-      background: linear-gradient(135deg, #2a90a8, #3aaac0);
-      box-shadow: 0 6px 28px rgba(73,191,208,.25), 0 1px 3px rgba(0,0,0,.2);
-      text-decoration: none;
-      transform: translateY(-2px);
+      color: #04111a;
+      background: linear-gradient(135deg, #8be2ef, #63cadd 46%, #4ba7cc);
+      box-shadow: 0 14px 34px rgba(74, 166, 200, 0.24);
     }
 
-    .btn-outline {
-      border: 1px solid var(--border);
+    .btn-secondary {
       color: var(--text);
-      background: var(--glass);
-      backdrop-filter: blur(8px);
+      border-color: var(--line);
+      background: rgba(255, 255, 255, 0.03);
     }
-    .btn-outline:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-      text-decoration: none;
+
+    .btn:hover,
+    .btn:focus-visible {
       transform: translateY(-2px);
+      outline: none;
     }
 
-    /* ===== Section ===== */
-    section { padding: 90px 0; }
-
-    .section-label {
-      text-align: center;
-      font-size: .72rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 3px;
-      color: var(--accent);
-      margin-bottom: 12px;
-      opacity: .7;
-    }
-
-    .section-title {
-      text-align: center;
-      font-size: 2rem;
-      font-weight: 800;
-      margin-bottom: 10px;
-      letter-spacing: -.5px;
-    }
-
-    .section-sub {
-      text-align: center;
-      color: var(--text-dim);
-      margin-bottom: 52px;
-      font-size: .98rem;
-    }
-
-    .divider {
-      border: none;
-      border-top: 1px solid var(--border);
-      position: relative;
-    }
-
-    .divider::after {
-      content: '';
-      position: absolute;
-      top: -1px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 80px;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    }
-
-    /* ===== Features ===== */
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
       gap: 18px;
-    }
-
-    .feature-card {
-      background: var(--bg-raised);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 28px 24px;
-      transition: all .3s cubic-bezier(.4,0,.2,1);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .feature-card::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 16px;
-      padding: 1px;
-      background: linear-gradient(135deg, transparent 40%, rgba(73,191,208,.15), transparent 60%);
-      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      -webkit-mask-composite: xor;
-      mask-composite: exclude;
-      opacity: 0;
-      transition: opacity .3s;
-    }
-
-    .feature-card:hover {
-      border-color: var(--border-glow);
-      background: var(--bg-raised-hover);
-      transform: translateY(-3px);
-      box-shadow: 0 8px 32px var(--shadow-color);
-    }
-
-    .feature-card:hover::before { opacity: 1; }
-
-    .feature-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: var(--accent-dim);
-      border: 1px solid var(--glass-border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      margin-bottom: 14px;
-    }
-
-    .feature-card h3 {
-      font-size: 1rem;
-      margin-bottom: 8px;
-      font-weight: 700;
-      letter-spacing: -.2px;
-    }
-
-    .feature-card p {
+      margin-top: 22px;
       color: var(--text-dim);
-      font-size: .9rem;
-      line-height: 1.55;
+      font-size: 0.92rem;
     }
 
-    .db-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 14px;
+    .hero-meta strong {
+      color: var(--text);
+      font-weight: 500;
     }
 
-    .db-tag {
-      background: var(--accent-dim);
-      color: var(--accent);
-      padding: 3px 10px;
-      border-radius: 6px;
-      font-size: .75rem;
-      font-weight: 600;
-      font-family: 'SF Mono', monospace;
-      border: 1px solid var(--glass-border);
-    }
-
-    .feature-code {
-      background: var(--bg-code);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px 14px;
-      margin-top: 14px;
-      font-size: .78rem;
-      line-height: 1.55;
-      color: var(--accent);
-      overflow-x: auto;
-      white-space: pre;
-    }
-
-    /* ===== Quick Start ===== */
-    .steps {
-      display: flex;
-      flex-direction: column;
-      gap: 36px;
+    .hero-stage {
       position: relative;
+      min-height: 620px;
+      display: grid;
+      place-items: center;
     }
 
-    .steps::before {
-      content: '';
+    .stage-ring,
+    .stage-ring::before,
+    .stage-ring::after {
       position: absolute;
-      left: 19px;
-      top: 44px;
-      bottom: 24px;
-      width: 2px;
-      background: linear-gradient(to bottom, var(--accent), var(--border));
-      border-radius: 1px;
-    }
-
-    .step {
-      display: flex;
-      gap: 24px;
-      align-items: flex-start;
-    }
-
-    .step-num {
-      flex-shrink: 0;
-      width: 40px;
-      height: 40px;
+      border: 1px solid var(--line);
       border-radius: 50%;
-      background: linear-gradient(135deg, var(--accent-dim), rgba(73,191,208,.18));
-      color: var(--accent);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: .95rem;
-      position: relative;
-      z-index: 1;
-      border: 1px solid var(--glass-border);
+      content: "";
     }
 
-    .step-content {
-      flex: 1;
-      min-width: 0;
+    .stage-ring {
+      width: min(92vw, 620px);
+      aspect-ratio: 1;
+      background:
+        radial-gradient(circle at center, rgba(99, 202, 221, 0.14), transparent 46%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.02), transparent 55%);
+      box-shadow: inset 0 0 120px rgba(59, 104, 177, 0.1);
     }
 
-    .step-content h3 {
-      font-size: 1.15rem;
-      margin-bottom: 6px;
-      font-weight: 700;
-      letter-spacing: -.2px;
+    .stage-ring::before {
+      inset: 9%;
     }
 
-    .step-content > p {
-      color: var(--text-dim);
-      margin-bottom: 14px;
-      font-size: .93rem;
+    .stage-ring::after {
+      inset: 20%;
+      border-color: rgba(121, 164, 204, 0.14);
     }
 
-    .code-block {
-      background: var(--bg-code);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px 20px;
-      overflow-x: auto;
-      font-size: .84rem;
-      line-height: 1.7;
-      color: var(--text);
-      white-space: pre;
-      transition: background .4s, border-color .4s;
-    }
-
-    .code-block .comment { color: var(--text-dim); }
-    .code-block .cmd { color: var(--green); }
-    .code-block .mgr { color: var(--accent); }
-    .code-block .flag { color: #5ed4e7; }
-
-    /* ===== Code block with copy ===== */
-    .code-wrap {
-      position: relative;
-    }
-
-    .code-wrap .copy-btn {
+    .stage-route,
+    .stage-route::before,
+    .stage-route::after {
       position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 30px;
-      height: 30px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: var(--bg-raised);
-      color: var(--text-dim);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      opacity: 0;
-      transition: all .2s;
-      padding: 0;
+      content: "";
+      border-radius: 999px;
+      background: linear-gradient(90deg, transparent, rgba(99, 202, 221, 0.55), transparent);
+      opacity: 0.7;
     }
 
-    .code-wrap:hover .copy-btn {
-      opacity: 1;
+    .stage-route {
+      width: 76%;
+      height: 1px;
+      transform: rotate(-18deg);
     }
 
-    .copy-btn:hover {
-      border-color: var(--accent);
-      color: var(--accent);
+    .stage-route::before {
+      width: 70%;
+      height: 1px;
+      top: 92px;
+      left: -10px;
+      transform: rotate(32deg);
     }
 
-    .copy-btn.copied {
-      border-color: var(--green);
-      color: var(--green);
+    .stage-route::after {
+      width: 58%;
+      height: 1px;
+      bottom: 80px;
+      right: -22px;
+      transform: rotate(58deg);
     }
 
-    .copy-btn svg {
-      width: 14px;
-      height: 14px;
+    .hero-ship {
+      position: relative;
+      width: min(70vw, 430px);
+      transform: rotate(-8deg);
+      filter: drop-shadow(0 24px 46px rgba(0, 0, 0, 0.34));
+      animation: heroDrift 7s ease-in-out infinite;
+      z-index: 2;
     }
 
-    /* ===== Tabs ===== */
-    .tabs {
-      margin-bottom: 4px;
+    .hero-ship::before,
+    .hero-ship::after {
+      content: "";
+      position: absolute;
+      inset: auto;
+      border-radius: 999px;
+      background: rgba(99, 202, 221, 0.18);
+      filter: blur(22px);
+      z-index: -1;
     }
 
-    .tab-list {
-      display: flex;
-      gap: 0;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 0;
+    .hero-ship::before {
+      width: 52%;
+      height: 22px;
+      left: 24%;
+      bottom: -18px;
     }
 
-    .tabs > .tab-list > .tab-btn {
-      text-transform: uppercase;
-      letter-spacing: .5px;
+    .hero-ship::after {
+      width: 34%;
+      height: 18px;
+      right: 10%;
+      top: 20%;
     }
 
-    .tabs-lower > .tab-list > .tab-btn {
-      text-transform: none;
-      letter-spacing: 0;
+    .hero-ship img {
+      width: 100%;
+      height: auto;
     }
 
-    .tab-btn {
-      padding: 8px 18px;
-      font-size: .78rem;
+    .stage-node {
+      position: absolute;
+      display: grid;
+      gap: 6px;
+      min-width: 152px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow);
+      z-index: 3;
+    }
+
+    .stage-node strong {
+      font-size: 0.9rem;
       font-weight: 600;
+    }
+
+    .stage-node span {
       color: var(--text-dim);
-      background: transparent;
-      border: none;
-      border-bottom: 2px solid transparent;
-      cursor: pointer;
-      transition: all .2s;
-      font-family: inherit;
+      font-size: 0.8rem;
     }
 
-    .tab-btn:hover {
-      color: var(--text);
+    .stage-node.source { top: 9%; left: 3%; }
+    .stage-node.target { top: 20%; right: 4%; }
+    .stage-node.config { bottom: 16%; left: 8%; }
+    .stage-node.resume { bottom: 8%; right: 12%; }
+
+    .hero-command,
+    .signal-strip,
+    .workflow-step,
+    .skills-shell,
+    .cta-shell {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow);
     }
 
-    .tab-btn.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
-    }
-
-    .tab-panel {
-      display: none;
-    }
-
-    .tab-panel.active {
-      display: block;
-    }
-
-    .no-install-label {
-      font-size: .82rem;
-      color: var(--text-dim);
-      margin: 16px 0 8px;
-    }
-
-    /* ===== Databases ===== */
-    .db-list {
-      display: flex;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 14px;
-    }
-
-    .db-item {
+    .hero-command {
       display: flex;
       align-items: center;
       gap: 12px;
-      background: var(--bg-raised);
-      border: 1px solid var(--border);
+      width: min(100%, 560px);
+      margin-top: 28px;
+      padding: 14px 14px 14px 18px;
+      border-radius: 18px;
+      background-image: var(--surface-glow);
+    }
+
+    .command-prefix {
+      font-size: 0.74rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .command-line {
+      flex: 1;
+      min-width: 0;
+      overflow-x: auto;
+      white-space: nowrap;
+      color: var(--accent);
+      font-size: 0.96rem;
+    }
+
+    .copy-btn {
+      display: inline-grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
       border-radius: 12px;
-      padding: 14px 22px;
-      min-width: 150px;
-      transition: all .3s cubic-bezier(.4,0,.2,1);
+      border-color: var(--line);
+      color: var(--text-dim);
+      background: rgba(255, 255, 255, 0.03);
+      flex: 0 0 auto;
+    }
+
+    .copy-btn:hover,
+    .copy-btn:focus-visible,
+    .copy-btn.copied {
+      border-color: var(--accent);
+      color: var(--accent);
+      outline: none;
+      transform: translateY(-1px);
+    }
+
+    main section {
+      padding: 108px 0;
       position: relative;
-      overflow: hidden;
     }
 
-    .db-item::after {
-      content: '';
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      opacity: 0;
-      transition: opacity .3s;
+    .section-head {
+      max-width: 38rem;
+      margin-bottom: 42px;
     }
 
-    .db-item:hover {
-      border-color: var(--border-glow);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 20px var(--shadow-color);
+    .section-head h2 {
+      margin: 14px 0 12px;
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      line-height: 1;
+      letter-spacing: -0.05em;
     }
 
-    .db-item:hover::after { opacity: 1; }
+    .section-head p {
+      margin: 0;
+      color: var(--text-dim);
+      font-size: 1rem;
+    }
 
-    .db-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
+    .proof-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    .proof-flow {
+      border-top: 1px solid var(--line);
+    }
+
+    .proof-row {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      gap: 24px;
+      padding: 26px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .proof-index {
+      color: var(--accent);
+      font-size: 0.88rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      padding-top: 2px;
+    }
+
+    .proof-row h3 {
+      margin: 0 0 8px;
+      font-size: 1.34rem;
+      letter-spacing: -0.03em;
+    }
+
+    .proof-row p {
+      margin: 0;
+      color: var(--text-dim);
+    }
+
+    .signal-strip {
+      border-radius: 28px;
+      padding: 28px;
+      background-image: var(--surface-glow);
+      display: grid;
+      gap: 24px;
+      align-content: start;
+    }
+
+    .signal-copy h3,
+    .skills-copy h3,
+    .cta-copy h3 {
+      margin: 0 0 10px;
+      font-size: 1.4rem;
+      letter-spacing: -0.03em;
+    }
+
+    .signal-copy p,
+    .skills-copy p,
+    .cta-copy p {
+      margin: 0;
+      color: var(--text-dim);
+    }
+
+    .db-cluster {
       display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .db-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 0.88rem;
+    }
+
+    .db-pill::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px rgba(99, 202, 221, 0.4);
+    }
+
+    .signal-list {
+      display: grid;
+      gap: 12px;
+      padding-top: 6px;
+    }
+
+    .signal-item {
+      display: grid;
+      grid-template-columns: 84px minmax(0, 1fr);
+      gap: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(121, 164, 204, 0.16);
+      font-size: 0.92rem;
+    }
+
+    .signal-item strong {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .signal-item span {
+      color: var(--text-dim);
+    }
+
+    .workflow-layout {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .workflow-step {
+      border-radius: 22px;
+      padding: 22px;
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+
+    .step-kicker {
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-weight: 800;
-      font-size: .65rem;
-      color: #fff;
-      flex-shrink: 0;
-      letter-spacing: -.3px;
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      color: var(--accent);
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 0.9rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
     }
 
-    .db-icon.oracle { background: linear-gradient(135deg, #f80000, #c74634); }
-    .db-icon.mysql { background: linear-gradient(135deg, #00758f, #00a4c4); }
-    .db-icon.postgres { background: linear-gradient(135deg, #336791, #4169e1); }
-    .db-icon.sqlserver { background: linear-gradient(135deg, #a91d22, #cc2927); }
-    .db-icon.sqlite { background: linear-gradient(135deg, #044a64, #003b57); }
-    .db-icon.duckdb { background: linear-gradient(135deg, #fcd34d, #eab308); color: #333; }
-
-    .db-name {
-      font-weight: 600;
-      font-size: .9rem;
+    .workflow-step h3 {
+      margin: 0;
+      font-size: 1.18rem;
+      letter-spacing: -0.03em;
     }
 
-    /* ===== Footer ===== */
-    footer {
-      padding: 48px 0;
-      border-top: 1px solid var(--border);
-      text-align: center;
+    .workflow-step p {
+      margin: 0;
       color: var(--text-dim);
-      font-size: .85rem;
-      transition: border-color .4s;
-      position: relative;
     }
 
-    footer a { color: var(--text-dim); }
-    footer a:hover { color: var(--accent); text-decoration: underline; }
+    .command-stack {
+      display: grid;
+      gap: 10px;
+    }
 
-    footer .footer-links {
+    .command-box {
       display: flex;
-      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      min-height: 52px;
+      padding: 10px 12px 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .command-box pre {
+      margin: 0;
+      flex: 1;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      color: var(--text);
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+
+    .command-box pre .accent { color: var(--accent); }
+    .command-box pre .comment { color: var(--text-dim); }
+    .command-box .copy-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+    }
+
+    .skills-shell,
+    .cta-shell {
+      border-radius: 30px;
+      padding: 30px;
+      background-image: var(--surface-glow);
+    }
+
+    .skills-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(280px, 1.05fr);
       gap: 28px;
-      margin-bottom: 16px;
+      align-items: start;
     }
 
-    footer .footer-logo {
-      width: 20px;
-      height: 20px;
-      vertical-align: middle;
-      margin-right: 4px;
-      opacity: .5;
+    .skills-copy .skill-points {
+      display: grid;
+      gap: 14px;
+      margin-top: 22px;
     }
 
-    /* ===== Responsive ===== */
-    @media (max-width: 768px) {
-      .hero { padding: 70px 24px 50px; }
-      .hero-logo-wrap svg { width: 90px; height: 90px; }
-      .hero-name { font-size: 2.6rem; letter-spacing: -2px; }
-      .hero-slogan { font-size: 1.1rem; }
-
-      .section-title { font-size: 1.6rem; }
-
-      .features-grid { grid-template-columns: 1fr; }
-
-      .steps::before { display: none; }
-      .step { flex-direction: column; gap: 14px; }
-
-      .install-grid { grid-template-columns: 1fr; }
-      .no-install-row { grid-template-columns: 1fr; }
-
-      .db-list { gap: 10px; }
-      .db-item { min-width: 140px; padding: 12px 16px; }
+    .skill-points div {
+      padding-top: 14px;
+      border-top: 1px solid rgba(121, 164, 204, 0.16);
     }
 
-    @media (max-width: 480px) {
-      .hero-actions { flex-direction: column; align-items: center; }
-      .hero-name { font-size: 2.2rem; }
-      .nav-logo-text { font-size: .95rem; }
-      .nav-btn span.hide-mobile { display: none; }
-      .db-list { gap: 8px; }
-      .db-item { min-width: 0; flex: 1; justify-content: center; }
+    .skill-points strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.96rem;
+      color: var(--text);
+    }
+
+    .skill-points span {
+      color: var(--text-dim);
+      font-size: 0.94rem;
+    }
+
+    .command-panel {
+      display: grid;
+      gap: 14px;
+    }
+
+    .segment-list {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+      width: fit-content;
+    }
+
+    .segment-btn {
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 999px;
+      color: var(--text-dim);
+    }
+
+    .segment-btn.active,
+    .segment-btn:hover,
+    .segment-btn:focus-visible {
+      color: var(--text);
+      border-color: var(--line);
+      background: rgba(255, 255, 255, 0.08);
+      outline: none;
+    }
+
+    .segment-panel {
+      display: none;
+      gap: 12px;
+    }
+
+    .segment-panel.active {
+      display: grid;
+    }
+
+    .command-caption {
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+
+    .cta-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .cta-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    footer {
+      padding: 0 0 46px;
+    }
+
+    .footer-shell {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding-top: 26px;
+      border-top: 1px solid var(--line);
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-links a:hover,
+    .footer-links a:focus-visible {
+      color: var(--text);
+      outline: none;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 560ms ease, transform 560ms ease;
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .hero-copy,
+    .hero-stage,
+    .hero-command {
+      animation: fadeUp 760ms ease both;
+    }
+
+    .hero-stage { animation-delay: 120ms; }
+    .hero-command { animation-delay: 220ms; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(28px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes heroDrift {
+      0%, 100% { transform: rotate(-8deg) translateY(0); }
+      50% { transform: rotate(-5deg) translateY(-8px); }
+    }
+
+    @media (max-width: 1024px) {
+      .hero-layout,
+      .proof-layout,
+      .skills-layout,
+      .cta-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .workflow-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .cta-actions {
+        justify-content: flex-start;
+      }
+
+      .hero-stage {
+        min-height: 500px;
+      }
+
+      .stage-node.source { top: 4%; left: 2%; }
+      .stage-node.target { top: 10%; right: 2%; }
+      .stage-node.config { bottom: 15%; left: 4%; }
+      .stage-node.resume { bottom: 8%; right: 6%; }
+    }
+
+    @media (max-width: 720px) {
+      .container {
+        width: min(100% - 28px, 1160px);
+      }
+
+      .site-nav {
+        top: 10px;
+      }
+
+      .site-nav .container {
+        border-radius: 16px;
+        padding: 12px 14px;
+      }
+
+      .nav-brand span {
+        font-size: 0.92rem;
+      }
+
+      .nav-actions {
+        gap: 6px;
+      }
+
+      .nav-btn {
+        padding: 8px 10px;
+      }
+
+      .hero {
+        padding-top: 104px;
+        padding-bottom: 34px;
+      }
+
+      .hero h1 {
+        font-size: clamp(2.8rem, 17vw, 4.6rem);
+      }
+
+      .hero-meta {
+        gap: 10px 16px;
+      }
+
+      .hero-stage {
+        min-height: 430px;
+      }
+
+      .hero-ship {
+        width: min(76vw, 340px);
+      }
+
+      .stage-node {
+        min-width: 132px;
+        padding: 9px 10px;
+        border-radius: 14px;
+      }
+
+      .stage-node span {
+        font-size: 0.74rem;
+      }
+
+      .proof-row,
+      .signal-item {
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      main section {
+        padding: 82px 0;
+      }
+
+      .skills-shell,
+      .cta-shell,
+      .signal-strip,
+      .workflow-step {
+        border-radius: 24px;
+        padding: 22px;
+      }
+
+      .footer-shell {
+        flex-direction: column;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .nav-btn .hide-mobile { display: none; }
+
+      .hero-actions,
+      .cta-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .hero-actions .btn,
+      .cta-actions .btn {
+        width: 100%;
+      }
+
+      .hero-command,
+      .command-box {
+        align-items: flex-start;
+      }
+
+      .hero-command {
+        flex-wrap: wrap;
+      }
+
+      .command-line,
+      .command-box pre {
+        min-width: 100%;
+      }
     }
   </style>
 </head>
 <body>
+  <div class="page-shell">
+    <div class="grid-overlay"></div>
 
-  <div class="bg-mesh"></div>
-  <div class="glow-orb glow-orb-1"></div>
-  <div class="glow-orb glow-orb-2"></div>
-  <div class="glow-orb glow-orb-3"></div>
-
-  <!-- Nav -->
-  <nav class="nav">
-    <div class="nav-inner">
-      <a href="#" class="nav-logo">
-        <svg viewBox="0 0 250 250" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="m243.9 15.63-59.97 32.08-3.02 3.41-3.97 2.27-7.91 2.8 2.7 3.01 9.22 5.71 1.29 2.5v10.31l16.56 9.4-0.55 15.29-6.02 11.95-7.5 5.9-12.89 8.1-0.76 3.76 12.85 0.44 29.5 0.77 30.31-15.22 0.16-102.5z" fill="url(#nav_g1)"/>
-          <path d="m6.12 135.6 90.53-47.71v6.49l-31.69 16.81-11.85 12.89-1.15 13.51 15.65 19.5 1.7 7.79 6.4-2 11-0.7 18.35-3.35 15.65-6.74 64.9-34.26v29.76l-163.9 85.5h-15.59v-97.49z" fill="url(#nav_g2)"/>
-          <path d="m149.2 199.1h-71.75c-4.87 0-7 3.29-7 7 0 4.29 2.75 6.6 6.5 6.6h72.25c5.1 0 6.9-4 6.9-6.81 0-4-2.4-6.79-6.9-6.79z" fill="#FEFFFE" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
-          <path d="m125.1 202.1h-47c-3.2 0-4.7 2.1-4.7 4 0 2.5 1.3 4.1 4.2 4.1h47.5c2.8 0 4-2 4-4 0-2.21-1.4-4.1-4-4.1z" fill="url(#nav_g3)"/>
-          <defs>
-            <linearGradient id="nav_g1" x1="171.7" x2="244" y1="42.82" y2="107.3" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#49BFD0"/><stop stop-color="#209DAE"/>
-            </linearGradient>
-            <linearGradient id="nav_g2" x1="15.61" x2="67.61" y1="114.1" y2="208.6" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#286196"/><stop stop-color="#274A88"/>
-            </linearGradient>
-            <linearGradient id="nav_g3" x1="73.41" x2="129.1" y1="206.2" y2="206.2" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#54A7CC"/><stop stop-color="#58D795"/>
-            </linearGradient>
-          </defs>
-        </svg>
-        <span class="nav-logo-text">db-ferry</span>
-      </a>
-      <div class="nav-actions">
-        <button class="nav-btn" id="langToggle" onclick="toggleLang()">
-          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8ZM5.05 9.45C5.15 9.5 6.68 10 8 10s2.85-.5 2.95-.55a.75.75 0 00-.1-1.05C10.05 8.8 8.53 9.3 8 9.3s-2.05-.5-2.85-1.1a.75.75 0 00-1.05.1.75.75 0 00.1 1.05h.85ZM9.5 6.5a1 1 0 11-2 0 1 1 0 012 0ZM4.5 6.5a1 1 0 11-2 0 1 1 0 012 0Z"/></svg>
-          <span class="lang-label">English</span>
-        </button>
-        <button class="nav-btn" id="themeToggle" onclick="toggleTheme()">
-          <svg id="themeIcon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13ZM0 8a8 8 0 1116 0 8 8 0 01-16 0Zm8-3a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 5Zm0 7.5a.75.75 0 01-.75-.75v-1.5a.75.75 0 011.5 0v1.5a.75.75 0 01-.75.75Z"/></svg>
-          <span class="hide-mobile" id="themeLabel">Light</span>
-        </button>
-        <a href="https://github.com/xingkaixin/db-ferry" class="nav-btn" target="_blank" rel="noopener noreferrer">
-          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8Z"/></svg>
-          GitHub
+    <nav class="site-nav">
+      <div class="container">
+        <a class="nav-brand" href="#top" aria-label="db-ferry">
+          <img src="logo.svg" alt="">
+          <span>db-ferry</span>
         </a>
+        <div class="nav-actions">
+          <button class="nav-btn" id="langToggle" type="button" onclick="toggleLang()">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm4.75 7.25H9.84A12.9 12.9 0 0 0 8.67 2.6a6.53 6.53 0 0 1 4.08 4.65ZM8 2.19c.55.82 1.33 2.62 1.53 5.06H6.47C6.67 4.81 7.45 3.01 8 2.19ZM2.61 9.25h2.91c.11 1.72.49 3.34 1.16 4.65a6.53 6.53 0 0 1-4.07-4.65Zm2.91-2H2.61A6.53 6.53 0 0 1 6.68 2.6 12.44 12.44 0 0 0 5.52 7.25ZM8 13.81c-.55-.82-1.33-2.62-1.53-5.06h3.06c-.2 2.44-.98 4.24-1.53 5.06Zm.67.09c.67-1.31 1.05-2.93 1.17-4.65h2.91a6.53 6.53 0 0 1-4.08 4.65Z"/></svg>
+            <span class="lang-label">English</span>
+          </button>
+          <button class="nav-btn" id="themeToggle" type="button" onclick="toggleTheme()">
+            <svg id="themeIcon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.25a6.75 6.75 0 1 0 0 13.5A6.75 6.75 0 0 0 8 1.25Zm0 1.5a5.25 5.25 0 1 1 0 10.5 5.25 5.25 0 0 1 0-10.5Z"/></svg>
+            <span class="hide-mobile" id="themeLabel">Light</span>
+          </button>
+          <a class="nav-btn" href="https://github.com/xingkaixin/db-ferry" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.42 7.42 0 0 1 8 4.7c.68 0 1.36.09 2 .27 1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+            <span class="hide-mobile">GitHub</span>
+          </a>
+        </div>
       </div>
-    </div>
-  </nav>
+    </nav>
 
-  <!-- Hero -->
-  <section class="hero">
-    <div class="hero-logo-wrap">
-      <svg viewBox="0 0 250 250" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="m243.9 15.63-59.97 32.08-3.02 3.41-3.97 2.27-7.91 2.8 2.7 3.01 9.22 5.71 1.29 2.5v10.31l16.56 9.4-0.55 15.29-6.02 11.95-7.5 5.9-12.89 8.1-0.76 3.76 12.85 0.44 29.5 0.77 30.31-15.22 0.16-102.5z" fill="url(#hero_p0)"/>
-        <path d="m6.12 135.6 90.53-47.71v6.49l-31.69 16.81-11.85 12.89-1.15 13.51 15.65 19.5 1.7 7.79 6.4-2 11-0.7 18.35-3.35 15.65-6.74 64.9-34.26v29.76l-163.9 85.5h-15.59v-97.49z" fill="url(#hero_p1)"/>
-        <path d="m149.2 199.1h-71.75c-4.87 0-7 3.29-7 7 0 4.29 2.75 6.6 6.5 6.6h72.25c5.1 0 6.9-4 6.9-6.81 0-4-2.4-6.79-6.9-6.79z" fill="#FEFFFE" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
-        <path d="m125.1 202.1h-47c-3.2 0-4.7 2.1-4.7 4 0 2.5 1.3 4.1 4.2 4.1h47.5c2.8 0 4-2 4-4 0-2.21-1.4-4.1-4-4.1z" fill="url(#hero_p2)"/>
-        <path d="m196.6 87.12-15.5-8.5v-11.5l-23.5-14-18.5 11-3 3-16.5 6.5-52.5 36.5c-8.5 5-14 12.5-14 21.5v6l14.5 19.5c2.5 2.5 2.5 5 2.5 7.5 6-3.5 11.5-4.5 18.5-4 9.5 1 19.5-2 25-5l75.5-40.5 7.5-12.5v-15.5z" fill="url(#hero_p3)"/>
-        <path d="m121.1 118.2c11.88 0 20-4.76 20-9.5v-38c0-5.4-9.12-10-20-10-11.44 0-20 4.6-20 10v38c0 4.74 8.12 9.5 20 9.5z" fill="url(#hero_p4)"/>
-        <path d="m121.1 79.72c11.44 0 19.5-4.5 19.5-9.5 0-4.5-9.06-9-19.5-9-11.44 0-19.5 4.5-19.5 9 0 5 8.06 9.5 19.5 9.5z" fill="#A3D7E8" stroke="#12283C" stroke-miterlimit="10" stroke-width="2"/>
-        <path d="m101.1 87.22c0 5 8.56 9 20 9 10.94 0 19.5-4 19.5-9v8.5c0 5-9.06 8.5-19.5 8.5-11.44 0-20-3.5-20-8.5v-8.5z" fill="url(#hero_p5)" stroke="#12283C" stroke-miterlimit="10" stroke-width="1.5"/>
-        <path d="m101.1 98.22c0 5 8.56 9 20 9 10.94 0 19.5-4 19.5-9v8.5c0 5-9.06 8.5-19.5 8.5-11.44 0-20-3.5-20-8.5v-8.5z" fill="url(#hero_p6)" stroke="#12283C" stroke-miterlimit="10" stroke-width="1.5"/>
-        <path d="m139.6 67.22 19.5 12 19.5-12-22-13-17 11v2z" fill="#F0F3F7" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
-        <path d="m158.1 50.22v16" stroke="#12283C" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"/>
-        <path d="m142.1 70.22 17 9.5v27l-17-10v-26.5z" fill="#CED7E2" stroke="#12283C" stroke-miterlimit="10" stroke-width="2"/>
-        <path d="m143.1 77.22 10.5 6v6.5l-10.5-6.5v-6z" fill="#4998BE" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
-        <path d="m159.6 79.72 19-11.5v28l-19 11v-27.5z" fill="#F0F3F7" stroke="#12283C" stroke-miterlimit="10" stroke-width="2"/>
-        <path d="m164.6 83.22 9-5.5v8.5l-9 4v-7z" fill="#4998BE" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
-        <path d="m40.71 69.72c11.88 0 21.5-4.76 20-10v-31.5c0-5.4-8.62-9.5-20-9.5s-19.5 4.1-19.5 9.5v31.5c0 5.24 7.62 10 19.5 10z" fill="#CED7E2" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
-        <path d="m207.9 186.7c10.93 0 20.3-5 20.3-9.6v-31.9c0-4.6-9.37-8.5-20.3-8.5-10.94 0-19.3 3.9-19.3 8.5v31.9c0 4.6 8.36 9.6 19.3 9.6z" fill="url(#hero_p7)" stroke="#12283C" stroke-miterlimit="10" stroke-width="2.5"/>
-        <path d="m40.71 36.22c10.94 0 20-4.01 20-8.5 0-4.5-9.06-9-20-9s-19 4.5-19 9c0 4.49 8.06 8.5 19 8.5z" fill="#E1E8EF" stroke="#12283C" stroke-miterlimit="10" stroke-width="2"/>
-        <path d="m202.6 45.22v1.5" opacity=".5" stroke="#B7F9E0" stroke-linecap="round" stroke-width="2"/>
-        <path d="m177.1 110.2c2.33 0 3-2.5 3-3.5 0-1.5-1-2.5-2-2.5-2 0-3 2.5-3 3.5 0 1.5 1 2.5 2 2.5z" fill="#2874A6" stroke="#12283C" stroke-miterlimit="10" stroke-width="2"/>
-        <defs>
-          <linearGradient id="hero_p0" x1="171.7" x2="244" y1="42.82" y2="107.3" gradientUnits="userSpaceOnUse"><stop stop-color="#49BFD0"/><stop stop-color="#209DAE"/></linearGradient>
-          <linearGradient id="hero_p1" x1="15.61" x2="67.61" y1="114.1" y2="208.6" gradientUnits="userSpaceOnUse"><stop stop-color="#286196"/><stop stop-color="#274A88"/></linearGradient>
-          <linearGradient id="hero_p2" x1="73.41" x2="129.1" y1="206.2" y2="206.2" gradientUnits="userSpaceOnUse"><stop stop-color="#54A7CC"/><stop stop-color="#58D795"/></linearGradient>
-          <linearGradient id="hero_p3" x1="113.6" x2="113.6" y1="53.12" y2="164.6" gradientUnits="userSpaceOnUse"><stop stop-color="#39A9C1"/><stop stop-color="#39467A"/></linearGradient>
-          <linearGradient id="hero_p4" x1="101.1" x2="141.1" y1="89.47" y2="89.47" gradientUnits="userSpaceOnUse"><stop stop-color="#F0F3F7"/><stop stop-color="#95A4B0"/></linearGradient>
-          <linearGradient id="hero_p5" x1="101.1" x2="140.6" y1="95.72" y2="95.72" gradientUnits="userSpaceOnUse"><stop stop-color="#93C8EA"/><stop stop-color="#33649A"/></linearGradient>
-          <linearGradient id="hero_p6" x1="101.1" x2="140.6" y1="106.7" y2="106.7" gradientUnits="userSpaceOnUse"><stop stop-color="#93C8EA"/><stop stop-color="#33649A"/></linearGradient>
-          <linearGradient id="hero_p7" x1="188.6" x2="228.2" y1="161.7" y2="161.7" gradientUnits="userSpaceOnUse"><stop stop-color="#F0F3F7"/><stop stop-color="#95A4B0"/></linearGradient>
-        </defs>
-      </svg>
-    </div>
-    <div class="hero-name">db-ferry</div>
-    <p class="hero-slogan" data-i18n="hero-slogan">跨数据库数据迁移工具</p>
-    <p class="hero-desc" data-i18n="hero-desc">
-      Go CLI 工具，通过声明式 <code>task.toml</code> 配置，在 Oracle、MySQL、PostgreSQL、SQL Server、SQLite 和 DuckDB 之间批量迁移数据。
-    </p>
-    <div class="hero-actions">
-      <a href="https://www.npmjs.com/package/db-ferry" class="btn btn-primary" data-i18n="cta-install" target="_blank" rel="noopener noreferrer">npm install db-ferry</a>
-      <a href="https://github.com/xingkaixin/db-ferry" class="btn btn-outline" data-i18n="cta-github" target="_blank" rel="noopener noreferrer">GitHub Repo</a>
-    </div>
-  </section>
-
-  <!-- Features -->
-  <section>
-    <div class="container">
-      <div class="section-label" data-i18n="features-label">Features</div>
-      <h2 class="section-title" data-i18n="features-title">特性</h2>
-      <p class="section-sub" data-i18n="features-sub">简洁高效的数据库迁移体验</p>
-      <div class="features-grid">
-
-        <div class="feature-card">
-          <div class="feature-icon">🔌</div>
-          <h3 data-i18n="feat-multi-title">多数据库支持</h3>
-          <p data-i18n="feat-multi-desc">连接 6 种主流数据库，灵活配置源和目标。</p>
-          <div class="db-tags">
-            <span class="db-tag">Oracle</span>
-            <span class="db-tag">MySQL</span>
-            <span class="db-tag">PostgreSQL</span>
-            <span class="db-tag">SQL Server</span>
-            <span class="db-tag">SQLite</span>
-            <span class="db-tag">DuckDB</span>
+    <header class="hero" id="top">
+      <div class="container hero-layout">
+        <div class="hero-copy">
+          <div class="eyebrow" data-i18n="hero-eyebrow">task-driven database transfer</div>
+          <h1>
+            <span>db-</span>
+            <em>ferry</em>
+          </h1>
+          <p class="hero-lead" data-i18n="hero-lead">用一份 <code>task.toml</code>，把跨数据库迁移收成一条可复用、可追踪、可交给团队重复执行的工作流。</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="https://www.npmjs.com/package/db-ferry" target="_blank" rel="noopener noreferrer" data-i18n="cta-install">npm install db-ferry</a>
+            <a class="btn btn-secondary" href="https://github.com/xingkaixin/db-ferry" target="_blank" rel="noopener noreferrer" data-i18n="cta-github">View on GitHub</a>
+          </div>
+          <div class="hero-meta">
+            <span data-i18n="hero-meta-one"><strong>Go CLI</strong> for repeatable data moves</span>
+            <span data-i18n="hero-meta-two"><strong>6 engines</strong> across OLTP and local analytics</span>
+          </div>
+          <div class="hero-command">
+            <span class="command-prefix" data-i18n="hero-command-label">first command</span>
+            <div class="command-line mono">db-ferry config init</div>
+            <button class="copy-btn" type="button" data-copy="db-ferry config init" aria-label="Copy hero command">
+              <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 3A1.75 1.75 0 0 0 0 4.75v8.5C0 14.216.784 15 1.75 15h8.5A1.75 1.75 0 0 0 12 13.25v-1a.75.75 0 0 0-1.5 0v1a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25h1a.75.75 0 0 0 0-1.5h-1Z"/><path d="M5.75 1A1.75 1.75 0 0 0 4 2.75v8.5C4 12.216 4.784 13 5.75 13h8.5A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1h-8.5Zm0 1.5h8.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25Z"/></svg>
+            </button>
           </div>
         </div>
 
-        <div class="feature-card">
-          <div class="feature-icon">📋</div>
-          <h3 data-i18n="feat-config-title">声明式配置</h3>
-          <p data-i18n="feat-config-desc">一个 <code>task.toml</code> 文件定义所有数据库和迁移任务。</p>
-          <div class="feature-code">[[tasks]]
-table_name = "employees"
-sql = "SELECT * FROM employees"
-source_db = "oracle_hr"
-target_db = "sqlite_local"</div>
+        <div class="hero-stage" aria-hidden="true">
+          <div class="stage-ring"></div>
+          <div class="stage-route"></div>
+          <div class="stage-node source">
+            <strong>Oracle / MySQL</strong>
+            <span data-i18n="hero-node-source">source systems</span>
+          </div>
+          <div class="stage-node target">
+            <strong>SQLite / DuckDB</strong>
+            <span data-i18n="hero-node-target">target runtimes</span>
+          </div>
+          <div class="stage-node config">
+            <strong>task.toml</strong>
+            <span data-i18n="hero-node-config">declares route and write mode</span>
+          </div>
+          <div class="stage-node resume">
+            <strong>resume_key</strong>
+            <span data-i18n="hero-node-resume">continue where the last run stopped</span>
+          </div>
+          <div class="hero-ship">
+            <img src="logo.svg" alt="">
+          </div>
         </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">🏗️</div>
-          <h3 data-i18n="feat-ddl-title">自动建表</h3>
-          <p data-i18n="feat-ddl-desc">根据源表元数据自动生成目标表 DDL，无需手动创建表结构。</p>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">⚡</div>
-          <h3 data-i18n="feat-batch-title">批量流式传输</h3>
-          <p data-i18n="feat-batch-desc">分批插入、事务保证、实时进度条，高效处理大量数据。</p>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">🔄</div>
-          <h3 data-i18n="feat-increment-title">增量迁移</h3>
-          <p data-i18n="feat-increment-desc">通过 <code>resume_key</code> 和 <code>state_file</code> 实现断点续传。</p>
-          <div class="feature-code">resume_key = "id"
-resume_from = "1000000"
-state_file = "state.json"</div>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">🖥️</div>
-          <h3 data-i18n="feat-crossplatform-title">全平台支持</h3>
-          <p data-i18n="feat-crossplatform-desc">通过 npm 安装，支持 macOS、Linux 和 Windows。</p>
-        </div>
-
       </div>
-    </div>
-  </section>
+    </header>
 
-  <hr class="divider">
+    <main>
+      <section class="reveal">
+        <div class="container">
+          <div class="section-head">
+            <div class="section-label" data-i18n="proof-label">Product proof</div>
+            <h2 data-i18n="proof-title">不是一次性脚本，而是一条稳定的数据渡线。</h2>
+            <p data-i18n="proof-sub">db-ferry 把连接信息、写入策略、校验方式和断点状态都收进同一条任务链，适合反复执行，也适合交接给别人执行。</p>
+          </div>
 
-  <!-- Quick Start -->
-  <section>
-    <div class="container">
-      <div class="section-label" data-i18n="qs-label">Quick Start</div>
-      <h2 class="section-title" data-i18n="qs-title">快速开始</h2>
-      <p class="section-sub" data-i18n="qs-sub">三步开始跨数据库数据迁移</p>
-      <div class="steps">
-
-        <div class="step">
-          <div class="step-num">1</div>
-          <div class="step-content">
-            <h3 data-i18n="qs-install-title">安装</h3>
-            <p data-i18n="qs-install-desc">选择你喜欢的包管理器全局安装，或无需安装直接运行。</p>
-
-            <div class="tabs">
-              <div class="tab-list">
-                <button class="tab-btn active" data-tab="install" data-i18n="qs-tab-install">Install</button>
-                <button class="tab-btn" data-tab="run" data-i18n="qs-tab-run">Run</button>
-              </div>
-              <div class="tab-panel active" data-tabpanel="install">
-                <div class="tab-list" style="margin-top:8px; border-bottom:1px solid var(--border);">
-                  <button class="tab-btn active" data-subtab="install-pkg" data-pkg="npm">npm</button>
-                  <button class="tab-btn" data-subtab="install-pkg" data-pkg="pnpm">pnpm</button>
-                  <button class="tab-btn" data-subtab="install-pkg" data-pkg="bun">bun</button>
-                </div>
-                <div class="tab-panel active" data-subtabpanel="install-pkg" data-pkg="npm">
-                  <div class="code-wrap">
-                    <pre class="code-block"><span class="mgr">npm</span> install <span class="flag">-g</span> db-ferry</pre>
-                    <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
-                  </div>
-                </div>
-                <div class="tab-panel" data-subtabpanel="install-pkg" data-pkg="pnpm">
-                  <div class="code-wrap">
-                    <pre class="code-block"><span class="mgr">pnpm</span> add <span class="flag">-g</span> db-ferry</pre>
-                    <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
-                  </div>
-                </div>
-                <div class="tab-panel" data-subtabpanel="install-pkg" data-pkg="bun">
-                  <div class="code-wrap">
-                    <pre class="code-block"><span class="mgr">bun</span> add <span class="flag">-g</span> db-ferry</pre>
-                    <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
-                  </div>
+          <div class="proof-layout">
+            <div class="proof-flow">
+              <div class="proof-row">
+                <div class="proof-index">01</div>
+                <div>
+                  <h3 data-i18n="proof-row-one-title">声明式任务，先把迁移路径说清楚。</h3>
+                  <p data-i18n="proof-row-one-desc">数据库别名、源查询、目标表、写入模式都在 <code>task.toml</code> 里声明，不需要每次重写迁移脚本。</p>
                 </div>
               </div>
-              <div class="tab-panel" data-tabpanel="run">
-                <div class="tab-list" style="margin-top:8px; border-bottom:1px solid var(--border);">
-                  <button class="tab-btn active" data-subtab="run-pkg" data-pkg="npx">npx</button>
-                  <button class="tab-btn" data-subtab="run-pkg" data-pkg="bunx">bunx</button>
+              <div class="proof-row">
+                <div class="proof-index">02</div>
+                <div>
+                  <h3 data-i18n="proof-row-two-title">自动建表和批量写入，一次把目标侧铺好。</h3>
+                  <p data-i18n="proof-row-two-desc">工具会根据源端元数据生成目标表结构，分批插入并显示进度，让大表迁移也保持可见和可控。</p>
                 </div>
-                <div class="tab-panel active" data-subtabpanel="run-pkg" data-pkg="npx">
-                  <div class="code-wrap">
-                    <pre class="code-block"><span class="mgr">npx</span> db-ferry</pre>
-                    <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
-                  </div>
-                </div>
-                <div class="tab-panel" data-subtabpanel="run-pkg" data-pkg="bunx">
-                  <div class="code-wrap">
-                    <pre class="code-block"><span class="mgr">bunx</span> db-ferry</pre>
-                    <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
-                  </div>
+              </div>
+              <div class="proof-row">
+                <div class="proof-index">03</div>
+                <div>
+                  <h3 data-i18n="proof-row-three-title">断点续传和多库兼容，适合长期复用。</h3>
+                  <p data-i18n="proof-row-three-desc">通过 <code>resume_key</code>、<code>state_file</code> 与多种写入模式，把一次任务升级成可持续运行的迁移工作流。</p>
                 </div>
               </div>
             </div>
+
+            <aside class="signal-strip">
+              <div class="signal-copy">
+                <h3 data-i18n="proof-aside-title">兼顾生产库与本地分析库。</h3>
+                <p data-i18n="proof-aside-desc">同一套任务语义，覆盖主流事务型数据库和轻量本地引擎，不需要为每个目标端再写一套命令。</p>
+              </div>
+              <div class="db-cluster" aria-label="Supported databases">
+                <span class="db-pill">Oracle</span>
+                <span class="db-pill">MySQL</span>
+                <span class="db-pill">PostgreSQL</span>
+                <span class="db-pill">SQL Server</span>
+                <span class="db-pill">SQLite</span>
+                <span class="db-pill">DuckDB</span>
+              </div>
+              <div class="signal-list">
+                <div class="signal-item">
+                  <strong data-i18n="signal-one-label">write modes</strong>
+                  <span data-i18n="signal-one-value">replace / append / merge，覆盖全量与增量场景。</span>
+                </div>
+                <div class="signal-item">
+                  <strong data-i18n="signal-two-label">validation</strong>
+                  <span data-i18n="signal-two-value">支持 row_count 校验，在任务链里直接完成基础验收。</span>
+                </div>
+                <div class="signal-item">
+                  <strong data-i18n="signal-three-label">delivery</strong>
+                  <span data-i18n="signal-three-value">npm 安装即可运行，适合本地、脚本和团队环境重复复用。</span>
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
+      </section>
 
-        <div class="step">
-          <div class="step-num">2</div>
-          <div class="step-content">
-            <h3 data-i18n="qs-config-title">初始化配置</h3>
-            <p data-i18n="qs-config-desc">生成示例 <code>task.toml</code> 配置文件。</p>
-            <div class="code-wrap">
-              <pre class="code-block"><span class="mgr">db-ferry</span> config init
+      <section class="reveal">
+        <div class="container">
+          <div class="section-head">
+            <div class="section-label" data-i18n="workflow-label">Workflow</div>
+            <h2 data-i18n="workflow-title">上手路径压到三步，命令本身就是界面。</h2>
+            <p data-i18n="workflow-sub">安装、生成模板、执行迁移。每一步都只做一件事，不让首页退化成文档目录。</p>
+          </div>
 
-<span class="comment"># 生成 task.toml，编辑后填入你的数据库连接信息</span></pre>
-              <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
+          <div class="workflow-layout">
+            <article class="workflow-step">
+              <div class="step-kicker">01</div>
+              <h3 data-i18n="workflow-step-one-title">安装或直接运行</h3>
+              <p data-i18n="workflow-step-one-desc">先拿到 CLI，再决定是全局安装还是临时执行。</p>
+              <div class="command-stack">
+                <div class="command-box">
+                  <pre><span class="accent">npm</span> install -g db-ferry</pre>
+                  <button class="copy-btn" type="button" data-copy="npm install -g db-ferry" aria-label="Copy npm install">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 3A1.75 1.75 0 0 0 0 4.75v8.5C0 14.216.784 15 1.75 15h8.5A1.75 1.75 0 0 0 12 13.25v-1a.75.75 0 0 0-1.5 0v1a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25h1a.75.75 0 0 0 0-1.5h-1Z"/><path d="M5.75 1A1.75 1.75 0 0 0 4 2.75v8.5C4 12.216 4.784 13 5.75 13h8.5A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1h-8.5Zm0 1.5h8.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25Z"/></svg>
+                  </button>
+                </div>
+                <div class="command-box">
+                  <pre><span class="accent">npx</span> db-ferry -version</pre>
+                  <button class="copy-btn" type="button" data-copy="npx db-ferry -version" aria-label="Copy npx version">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 3A1.75 1.75 0 0 0 0 4.75v8.5C0 14.216.784 15 1.75 15h8.5A1.75 1.75 0 0 0 12 13.25v-1a.75.75 0 0 0-1.5 0v1a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25h1a.75.75 0 0 0 0-1.5h-1Z"/><path d="M5.75 1A1.75 1.75 0 0 0 4 2.75v8.5C4 12.216 4.784 13 5.75 13h8.5A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1h-8.5Zm0 1.5h8.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25Z"/></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+
+            <article class="workflow-step">
+              <div class="step-kicker">02</div>
+              <h3 data-i18n="workflow-step-two-title">生成任务模板</h3>
+              <p data-i18n="workflow-step-two-desc">先用内置样板起步，再把数据库别名和 SQL 换成你的迁移路线。</p>
+              <div class="command-stack">
+                <div class="command-box">
+                  <pre><span class="accent">db-ferry</span> config init</pre>
+                  <button class="copy-btn" type="button" data-copy="db-ferry config init" aria-label="Copy config init">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 3A1.75 1.75 0 0 0 0 4.75v8.5C0 14.216.784 15 1.75 15h8.5A1.75 1.75 0 0 0 12 13.25v-1a.75.75 0 0 0-1.5 0v1a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25h1a.75.75 0 0 0 0-1.5h-1Z"/><path d="M5.75 1A1.75 1.75 0 0 0 4 2.75v8.5C4 12.216 4.784 13 5.75 13h8.5A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1h-8.5Zm0 1.5h8.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25Z"/></svg>
+                  </button>
+                </div>
+                <div class="command-box">
+                  <pre><span class="comment"># edit task.toml and declare source / target / mode</span></pre>
+                </div>
+              </div>
+            </article>
+
+            <article class="workflow-step">
+              <div class="step-kicker">03</div>
+              <h3 data-i18n="workflow-step-three-title">执行迁移并复用它</h3>
+              <p data-i18n="workflow-step-three-desc">默认执行当前目录任务，也可以指定配置路径和详细日志。</p>
+              <div class="command-stack">
+                <div class="command-box">
+                  <pre><span class="accent">db-ferry</span></pre>
+                  <button class="copy-btn" type="button" data-copy="db-ferry" aria-label="Copy run default">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 3A1.75 1.75 0 0 0 0 4.75v8.5C0 14.216.784 15 1.75 15h8.5A1.75 1.75 0 0 0 12 13.25v-1a.75.75 0 0 0-1.5 0v1a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25h1a.75.75 0 0 0 0-1.5h-1Z"/><path d="M5.75 1A1.75 1.75 0 0 0 4 2.75v8.5C4 12.216 4.784 13 5.75 13h8.5A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1h-8.5Zm0 1.5h8.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25Z"/></svg>
+                  </button>
+                </div>
+                <div class="command-box">
+                  <pre><span class="accent">db-ferry</span> -config ./configs/task.toml
+<span class="accent">db-ferry</span> -v</pre>
+                  <button class="copy-btn" type="button" data-copy="db-ferry -config ./configs/task.toml&#10;db-ferry -v" aria-label="Copy advanced run">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 3A1.75 1.75 0 0 0 0 4.75v8.5C0 14.216.784 15 1.75 15h8.5A1.75 1.75 0 0 0 12 13.25v-1a.75.75 0 0 0-1.5 0v1a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25h1a.75.75 0 0 0 0-1.5h-1Z"/><path d="M5.75 1A1.75 1.75 0 0 0 4 2.75v8.5C4 12.216 4.784 13 5.75 13h8.5A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1h-8.5Zm0 1.5h8.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25Z"/></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="reveal">
+        <div class="container">
+          <div class="skills-shell">
+            <div class="skills-layout">
+              <div class="skills-copy">
+                <div class="section-label" data-i18n="skills-label">Skills</div>
+                <h3 data-i18n="skills-title">把 db-ferry 的语义直接交给 AI。</h3>
+                <p data-i18n="skills-sub">不是让 AI 猜配置，而是让它理解 db-ferry 的真实字段、命令入口和迁移边界，直接给出可用的任务片段。</p>
+                <div class="skill-points">
+                  <div>
+                    <strong data-i18n="skills-point-one-title">更准</strong>
+                    <span data-i18n="skills-point-one-desc">知道 <code>task.toml</code> 的字段与约束，少走错配置和错误命令。</span>
+                  </div>
+                  <div>
+                    <strong data-i18n="skills-point-two-title">更快</strong>
+                    <span data-i18n="skills-point-two-desc">直接生成迁移任务、安装命令和操作步骤，不用来回翻文档。</span>
+                  </div>
+                  <div>
+                    <strong data-i18n="skills-point-three-title">更完整</strong>
+                    <span data-i18n="skills-point-three-desc">把支持数据库、断点续传、写入模式等项目知识一并交给助手。</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="command-panel">
+                <div class="segment-list" role="tablist" aria-label="Skills install methods">
+                  <button class="segment-btn active" type="button" data-panel-group="skills" data-panel-target="skills-npx" role="tab" aria-selected="true">npx</button>
+                  <button class="segment-btn" type="button" data-panel-group="skills" data-panel-target="skills-bunx" role="tab" aria-selected="false">bunx</button>
+                </div>
+
+                <div class="segment-panel active" id="skills-npx">
+                  <div class="command-box">
+                    <pre><span class="accent">npx</span> skills add xingkaixin/db-ferry</pre>
+                    <button class="copy-btn" type="button" data-copy="npx skills add xingkaixin/db-ferry" aria-label="Copy npx skills command">
+                      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 3A1.75 1.75 0 0 0 0 4.75v8.5C0 14.216.784 15 1.75 15h8.5A1.75 1.75 0 0 0 12 13.25v-1a.75.75 0 0 0-1.5 0v1a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25h1a.75.75 0 0 0 0-1.5h-1Z"/><path d="M5.75 1A1.75 1.75 0 0 0 4 2.75v8.5C4 12.216 4.784 13 5.75 13h8.5A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1h-8.5Zm0 1.5h8.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25Z"/></svg>
+                    </button>
+                  </div>
+                  <div class="command-caption" data-i18n="skills-caption-npx">装好之后，直接在 AI 对话里描述源库、目标库和迁移条件即可。</div>
+                </div>
+
+                <div class="segment-panel" id="skills-bunx">
+                  <div class="command-box">
+                    <pre><span class="accent">bunx</span> skills add xingkaixin/db-ferry</pre>
+                    <button class="copy-btn" type="button" data-copy="bunx skills add xingkaixin/db-ferry" aria-label="Copy bunx skills command">
+                      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 3A1.75 1.75 0 0 0 0 4.75v8.5C0 14.216.784 15 1.75 15h8.5A1.75 1.75 0 0 0 12 13.25v-1a.75.75 0 0 0-1.5 0v1a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25h1a.75.75 0 0 0 0-1.5h-1Z"/><path d="M5.75 1A1.75 1.75 0 0 0 4 2.75v8.5C4 12.216 4.784 13 5.75 13h8.5A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1h-8.5Zm0 1.5h8.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25Z"/></svg>
+                    </button>
+                  </div>
+                  <div class="command-caption" data-i18n="skills-caption-bunx">同样的能力入口，适合已经使用 bunx 的本地工具链。</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+      </section>
 
-        <div class="step">
-          <div class="step-num">3</div>
-          <div class="step-content">
-            <h3 data-i18n="qs-run-title">运行迁移</h3>
-            <p data-i18n="qs-run-desc">执行配置文件中的所有迁移任务。</p>
-            <div class="code-wrap">
-              <pre class="code-block"><span class="mgr">db-ferry</span>
-
-<span class="comment"># 指定配置文件</span>
-<span class="mgr">db-ferry</span> <span class="flag">-config</span> ./configs/task.toml
-
-<span class="comment"># 详细日志</span>
-<span class="mgr">db-ferry</span> <span class="flag">-v</span></pre>
-              <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z"/></svg></button>
+      <section class="reveal">
+        <div class="container">
+          <div class="cta-shell">
+            <div class="cta-copy">
+              <div class="section-label" data-i18n="cta-label">Start</div>
+              <h3 data-i18n="cta-title">把跨库迁移从临时活，变成能重复交付的任务。</h3>
+              <p data-i18n="cta-sub">先生成模板，再把你的数据库别名、SQL 和写入策略填进去。剩下的交给 db-ferry。</p>
+            </div>
+            <div class="cta-actions">
+              <a class="btn btn-primary" href="https://www.npmjs.com/package/db-ferry" target="_blank" rel="noopener noreferrer" data-i18n="cta-install">npm install db-ferry</a>
+              <a class="btn btn-secondary" href="https://github.com/xingkaixin/db-ferry/blob/main/README.md" target="_blank" rel="noopener noreferrer" data-i18n="cta-docs">Read the docs</a>
             </div>
           </div>
         </div>
+      </section>
+    </main>
 
+    <footer>
+      <div class="container footer-shell">
+        <div class="footer-links">
+          <a href="https://github.com/xingkaixin/db-ferry" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="https://www.npmjs.com/package/db-ferry" target="_blank" rel="noopener noreferrer">npm</a>
+          <a href="https://github.com/xingkaixin/db-ferry/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>
+        </div>
+        <div data-i18n="footer-text">db-ferry · task-driven cross-database migration tool built with Go.</div>
       </div>
-    </div>
-  </section>
+    </footer>
+  </div>
 
-  <hr class="divider">
+  <script>
+    const i18n = {
+      zh: {
+        'hero-eyebrow': 'task-driven database transfer',
+        'hero-lead': '用一份 <code>task.toml</code>，把跨数据库迁移收成一条可复用、可追踪、可交给团队重复执行的工作流。',
+        'cta-install': 'npm install db-ferry',
+        'cta-github': '查看 GitHub',
+        'hero-meta-one': '<strong>Go CLI</strong>，适合重复执行的数据搬运',
+        'hero-meta-two': '<strong>6 种引擎</strong>，覆盖业务库与本地分析库',
+        'hero-command-label': 'first command',
+        'hero-node-source': '源数据库',
+        'hero-node-target': '目标运行环境',
+        'hero-node-config': '声明路由和写入模式',
+        'hero-node-resume': '从上次停止的位置继续',
+        'proof-label': 'Product proof',
+        'proof-title': '不是一次性脚本，而是一条稳定的数据渡线。',
+        'proof-sub': 'db-ferry 把连接信息、写入策略、校验方式和断点状态都收进同一条任务链，适合反复执行，也适合交接给别人执行。',
+        'proof-row-one-title': '声明式任务，先把迁移路径说清楚。',
+        'proof-row-one-desc': '数据库别名、源查询、目标表、写入模式都在 <code>task.toml</code> 里声明，不需要每次重写迁移脚本。',
+        'proof-row-two-title': '自动建表和批量写入，一次把目标侧铺好。',
+        'proof-row-two-desc': '工具会根据源端元数据生成目标表结构，分批插入并显示进度，让大表迁移也保持可见和可控。',
+        'proof-row-three-title': '断点续传和多库兼容，适合长期复用。',
+        'proof-row-three-desc': '通过 <code>resume_key</code>、<code>state_file</code> 与多种写入模式，把一次任务升级成可持续运行的迁移工作流。',
+        'proof-aside-title': '兼顾生产库与本地分析库。',
+        'proof-aside-desc': '同一套任务语义，覆盖主流事务型数据库和轻量本地引擎，不需要为每个目标端再写一套命令。',
+        'signal-one-label': 'write modes',
+        'signal-one-value': 'replace / append / merge，覆盖全量与增量场景。',
+        'signal-two-label': 'validation',
+        'signal-two-value': '支持 row_count 校验，在任务链里直接完成基础验收。',
+        'signal-three-label': 'delivery',
+        'signal-three-value': 'npm 安装即可运行，适合本地、脚本和团队环境重复复用。',
+        'workflow-label': 'Workflow',
+        'workflow-title': '上手路径压到三步，命令本身就是界面。',
+        'workflow-sub': '安装、生成模板、执行迁移。每一步都只做一件事，不让首页退化成文档目录。',
+        'workflow-step-one-title': '安装或直接运行',
+        'workflow-step-one-desc': '先拿到 CLI，再决定是全局安装还是临时执行。',
+        'workflow-step-two-title': '生成任务模板',
+        'workflow-step-two-desc': '先用内置样板起步，再把数据库别名和 SQL 换成你的迁移路线。',
+        'workflow-step-three-title': '执行迁移并复用它',
+        'workflow-step-three-desc': '默认执行当前目录任务，也可以指定配置路径和详细日志。',
+        'skills-label': 'Skills',
+        'skills-title': '把 db-ferry 的语义直接交给 AI。',
+        'skills-sub': '不是让 AI 猜配置，而是让它理解 db-ferry 的真实字段、命令入口和迁移边界，直接给出可用的任务片段。',
+        'skills-point-one-title': '更准',
+        'skills-point-one-desc': '知道 <code>task.toml</code> 的字段与约束，少走错配置和错误命令。',
+        'skills-point-two-title': '更快',
+        'skills-point-two-desc': '直接生成迁移任务、安装命令和操作步骤，不用来回翻文档。',
+        'skills-point-three-title': '更完整',
+        'skills-point-three-desc': '把支持数据库、断点续传、写入模式等项目知识一并交给助手。',
+        'skills-caption-npx': '装好之后，直接在 AI 对话里描述源库、目标库和迁移条件即可。',
+        'skills-caption-bunx': '同样的能力入口，适合已经使用 bunx 的本地工具链。',
+        'cta-label': 'Start',
+        'cta-title': '把跨库迁移从临时活，变成能重复交付的任务。',
+        'cta-sub': '先生成模板，再把你的数据库别名、SQL 和写入策略填进去。剩下的交给 db-ferry。',
+        'cta-docs': '阅读文档',
+        'footer-text': 'db-ferry · 使用 Go 构建的声明式跨数据库迁移工具。'
+      },
+      en: {
+        'hero-eyebrow': 'task-driven database transfer',
+        'hero-lead': 'Use one <code>task.toml</code> to turn cross-database migration into a repeatable, traceable workflow your team can run again and again.',
+        'cta-install': 'npm install db-ferry',
+        'cta-github': 'View on GitHub',
+        'hero-meta-one': '<strong>Go CLI</strong> for repeatable data moves',
+        'hero-meta-two': '<strong>6 engines</strong> across OLTP and local analytics',
+        'hero-command-label': 'first command',
+        'hero-node-source': 'source systems',
+        'hero-node-target': 'target runtimes',
+        'hero-node-config': 'declares route and write mode',
+        'hero-node-resume': 'continue where the last run stopped',
+        'proof-label': 'Product proof',
+        'proof-title': 'Not a throwaway script. A stable route for moving data.',
+        'proof-sub': 'db-ferry keeps connection details, write strategy, validation, and resume state in one task chain, so a migration can be repeated instead of rebuilt.',
+        'proof-row-one-title': 'Declare the route before you move the data.',
+        'proof-row-one-desc': 'Aliases, source SQL, target table, and write mode all live inside <code>task.toml</code>, so the workflow stays readable and reusable.',
+        'proof-row-two-title': 'Build the target side and stream the load in one pass.',
+        'proof-row-two-desc': 'db-ferry reads source metadata to generate target tables, writes in batches, and keeps progress visible during large transfers.',
+        'proof-row-three-title': 'Resume support and multi-engine coverage keep it reusable.',
+        'proof-row-three-desc': 'With <code>resume_key</code>, <code>state_file</code>, and multiple write modes, a one-off migration becomes an operational flow you can run again.',
+        'proof-aside-title': 'Built for production systems and local analytics.',
+        'proof-aside-desc': 'One task model spans mainstream transactional databases and lightweight local engines without a second toolchain.',
+        'signal-one-label': 'write modes',
+        'signal-one-value': 'replace / append / merge cover full refreshes and incremental loads.',
+        'signal-two-label': 'validation',
+        'signal-two-value': 'Built-in row_count validation keeps basic acceptance checks inside the task chain.',
+        'signal-three-label': 'delivery',
+        'signal-three-value': 'Install from npm and reuse it across local workflows, scripts, and team machines.',
+        'workflow-label': 'Workflow',
+        'workflow-title': 'Three steps in, with commands as the interface.',
+        'workflow-sub': 'Install it, generate the template, run the task. Each section does one job instead of turning the homepage into a docs index.',
+        'workflow-step-one-title': 'Install or run it once',
+        'workflow-step-one-desc': 'Get the CLI first, then decide between a global install and an ad-hoc run.',
+        'workflow-step-two-title': 'Generate the task template',
+        'workflow-step-two-desc': 'Start from the built-in sample, then replace aliases and SQL with your own route.',
+        'workflow-step-three-title': 'Run the migration and reuse it',
+        'workflow-step-three-desc': 'Run the default task in the current directory or point to another config with verbose logs.',
+        'skills-label': 'Skills',
+        'skills-title': 'Give AI the actual db-ferry contract.',
+        'skills-sub': 'Instead of guessing config shapes, your assistant can understand the real fields, commands, and migration boundaries behind db-ferry.',
+        'skills-point-one-title': 'More accurate',
+        'skills-point-one-desc': 'It knows the real <code>task.toml</code> fields and constraints, so bad config suggestions drop fast.',
+        'skills-point-two-title': 'Faster',
+        'skills-point-two-desc': 'Get migration tasks, install commands, and execution steps without hopping between docs.',
+        'skills-point-three-title': 'More complete',
+        'skills-point-three-desc': 'Supported databases, resume flows, and write modes all move into the assistant context together.',
+        'skills-caption-npx': 'After installation, describe the source, target, and migration condition directly in an AI chat.',
+        'skills-caption-bunx': 'Same capability entrypoint, for local toolchains that already use bunx.',
+        'cta-label': 'Start',
+        'cta-title': 'Turn cross-database migration from ad-hoc work into a repeatable delivery task.',
+        'cta-sub': 'Generate the template, fill in your aliases, SQL, and write strategy, then let db-ferry handle the route.',
+        'cta-docs': 'Read the docs',
+        'footer-text': 'db-ferry · a task-driven cross-database migration tool built with Go.'
+      }
+    };
 
-  <!-- Databases -->
-  <section>
-    <div class="container">
-      <div class="section-label" data-i18n="dbs-label">Supported Databases</div>
-      <h2 class="section-title" data-i18n="dbs-title">支持的数据库</h2>
-      <p class="section-sub" data-i18n="dbs-sub">在以下数据库之间自由迁移数据</p>
-      <div class="db-list">
-        <div class="db-item">
-          <div class="db-icon oracle">ORA</div>
-          <span class="db-name">Oracle</span>
-        </div>
-        <div class="db-item">
-          <div class="db-icon mysql">MySQL</div>
-          <span class="db-name">MySQL</span>
-        </div>
-        <div class="db-item">
-          <div class="db-icon postgres">PG</div>
-          <span class="db-name">PostgreSQL</span>
-        </div>
-        <div class="db-item">
-          <div class="db-icon sqlserver">MSS</div>
-          <span class="db-name">SQL Server</span>
-        </div>
-        <div class="db-item">
-          <div class="db-icon sqlite">SQLite</div>
-          <span class="db-name">SQLite</span>
-        </div>
-        <div class="db-item">
-          <div class="db-icon duckdb">Duck</div>
-          <span class="db-name">DuckDB</span>
-        </div>
-      </div>
-    </div>
-  </section>
+    let lang = localStorage.getItem('dbferry-lang') || 'zh';
+    let theme = localStorage.getItem('dbferry-theme') || 'dark';
 
-  <hr class="divider">
-
-  <!-- Skills -->
-  <section>
-    <div class="container">
-      <div class="section-label" data-i18n="skills-label">Skills</div>
-      <h2 class="section-title" data-i18n="skills-title">Skills 集成</h2>
-      <p class="section-sub" data-i18n="skills-sub">为 AI 助手注入 db-ferry 的迁移能力</p>
-      <div class="features-grid" style="grid-template-columns: repeat(2, 1fr);">
-
-        <div class="feature-card">
-          <div class="feature-icon">🧠</div>
-          <h3 data-i18n="skills-what-title">什么是 Skills？</h3>
-          <p data-i18n="skills-what-desc">Skills 是 AI 助手的技能扩展包。安装后，AI 能直接理解 db-ferry 的配置语法、命令用法和最佳实践，无需反复查阅文档。</p>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">⚡</div>
-          <h3 data-i18n="skills-why-title">为什么需要？</h3>
-          <p data-i18n="skills-why-desc">
-            <strong>更准：</strong>AI 掌握精确的 task.toml 字段和类型，不会生成错误配置。<br>
-            <strong>更快：</strong>直接给出可用的迁移命令和配置片段。<br>
-            <strong>更全：</strong>内置支持的数据库列表、连接串格式、增量迁移等高级用法。
-          </p>
-        </div>
-
-      </div>
-
-      <div style="margin-top: 40px;">
-        <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; letter-spacing: -.2px;" data-i18n="skills-install-title">安装方式</h3>
-        <div class="tabs tabs-lower">
-          <div class="tab-list">
-            <button class="tab-btn active" data-tab="skills-npx" data-i18n="skills-tab-npx">npx</button>
-            <button class="tab-btn" data-tab="skills-bunx" data-i18n="skills-tab-bunx">bunx</button>
-          </div>
-          <div class="tab-panel active" data-tabpanel="skills-npx">
-            <div class="code-wrap">
-              <pre class="code-block"><span class="mgr">npx</span> skills add xingkaixin/db-ferry</pre>
-              <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z\"/><path d=\"M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z\"/></svg></button>
-            </div>
-          </div>
-          <div class="tab-panel" data-tabpanel="skills-bunx">
-            <div class="code-wrap">
-              <pre class="code-block"><span class="mgr">bunx</span> skills add xingkaixin/db-ferry</pre>
-              <button class="copy-btn" aria-label="Copy"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25Z\"/><path d=\"M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25Zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25Z\"/></svg></button>
-            </div>
-          </div>
-        </div>
-        <p class="no-install-label" data-i18n="skills-hint">安装后，在任何 AI 对话中直接描述你的迁移需求即可。</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Footer -->
-  <footer>
-    <div class="container">
-      <div class="footer-links">
-        <a href="https://github.com/xingkaixin/db-ferry" target="_blank" rel="noopener noreferrer">GitHub</a>
-        <a href="https://www.npmjs.com/package/db-ferry" target="_blank" rel="noopener noreferrer">npm</a>
-        <a href="https://github.com/xingkaixin/db-ferry/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>
-      </div>
-      <p data-i18n="footer-text">db-ferry &mdash; 跨数据库数据迁移工具，使用 Go 构建。</p>
-    </div>
-  </footer>
-
-<script>
-  const i18n = {
-    zh: {
-      'hero-slogan': '跨数据库数据迁移工具',
-      'hero-desc': 'Go CLI 工具，通过声明式 <code>task.toml</code> 配置，在 Oracle、MySQL、PostgreSQL、SQL Server、SQLite 和 DuckDB 之间批量迁移数据。',
-      'cta-install': 'npm install db-ferry',
-      'cta-github': 'GitHub Repo',
-      'features-label': 'Features',
-      'features-title': '特性',
-      'features-sub': '简洁高效的数据库迁移体验',
-      'feat-multi-title': '多数据库支持',
-      'feat-multi-desc': '连接 6 种主流数据库，灵活配置源和目标。',
-      'feat-config-title': '声明式配置',
-      'feat-config-desc': '一个 <code>task.toml</code> 文件定义所有数据库和迁移任务。',
-      'feat-ddl-title': '自动建表',
-      'feat-ddl-desc': '根据源表元数据自动生成目标表 DDL，无需手动创建表结构。',
-      'feat-batch-title': '批量流式传输',
-      'feat-batch-desc': '分批插入、事务保证、实时进度条，高效处理大量数据。',
-      'feat-increment-title': '增量迁移',
-      'feat-increment-desc': '通过 <code>resume_key</code> 和 <code>state_file</code> 实现断点续传。',
-      'feat-crossplatform-title': '全平台支持',
-      'feat-crossplatform-desc': '通过 npm 安装，支持 macOS、Linux 和 Windows。',
-      'qs-label': 'Quick Start',
-      'qs-title': '快速开始',
-      'qs-sub': '三步开始跨数据库数据迁移',
-      'qs-install-title': '安装',
-      'qs-install-desc': '选择你喜欢的包管理器全局安装，或无需安装直接运行。',
-      'qs-noinstall-hint': '无需安装，直接运行：',
-      'qs-tab-install': '安装',
-      'qs-tab-run': '运行',
-      'qs-config-title': '初始化配置',
-      'qs-config-desc': '生成示例 <code>task.toml</code> 配置文件。',
-      'qs-run-title': '运行迁移',
-      'qs-run-desc': '执行配置文件中的所有迁移任务。',
-      'dbs-label': 'Supported Databases',
-      'dbs-title': '支持的数据库',
-      'dbs-sub': '在以下数据库之间自由迁移数据',
-      'skills-label': 'Skills',
-      'skills-title': 'Skills 集成',
-      'skills-sub': '为 AI 助手注入 db-ferry 的迁移能力',
-      'skills-what-title': '什么是 Skills？',
-      'skills-what-desc': 'Skills 是 AI 助手的技能扩展包。安装后，AI 能直接理解 db-ferry 的配置语法、命令用法和最佳实践，无需反复查阅文档。',
-      'skills-why-title': '为什么需要？',
-      'skills-why-desc': '<strong>更准：</strong>AI 掌握精确的 task.toml 字段和类型，不会生成错误配置。<br><strong>更快：</strong>直接给出可用的迁移命令和配置片段。<br><strong>更全：</strong>内置支持的数据库列表、连接串格式、增量迁移等高级用法。',
-      'skills-install-title': '安装方式',
-      'skills-tab-npx': 'npx',
-      'skills-tab-bunx': 'bunx',
-      'skills-hint': '安装后，在任何 AI 对话中直接描述你的迁移需求即可。',
-      'footer-text': 'db-ferry &mdash; 跨数据库数据迁移工具，使用 Go 构建。'
-    },
-    en: {
-      'hero-slogan': 'Cross-Database Data Migration Tool',
-      'hero-desc': 'A Go CLI tool that ferries data between Oracle, MySQL, PostgreSQL, SQL Server, SQLite, and DuckDB using declarative <code>task.toml</code> configuration.',
-      'cta-install': 'npm install db-ferry',
-      'cta-github': 'GitHub Repo',
-      'features-label': 'Features',
-      'features-title': 'Features',
-      'features-sub': 'Simple and efficient database migration',
-      'feat-multi-title': 'Multi-Database Support',
-      'feat-multi-desc': 'Connect to 6 major databases with flexible source and target configuration.',
-      'feat-config-title': 'Declarative Config',
-      'feat-config-desc': 'Define all databases and migration tasks in a single <code>task.toml</code> file.',
-      'feat-ddl-title': 'Auto Table Creation',
-      'feat-ddl-desc': 'Automatically generate target table DDL from source metadata — no manual setup needed.',
-      'feat-batch-title': 'Batch Streaming',
-      'feat-batch-desc': 'Batch inserts with transactional guarantees and real-time progress bars for large datasets.',
-      'feat-increment-title': 'Incremental Migration',
-      'feat-increment-desc': 'Resume from any point with <code>resume_key</code> and <code>state_file</code> persistence.',
-      'feat-crossplatform-title': 'Cross-Platform',
-      'feat-crossplatform-desc': 'Install via npm, supports macOS, Linux, and Windows.',
-      'qs-label': 'Quick Start',
-      'qs-title': 'Quick Start',
-      'qs-sub': 'Three steps to start migrating data',
-      'qs-install-title': 'Install',
-      'qs-install-desc': 'Choose your preferred package manager for a global install, or run without installing.',
-      'qs-noinstall-hint': 'Run without installing:',
-      'qs-tab-install': 'Install',
-      'qs-tab-run': 'Run',
-      'qs-config-title': 'Initialize Config',
-      'qs-config-desc': 'Generate a sample <code>task.toml</code> configuration file.',
-      'qs-run-title': 'Run Migration',
-      'qs-run-desc': 'Execute all migration tasks defined in the config file.',
-      'dbs-label': 'Supported Databases',
-      'dbs-title': 'Supported Databases',
-      'dbs-sub': 'Migrate data freely between these databases',
-      'skills-label': 'Skills',
-      'skills-title': 'Skills Integration',
-      'skills-sub': 'Equip your AI assistant with db-ferry migration power',
-      'skills-what-title': 'What are Skills?',
-      'skills-what-desc': 'Skills are plugin packs that extend an AI assistant\'s capabilities. Once installed, the AI understands db-ferry\'s config syntax, commands, and best practices — no need to repeatedly check the docs.',
-      'skills-why-title': 'Why use it?',
-      'skills-why-desc': '<strong>More accurate:</strong> AI knows exact task.toml fields and types, no wrong configs.<br><strong>Faster:</strong> Get ready-to-use migration commands and config snippets instantly.<br><strong>More complete:</strong> Built-in knowledge of supported databases, connection strings, incremental migration, and more.',
-      'skills-install-title': 'Install',
-      'skills-tab-npx': 'npx',
-      'skills-tab-bunx': 'bunx',
-      'skills-hint': 'Once installed, just describe your migration needs in any AI conversation.',
-      'footer-text': 'db-ferry — Cross-database data migration tool, built with Go.'
+    function applyLang() {
+      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+      const labels = i18n[lang];
+      document.querySelectorAll('[data-i18n]').forEach((el) => {
+        const key = el.getAttribute('data-i18n');
+        if (labels[key]) el.innerHTML = labels[key];
+      });
+      const langLabel = document.querySelector('.lang-label');
+      if (langLabel) langLabel.textContent = lang === 'zh' ? 'English' : '中文';
     }
-  };
 
-  let lang = localStorage.getItem('dbferry-lang') || 'zh';
-  let theme = localStorage.getItem('dbferry-theme') || 'dark';
+    function toggleLang() {
+      lang = lang === 'zh' ? 'en' : 'zh';
+      localStorage.setItem('dbferry-lang', lang);
+      applyLang();
+    }
 
-  function applyLang() {
-    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-    const labels = i18n[lang];
-    document.querySelectorAll('[data-i18n]').forEach(el => {
-      const key = el.getAttribute('data-i18n');
-      if (labels[key]) el.innerHTML = labels[key];
-    });
-    const langLabel = document.querySelector('.lang-label');
-    langLabel.textContent = lang === 'zh' ? 'English' : '中文';
-  }
-
-  function toggleLang() {
-    lang = lang === 'zh' ? 'en' : 'zh';
-    localStorage.setItem('dbferry-lang', lang);
-    applyLang();
-  }
-
-  function applyTheme() {
-    document.documentElement.setAttribute('data-theme', theme);
-    const label = document.getElementById('themeLabel');
-    if (label) label.textContent = theme === 'dark' ? 'Light' : 'Dark';
-    const icon = document.getElementById('themeIcon');
-    if (icon) {
+    function applyTheme() {
+      document.documentElement.setAttribute('data-theme', theme);
+      const label = document.getElementById('themeLabel');
+      if (label) label.textContent = theme === 'dark' ? 'Light' : 'Dark';
+      const icon = document.getElementById('themeIcon');
+      if (!icon) return;
       if (theme === 'dark') {
-        icon.innerHTML = '<path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13ZM0 8a8 8 0 1116 0 8 8 0 01-16 0Z"/>';
+        icon.innerHTML = '<path d="M8 1.25a6.75 6.75 0 1 0 0 13.5A6.75 6.75 0 0 0 8 1.25Zm0 1.5a5.25 5.25 0 1 1 0 10.5 5.25 5.25 0 0 1 0-10.5Z"/>';
       } else {
-        icon.innerHTML = '<path d="M8 1.5a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 1.5ZM8 11.5a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5a.75.75 0 01.75-.75ZM1.5 8a.75.75 0 01.75-.75h1.5a.75.75 0 010 1.5H2.25A.75.75 0 011.5 8ZM11.5 8a.75.75 0 01.75-.75h1.5a.75.75 0 010 1.5h-1.5a.75.75 0 01-.75-.75ZM11.65 4.35a.75.75 0 011.06 0l1.06 1.06a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06ZM3.24 10.85a.75.75 0 011.06 0l1.06 1.06a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06ZM11.65 11.65a.75.75 0 010 1.06l-1.06 1.06a.75.75 0 01-1.06-1.06l1.06-1.06a.75.75 0 011.06 0ZM3.24 5.15a.75.75 0 010-1.06l1.06-1.06a.75.75 0 011.06 1.06L4.3 5.15a.75.75 0 01-1.06 0ZM8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5Z"/>';
+        icon.innerHTML = '<path d="M8 0a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V.75A.75.75 0 0 1 8 0Zm0 12.25a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V13A.75.75 0 0 1 8 12.25ZM0 8a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5H.75A.75.75 0 0 1 0 8Zm12.25 0a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5H13A.75.75 0 0 1 12.25 8ZM3.11 3.11a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 0 1-1.06 1.06L3.1 4.17a.75.75 0 0 1 0-1.06Zm7.66 7.66a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 0 1-1.06 1.06l-1.06-1.06a.75.75 0 0 1 0-1.06Zm2.12-7.66a.75.75 0 0 1 0 1.06l-1.06 1.06a.75.75 0 0 1-1.06-1.06l1.06-1.06a.75.75 0 0 1 1.06 0Zm-7.66 7.66a.75.75 0 0 1 0 1.06L4.17 12.9a.75.75 0 0 1-1.06-1.06l1.06-1.06a.75.75 0 0 1 1.06 0ZM8 4.25A3.75 3.75 0 1 0 8 11.75 3.75 3.75 0 0 0 8 4.25Z"/>';
       }
     }
-  }
 
-  function toggleTheme() {
-    theme = theme === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('dbferry-theme', theme);
-    applyTheme();
-  }
+    function toggleTheme() {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('dbferry-theme', theme);
+      applyTheme();
+    }
 
-  // ===== Tabs =====
-  document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const group = btn.closest('.tabs');
-      group.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      group.querySelectorAll('[data-tabpanel]').forEach(p => p.classList.remove('active'));
-      group.querySelector(`[data-tabpanel="${btn.dataset.tab}"]`).classList.add('active');
-    });
-  });
-
-  document.querySelectorAll('.tab-btn[data-subtab]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const subtab = btn.dataset.subtab;
-      const pkg = btn.dataset.pkg;
-      const container = btn.closest('[data-tabpanel]') || btn.closest('.tabs');
-      container.querySelectorAll(`.tab-btn[data-subtab="${subtab}"]`).forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      container.querySelectorAll(`[data-subtabpanel="${subtab}"]`).forEach(p => p.classList.remove('active'));
-      container.querySelector(`[data-subtabpanel="${subtab}"][data-pkg="${pkg}"]`).classList.add('active');
-    });
-  });
-
-  // ===== Copy to clipboard =====
-  document.querySelectorAll('.copy-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const code = btn.previousElementSibling.textContent.trim();
-      navigator.clipboard.writeText(code).then(() => {
-        btn.classList.add('copied');
-        const orig = btn.innerHTML;
-        btn.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg>';
-        setTimeout(() => {
-          btn.classList.remove('copied');
-          btn.innerHTML = orig;
-        }, 1500);
+    function setupCopyButtons() {
+      document.querySelectorAll('.copy-btn[data-copy]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const text = btn.dataset.copy.replaceAll('&#10;', '\n');
+          try {
+            await navigator.clipboard.writeText(text);
+            const original = btn.innerHTML;
+            btn.classList.add('copied');
+            btn.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>';
+            setTimeout(() => {
+              btn.classList.remove('copied');
+              btn.innerHTML = original;
+            }, 1400);
+          } catch (err) {
+            console.error(err);
+          }
+        });
       });
-    });
-  });
+    }
 
-  applyLang();
-  applyTheme();
-</script>
+    function setupPanels() {
+      document.querySelectorAll('.segment-btn[data-panel-target]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const group = btn.dataset.panelGroup;
+          const target = btn.dataset.panelTarget;
+          document.querySelectorAll(`.segment-btn[data-panel-group="${group}"]`).forEach((item) => {
+            item.classList.toggle('active', item === btn);
+            item.setAttribute('aria-selected', item === btn ? 'true' : 'false');
+          });
+          document.querySelectorAll(`#${target}`).forEach((panel) => {
+            panel.classList.add('active');
+          });
+          document.querySelectorAll(`.segment-panel`).forEach((panel) => {
+            if (panel.id !== target && panel.id.startsWith(group + '-')) {
+              panel.classList.remove('active');
+            }
+          });
+        });
+      });
+    }
+
+    function setupReveal() {
+      const nodes = document.querySelectorAll('.reveal');
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.14 });
+      nodes.forEach((node) => observer.observe(node));
+    }
+
+    applyLang();
+    applyTheme();
+    setupCopyButtons();
+    setupPanels();
+    setupReveal();
+  </script>
 </body>
 </html>
