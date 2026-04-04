@@ -681,11 +681,8 @@
         <span class="mono">db-ferry</span>
       </a>
       <div class="nav-actions">
-        <a class="nav-link" href="https://github.com/xingkaixin/db-ferry/blob/main/docs/user_guide.md" target="_blank" rel="noopener noreferrer">
-          <span class="nav-link-text" data-i18n="nav-docs">Documentation</span>
-        </a>
-        <a class="nav-link" href="https://github.com/xingkaixin/db-ferry/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">
-          <span class="nav-link-text" data-i18n="nav-changelog">Changelog</span>
+        <a class="nav-link" id="versionLink" href="https://github.com/xingkaixin/db-ferry/blob/main/CHANGELOG_zh.md" target="_blank" rel="noopener noreferrer" aria-label="Latest version">
+          <span class="nav-link-text" id="versionText">v0.6.0</span>
         </a>
         <a class="nav-btn nav-btn-bordered" href="https://github.com/xingkaixin/db-ferry" target="_blank" rel="noopener noreferrer">
           <span class="material-symbols-outlined">code</span>
@@ -906,10 +903,13 @@
   </footer>
 
   <script>
+    const changelogUrls = {
+      zh: 'https://github.com/xingkaixin/db-ferry/blob/main/CHANGELOG_zh.md',
+      en: 'https://github.com/xingkaixin/db-ferry/blob/main/CHANGELOG.md'
+    };
+
     const i18n = {
       zh: {
-        'nav-docs': 'Documentation',
-        'nav-changelog': 'Changelog',
         'hero-terminal-title': 'bash — db-ferry',
         'hero-eyebrow': 'task-driven database transfer',
         'hero-title': '用一份 task.toml，把跨数据库迁移收成一条可复用的工作流。',
@@ -936,8 +936,6 @@
         'footer-text': 'db-ferry — 使用 Go 构建的声明式跨数据库迁移工具。'
       },
       en: {
-        'nav-docs': 'Documentation',
-        'nav-changelog': 'Changelog',
         'hero-terminal-title': 'bash — db-ferry',
         'hero-eyebrow': 'task-driven database transfer',
         'hero-title': 'Turn cross-database migration into a single reusable task.',
@@ -967,6 +965,12 @@
 
     let lang = localStorage.getItem('dbferry-lang') || 'zh';
 
+    function applyChangelogLinks() {
+      const changelogUrl = changelogUrls[lang];
+      const versionLink = document.getElementById('versionLink');
+      if (versionLink) versionLink.href = changelogUrl;
+    }
+
     function applyLang() {
       document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
       const labels = i18n[lang];
@@ -976,6 +980,7 @@
       });
       const langLabel = document.querySelector('.lang-label');
       if (langLabel) langLabel.textContent = lang === 'zh' ? 'English' : '中文';
+      applyChangelogLinks();
     }
 
     function toggleLang() {
@@ -1017,7 +1022,27 @@
       nodes.forEach((node) => observer.observe(node));
     }
 
+    async function loadVersion() {
+      try {
+        const response = await fetch('version.json', { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`failed to load version metadata: ${response.status}`);
+        }
+
+        const payload = await response.json();
+        if (typeof payload.tag !== 'string' || !payload.tag) {
+          throw new Error('version metadata missing tag');
+        }
+
+        const versionText = document.getElementById('versionText');
+        if (versionText) versionText.textContent = payload.tag;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
     applyLang();
+    loadVersion();
     setupCopyButtons();
     setupReveal();
   </script>

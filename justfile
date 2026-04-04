@@ -47,6 +47,7 @@ check: fmt-check lint test-cover
 
 # Deploy the static web site to Cloudflare Pages
 deploy-web:
+    node scripts/generate-web-version.mjs
     @echo "🌐 Deploying web/ to Cloudflare Pages..."
     wrangler pages deploy web --project-name=db-ferry --commit-dirty=true
     @echo "✅ Web deployment complete!"
