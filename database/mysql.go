@@ -41,10 +41,6 @@ func (m *MySQLDB) Close() error {
 	return nil
 }
 
-func (m *MySQLDB) Ping() error {
-	return m.db.Ping()
-}
-
 func (m *MySQLDB) Exec(sql string) error {
 	_, err := m.db.Exec(sql)
 	return err

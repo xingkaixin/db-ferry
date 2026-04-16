@@ -91,6 +91,12 @@ func TestDoctorConnectionFail(t *testing.T) {
 	if !strings.Contains(output, "[FAIL] Database connection: src") {
 		t.Fatalf("expected connection failure, got:\n%s", output)
 	}
+	if !strings.Contains(output, "[SKIP] Column existence: users") {
+		t.Fatalf("expected skipped column existence, got:\n%s", output)
+	}
+	if !strings.Contains(output, "[SKIP] Target permission: users") {
+		t.Fatalf("expected skipped target permission, got:\n%s", output)
+	}
 }
 
 func TestDoctorHappyPath(t *testing.T) {
@@ -212,6 +218,9 @@ func TestDoctorSourceSQLFail(t *testing.T) {
 	output := out.String()
 	if !strings.Contains(output, "[FAIL] SQL syntax: dst_users") {
 		t.Fatalf("expected SQL syntax failure, got:\n%s", output)
+	}
+	if !strings.Contains(output, "[SKIP] Column existence: dst_users") {
+		t.Fatalf("expected skipped column existence, got:\n%s", output)
 	}
 }
 
@@ -441,6 +450,7 @@ func TestStatusColor(t *testing.T) {
 		{StatusPass, "\033[32m"},
 		{StatusWarn, "\033[33m"},
 		{StatusFail, "\033[31m"},
+		{StatusSkip, "\033[33m"},
 		{Status(99), "\033[0m"},
 	}
 	for _, tc := range cases {

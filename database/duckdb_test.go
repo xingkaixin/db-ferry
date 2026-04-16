@@ -123,14 +123,9 @@ func TestDuckDBCreateIndexesAndHelpers(t *testing.T) {
 	}
 }
 
-func TestDuckDBPingAndExec(t *testing.T) {
+func TestDuckDBExec(t *testing.T) {
 	db, mock := newSQLMock(t)
 	d := &DuckDB{db: db}
-
-	mock.ExpectPing()
-	if err := d.Ping(); err != nil {
-		t.Fatalf("Ping() error = %v", err)
-	}
 
 	mock.ExpectExec(regexp.QuoteMeta(`CREATE TABLE t (id INT)`)).WillReturnResult(sqlmock.NewResult(0, 0))
 	if err := d.Exec(`CREATE TABLE t (id INT)`); err != nil {
