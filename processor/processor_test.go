@@ -1265,3 +1265,267 @@ func TestProcessTaskPostSQLFailure(t *testing.T) {
 		t.Fatalf("dst_users should contain inserted data despite post_sql failure, got %d", count)
 	}
 }
+
+func TestProcessAllTasksConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_a (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_a(id, name) VALUES (1, 'a1'), (2, 'a2')`)
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_b (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_b(id, name) VALUES (10, 'b1'), (20, 'b2')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_a",
+				SQL:       "SELECT id, name FROM src_a",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+			},
+			{
+				TableName: "dst_b",
+				SQL:       "SELECT id, name FROM src_b",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+			},
+		},
+		MaxConcurrentTasks: 2,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.ProcessAllTasks(); err != nil {
+		t.Fatalf("ProcessAllTasks() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var countA int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_a"`).Scan(&countA); err != nil {
+		t.Fatalf("query dst_a error = %v", err)
+	}
+	if countA != 2 {
+		t.Fatalf("dst_a row count = %d, want 2", countA)
+	}
+
+	var countB int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_b"`).Scan(&countB); err != nil {
+		t.Fatalf("query dst_b error = %v", err)
+	}
+	if countB != 2 {
+		t.Fatalf("dst_b row count = %d, want 2", countB)
+	}
+}
+
+func TestProcessAllTasksDependencyChain(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_a (id INTEGER)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_a(id) VALUES (1)`)
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_b (id INTEGER)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_b(id) VALUES (2)`)
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_c (id INTEGER)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_c(id) VALUES (3)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_a",
+				SQL:       "SELECT id FROM src_a",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+			},
+			{
+				TableName: "dst_b",
+				SQL:       "SELECT id FROM src_b",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				DependsOn: []string{"dst_a"},
+			},
+			{
+				TableName: "dst_c",
+				SQL:       "SELECT id FROM src_c",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				DependsOn: []string{"dst_b"},
+			},
+		},
+		MaxConcurrentTasks: 2,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.ProcessAllTasks(); err != nil {
+		t.Fatalf("ProcessAllTasks() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	for _, table := range []string{"dst_a", "dst_b", "dst_c"} {
+		var count int
+		if err := targetDB.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM "%s"`, table)).Scan(&count); err != nil {
+			t.Fatalf("query %s error = %v", table, err)
+		}
+		if count != 1 {
+			t.Fatalf("%s row count = %d, want 1", table, count)
+		}
+	}
+}
+
+func TestProcessAllTasksUpstreamFailure(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_a (id INTEGER)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_a(id) VALUES (1)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_a",
+				SQL:       "SELECT bad_column FROM src_a", // will fail
+				SourceDB:  "src",
+				TargetDB:  "dst",
+			},
+			{
+				TableName: "dst_b",
+				SQL:       "SELECT id FROM src_a",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				DependsOn: []string{"dst_a"},
+			},
+		},
+		MaxConcurrentTasks: 2,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	err := p.ProcessAllTasks()
+	if err == nil {
+		t.Fatalf("expected ProcessAllTasks error")
+	}
+	if !strings.Contains(err.Error(), "bad_column") {
+		t.Fatalf("expected bad_column error, got %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var exists int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='dst_b'`).Scan(&exists); err != nil {
+		t.Fatalf("query existence error = %v", err)
+	}
+	if exists != 0 {
+		t.Fatalf("dst_b should not be created because upstream failed")
+	}
+}
+
+func TestStateFileConcurrency(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+	statePath := filepath.Join(dir, "state", "resume.json")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_a (id INTEGER PRIMARY KEY, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_a(id, name) VALUES (1, 'a'), (2, 'b')`)
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_b (id INTEGER PRIMARY KEY, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_b(id, name) VALUES (10, 'x'), (20, 'y')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_a",
+				SQL:       "SELECT id, name FROM src_a",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				BatchSize: 1,
+				ResumeKey: "id",
+				StateFile: statePath,
+			},
+			{
+				TableName: "dst_b",
+				SQL:       "SELECT id, name FROM src_b",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				BatchSize: 1,
+				ResumeKey: "id",
+				StateFile: statePath,
+			},
+		},
+		MaxConcurrentTasks: 2,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.ProcessAllTasks(); err != nil {
+		t.Fatalf("ProcessAllTasks() error = %v", err)
+	}
+
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile(state) error = %v", err)
+	}
+	var state stateFile
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("unmarshal state error = %v", err)
+	}
+
+	if got := state.Tasks["src:dst:dst_a"]; got != "2" {
+		t.Fatalf("unexpected resume value for dst_a: %q", got)
+	}
+	if got := state.Tasks["src:dst:dst_b"]; got != "20" {
+		t.Fatalf("unexpected resume value for dst_b: %q", got)
+	}
+}

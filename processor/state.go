@@ -15,6 +15,9 @@ type stateFile struct {
 }
 
 func (p *Processor) loadStateFile(path string) (*stateFile, error) {
+	p.stateMu.Lock()
+	defer p.stateMu.Unlock()
+
 	if path == "" {
 		return &stateFile{Tasks: make(map[string]string)}, nil
 	}
@@ -46,6 +49,9 @@ func (p *Processor) loadStateFile(path string) (*stateFile, error) {
 }
 
 func (p *Processor) saveStateFile(path string, state *stateFile) error {
+	p.stateMu.Lock()
+	defer p.stateMu.Unlock()
+
 	if path == "" || state == nil {
 		return nil
 	}
