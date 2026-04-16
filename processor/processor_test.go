@@ -54,6 +54,8 @@ func (m *retryTarget) GetTableRowCount(string) (int, error) { return 0, nil }
 
 func (m *retryTarget) CreateIndexes(string, []config.IndexConfig) error { return nil }
 
+func (m *retryTarget) Exec(string) error { return nil }
+
 func TestProcessorHelpers(t *testing.T) {
 	if got := trimSQL(" SELECT 1;; "); got != "SELECT 1" {
 		t.Fatalf("trimSQL() = %q, want %q", got, "SELECT 1")
@@ -840,5 +842,194 @@ func TestFormatNumber(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("formatNumber(%d) = %q, want %q", tc.n, got, tc.want)
 		}
+	}
+}
+
+func TestProcessTaskPreSQLAndPostSQL(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'a'), (2, 'b')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				PreSQL: []string{
+					"CREATE TABLE pre_log (msg TEXT)",
+					"INSERT INTO pre_log(msg) VALUES ('pre_hook_ran')",
+				},
+				PostSQL: []string{
+					"CREATE TABLE post_log (msg TEXT)",
+					"INSERT INTO post_log(msg) VALUES ('post_hook_ran')",
+				},
+				Indexes: []config.IndexConfig{
+					{Name: "idx_dst_users_name", Columns: []string{"name"}},
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query dst_users count error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("dst_users row count = %d, want 2", count)
+	}
+
+	var preMsg string
+	if err := targetDB.QueryRow(`SELECT msg FROM pre_log`).Scan(&preMsg); err != nil {
+		t.Fatalf("query pre_log error = %v", err)
+	}
+	if preMsg != "pre_hook_ran" {
+		t.Fatalf("pre_log msg = %q, want 'pre_hook_ran'", preMsg)
+	}
+
+	var postMsg string
+	if err := targetDB.QueryRow(`SELECT msg FROM post_log`).Scan(&postMsg); err != nil {
+		t.Fatalf("query post_log error = %v", err)
+	}
+	if postMsg != "post_hook_ran" {
+		t.Fatalf("post_log msg = %q, want 'post_hook_ran'", postMsg)
+	}
+
+	var indexExists int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_dst_users_name'`).Scan(&indexExists); err != nil {
+		t.Fatalf("query index existence error = %v", err)
+	}
+	if indexExists != 1 {
+		t.Fatalf("expected index idx_dst_users_name to exist")
+	}
+}
+
+func TestProcessTaskPreSQLFailure(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'a')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				PreSQL:    []string{"INVALID SQL STATEMENT"},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	err := p.processTask(cfg.Tasks[0])
+	if err == nil || !strings.Contains(err.Error(), "pre_sql hook failed") {
+		t.Fatalf("expected pre_sql hook failure, got %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query dst_users count error = %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("dst_users should be empty after pre_sql failure, got %d", count)
+	}
+}
+
+func TestProcessTaskPostSQLFailure(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'a')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				PostSQL:   []string{"INVALID SQL STATEMENT"},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	err := p.processTask(cfg.Tasks[0])
+	if err == nil || !strings.Contains(err.Error(), "post_sql hook failed") {
+		t.Fatalf("expected post_sql hook failure, got %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query dst_users count error = %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("dst_users should contain inserted data despite post_sql failure, got %d", count)
 	}
 }

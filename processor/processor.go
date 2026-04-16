@@ -128,6 +128,14 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		}
 	}
 
+	if len(task.PreSQL) > 0 {
+		log.Printf("Executing %d pre_sql hooks for table %s", len(task.PreSQL), task.TableName)
+		if err := execHookSQLs(targetDB, task.PreSQL); err != nil {
+			return fmt.Errorf("pre_sql hook failed for table %s: %w", task.TableName, err)
+		}
+		log.Printf("Successfully executed all pre_sql hooks for table %s", task.TableName)
+	}
+
 	validateRowCount := task.Validate == config.TaskValidateRowCount
 	if validateRowCount && task.Mode == config.TaskModeMerge {
 		log.Printf("Row count validation skipped for merge mode on table %s", task.TableName)
@@ -226,6 +234,14 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		log.Printf("Successfully created all indexes for table %s", task.TableName)
 	}
 
+	if len(task.PostSQL) > 0 {
+		log.Printf("Executing %d post_sql hooks for table %s", len(task.PostSQL), task.TableName)
+		if err := execHookSQLs(targetDB, task.PostSQL); err != nil {
+			return fmt.Errorf("post_sql hook failed for table %s: %w", task.TableName, err)
+		}
+		log.Printf("Successfully executed all post_sql hooks for table %s", task.TableName)
+	}
+
 	if validateRowCount {
 		targetCountAfter, err := targetDB.GetTableRowCount(task.TableName)
 		if err != nil {
@@ -307,6 +323,15 @@ func (p *Processor) insertBatchWithRetry(targetDB database.TargetDB, task config
 		sleepFn(wait)
 	}
 
+	return nil
+}
+
+func execHookSQLs(targetDB database.TargetDB, sqls []string) error {
+	for _, sqlText := range sqls {
+		if err := targetDB.Exec(sqlText); err != nil {
+			return fmt.Errorf("failed to execute hook sql %q: %w", sqlText, err)
+		}
+	}
 	return nil
 }
 
