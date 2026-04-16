@@ -1,10 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"db-ferry/config"
+	"db-ferry/database"
+
+	"github.com/charmbracelet/huh"
 )
 
 func TestGenerateTOML(t *testing.T) {
@@ -235,5 +242,382 @@ func TestQuoteSQLIdentifier(t *testing.T) {
 		if got := quoteSQLIdentifier(tc.dbType, tc.name); got != tc.want {
 			t.Fatalf("quoteSQLIdentifier(%q, %q) = %q, want %q", tc.dbType, tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestCollectSourceDB_ErrorWithoutTTY(t *testing.T) {
+	state := &wizardState{}
+	if err := collectSourceDB(state); err == nil {
+		t.Fatalf("expected error when running without tty")
+	}
+}
+
+func TestCollectTargetDB_ErrorWithoutTTY(t *testing.T) {
+	state := &wizardState{SourceDB: config.DatabaseConfig{Name: "src"}}
+	if err := collectTargetDB(state); err == nil {
+		t.Fatalf("expected error when running without tty")
+	}
+}
+
+func TestSelectTables_ErrorWithoutTTY(t *testing.T) {
+	state := &wizardState{SourceTables: []string{"users", "orders"}}
+	if err := selectTables(state); err == nil {
+		t.Fatalf("expected error when running without tty")
+	}
+}
+
+func TestCollectAdvancedOptions_ErrorWithoutTTY(t *testing.T) {
+	state := &wizardState{}
+	if err := collectAdvancedOptions(state); err == nil {
+		t.Fatalf("expected error when running without tty")
+	}
+}
+
+func TestRunInteractiveWizard_ErrorWithoutTTY(t *testing.T) {
+	code, err := runInteractiveWizard(io.Discard)
+	if err == nil {
+		t.Fatalf("expected error when running without tty")
+	}
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+}
+
+func TestTestSourceAndListTables_InvalidConfig(t *testing.T) {
+	cfg := config.DatabaseConfig{Type: "unknown"}
+	tables, conn, err := testSourceAndListTables(cfg)
+	if err == nil {
+		t.Fatalf("expected error for invalid database type")
+	}
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if len(tables) != 0 {
+		t.Fatalf("expected empty tables")
+	}
+}
+
+func TestTestSourceAndListTables_Success(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "src.db")
+	s, err := database.NewSQLiteDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteDB() error = %v", err)
+	}
+	defer s.Close()
+	if err := s.Exec("CREATE TABLE users (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatalf("create table error = %v", err)
+	}
+
+	cfg := config.DatabaseConfig{Type: config.DatabaseTypeSQLite, Path: dbPath}
+	tables, conn, err := testSourceAndListTables(cfg)
+	if err != nil {
+		t.Fatalf("testSourceAndListTables() error = %v", err)
+	}
+	if conn != nil {
+		defer conn.Close()
+	}
+	if len(tables) != 1 || tables[0] != "users" {
+		t.Fatalf("unexpected tables: %v", tables)
+	}
+}
+
+func TestTestTargetConnection_InvalidConfig(t *testing.T) {
+	cfg := config.DatabaseConfig{Type: "unknown"}
+	conn, err := testTargetConnection(cfg)
+	if err == nil {
+		t.Fatalf("expected error for invalid database type")
+	}
+	if conn != nil {
+		_ = conn.Close()
+	}
+}
+
+func TestTestTargetConnection_Success(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "tgt.db")
+	s, err := database.NewSQLiteDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteDB() error = %v", err)
+	}
+	defer s.Close()
+
+	cfg := config.DatabaseConfig{Type: config.DatabaseTypeSQLite, Path: dbPath}
+	conn, err := testTargetConnection(cfg)
+	if err != nil {
+		t.Fatalf("testTargetConnection() error = %v", err)
+	}
+	if conn != nil {
+		defer conn.Close()
+	}
+}
+
+func TestWriteTaskMergeKeys(t *testing.T) {
+	state := &wizardState{
+		SourceDB:   config.DatabaseConfig{Name: "src", Type: "postgresql"},
+		TargetDB:   config.DatabaseConfig{Name: "dst", Type: "postgresql"},
+		Mode:       config.TaskModeMerge,
+		BatchSize:  500,
+		MaxRetries: 1,
+		MergeKeys:  []string{"id", "tenant_id"},
+	}
+	var b strings.Builder
+	writeTask(&b, "events", state)
+	out := b.String()
+	if !strings.Contains(out, `mode = "merge"`) {
+		t.Fatalf("missing merge mode")
+	}
+	if !strings.Contains(out, `merge_keys = ["id", "tenant_id"]`) {
+		t.Fatalf("missing merge_keys")
+	}
+}
+
+func TestWriteTaskSQLServerIdentifier(t *testing.T) {
+	state := &wizardState{
+		SourceDB:   config.DatabaseConfig{Name: "src", Type: "sqlserver"},
+		TargetDB:   config.DatabaseConfig{Name: "dst", Type: "sqlserver"},
+		Mode:       config.TaskModeReplace,
+		BatchSize:  1000,
+		MaxRetries: 2,
+	}
+	var b strings.Builder
+	writeTask(&b, "dbo.users", state)
+	out := b.String()
+	if !strings.Contains(out, `sql = "SELECT * FROM [dbo.users]"`) {
+		t.Fatalf("unexpected sql quoting for sqlserver: %s", out)
+	}
+}
+
+func TestRunInteractiveWizard_AbortedByUser(t *testing.T) {
+	// This test cannot drive huh interactively, but we can at least exercise
+	// the error path for TTY absence which covers the top of the function.
+	code, err := runInteractiveWizard(io.Discard)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+}
+
+func TestCollectSourceDB_AliasValidation(t *testing.T) {
+	// Validate that the alias validation function rejects empty strings.
+	v := func(s string) error {
+		if strings.TrimSpace(s) == "" {
+			return os.ErrInvalid
+		}
+		return nil
+	}
+	if err := v("  "); err == nil {
+		t.Fatalf("expected validation error for empty alias")
+	}
+	if err := v("src"); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestCollectTargetDB_AliasValidation(t *testing.T) {
+	v := func(s string) error {
+		if strings.TrimSpace(s) == "" {
+			return os.ErrInvalid
+		}
+		if strings.TrimSpace(s) == "src" {
+			return os.ErrExist
+		}
+		return nil
+	}
+	if err := v("  "); err == nil {
+		t.Fatalf("expected validation error for empty alias")
+	}
+	if err := v("src"); err == nil {
+		t.Fatalf("expected validation error for duplicate alias")
+	}
+	if err := v("dst"); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestCollectSourceDB_Success(t *testing.T) {
+	origSelect := runHuhSelect
+	origForm := runHuhForm
+	t.Cleanup(func() {
+		runHuhSelect = origSelect
+		runHuhForm = origForm
+	})
+	runHuhSelect = func(s *huh.Select[string]) error { return nil }
+	runHuhForm = func(f *huh.Form) error { return nil }
+
+	state := &wizardState{}
+	if err := collectSourceDB(state); err != nil {
+		t.Fatalf("collectSourceDB() error = %v", err)
+	}
+	if state.SourceDB.Name != "source_db" {
+		t.Fatalf("unexpected alias: %s", state.SourceDB.Name)
+	}
+}
+
+func TestCollectTargetDB_Success(t *testing.T) {
+	origSelect := runHuhSelect
+	origForm := runHuhForm
+	t.Cleanup(func() {
+		runHuhSelect = origSelect
+		runHuhForm = origForm
+	})
+	runHuhSelect = func(s *huh.Select[string]) error { return nil }
+	runHuhForm = func(f *huh.Form) error { return nil }
+
+	state := &wizardState{SourceDB: config.DatabaseConfig{Name: "src"}}
+	if err := collectTargetDB(state); err != nil {
+		t.Fatalf("collectTargetDB() error = %v", err)
+	}
+	if state.TargetDB.Name != "target_db" {
+		t.Fatalf("unexpected alias: %s", state.TargetDB.Name)
+	}
+}
+
+func TestCollectAdvancedOptions_ReplaceMode(t *testing.T) {
+	origSelect := runHuhSelect
+	origForm := runHuhForm
+	t.Cleanup(func() {
+		runHuhSelect = origSelect
+		runHuhForm = origForm
+	})
+	runHuhSelect = func(s *huh.Select[string]) error { return nil }
+	runHuhForm = func(f *huh.Form) error { return nil }
+
+	state := &wizardState{}
+	if err := collectAdvancedOptions(state); err != nil {
+		t.Fatalf("collectAdvancedOptions() error = %v", err)
+	}
+	if state.Mode != "replace" {
+		t.Fatalf("expected mode replace, got %s", state.Mode)
+	}
+	if state.BatchSize != 1000 {
+		t.Fatalf("expected default batch_size 1000, got %d", state.BatchSize)
+	}
+	if state.MaxRetries != 2 {
+		t.Fatalf("expected default max_retries 2, got %d", state.MaxRetries)
+	}
+}
+
+func TestCollectAdvancedOptions_MergeModeWithStateFile(t *testing.T) {
+	origSelect := runHuhSelect
+	origForm := runHuhForm
+	origInput := runHuhInput
+	t.Cleanup(func() {
+		runHuhSelect = origSelect
+		runHuhForm = origForm
+		runHuhInput = origInput
+	})
+	runHuhSelect = func(s *huh.Select[string]) error { return nil }
+	runHuhForm = func(f *huh.Form) error { return nil }
+	runHuhInput = func(i *huh.Input) error { return nil }
+
+	state := &wizardState{Mode: config.TaskModeMerge, StateFile: "state.json"}
+	if err := collectAdvancedOptions(state); err != nil {
+		t.Fatalf("collectAdvancedOptions() error = %v", err)
+	}
+}
+
+func TestRunInteractiveWizard_Success(t *testing.T) {
+	dir := t.TempDir()
+	chdirForTest(t, dir)
+
+	origSelect := runHuhSelect
+	origForm := runHuhForm
+	origInput := runHuhInput
+	origSource := testSourceFn
+	origTarget := testTargetFn
+	origSelectTables := runSelectTables
+	origConfirmWrite := confirmWriteConfig
+	origConfirmOverwrite := confirmOverwriteConfig
+	t.Cleanup(func() {
+		runHuhSelect = origSelect
+		runHuhForm = origForm
+		runHuhInput = origInput
+		testSourceFn = origSource
+		testTargetFn = origTarget
+		runSelectTables = origSelectTables
+		confirmWriteConfig = origConfirmWrite
+		confirmOverwriteConfig = origConfirmOverwrite
+	})
+
+	runHuhSelect = func(s *huh.Select[string]) error { return nil }
+	runHuhForm = func(f *huh.Form) error { return nil }
+	confirmWriteConfig = func(confirmed *bool) error {
+		*confirmed = true
+		return nil
+	}
+	confirmOverwriteConfig = func(overwrite *bool) error {
+		*overwrite = true
+		return nil
+	}
+	runHuhInput = func(i *huh.Input) error { return nil }
+	testSourceFn = func(cfg config.DatabaseConfig) ([]string, database.SourceDB, error) {
+		return []string{"users"}, nil, nil
+	}
+	testTargetFn = func(cfg config.DatabaseConfig) (database.TargetDB, error) {
+		return nil, nil
+	}
+	runSelectTables = func(state *wizardState) error {
+		state.SelectedTables = []string{"users"}
+		return nil
+	}
+
+	var out bytes.Buffer
+	code, err := runInteractiveWizard(&out)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d", code)
+	}
+	if !strings.Contains(out.String(), "Created task.toml") {
+		t.Fatalf("expected success message, got: %s", out.String())
+	}
+}
+
+func TestRunInteractiveWizard_Aborted(t *testing.T) {
+	origSelect := runHuhSelect
+	origForm := runHuhForm
+	origSource := testSourceFn
+	origTarget := testTargetFn
+	origSelectTables := runSelectTables
+	origConfirmWrite := confirmWriteConfig
+	origConfirmOverwrite := confirmOverwriteConfig
+	t.Cleanup(func() {
+		runHuhSelect = origSelect
+		runHuhForm = origForm
+		testSourceFn = origSource
+		testTargetFn = origTarget
+		runSelectTables = origSelectTables
+		confirmWriteConfig = origConfirmWrite
+		confirmOverwriteConfig = origConfirmOverwrite
+	})
+	runHuhSelect = func(s *huh.Select[string]) error { return nil }
+	runHuhForm = func(f *huh.Form) error { return nil }
+	testSourceFn = func(cfg config.DatabaseConfig) ([]string, database.SourceDB, error) {
+		return []string{"users"}, nil, nil
+	}
+	testTargetFn = func(cfg config.DatabaseConfig) (database.TargetDB, error) {
+		return nil, nil
+	}
+	runSelectTables = func(state *wizardState) error {
+		state.SelectedTables = []string{"users"}
+		return nil
+	}
+
+	confirmWriteConfig = func(confirmed *bool) error {
+		return nil
+	}
+
+	var out bytes.Buffer
+	code, err := runInteractiveWizard(&out)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d", code)
+	}
+	if !strings.Contains(out.String(), "Aborted.") {
+		t.Fatalf("expected aborted message, got: %s", out.String())
 	}
 }

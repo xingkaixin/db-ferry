@@ -162,6 +162,40 @@ func TestMySQLGetTables(t *testing.T) {
 	}
 }
 
+func TestMySQLQueryAndCountErrors(t *testing.T) {
+	db, mock := newSQLMock(t)
+	m := &MySQLDB{db: db}
+
+	mock.ExpectQuery("SELECT 1").WillReturnError(errors.New("query failed"))
+	_, err := m.Query("SELECT 1")
+	if err == nil {
+		t.Fatalf("expected Query error")
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM (SELECT * FROM bad) AS count_query")).WillReturnError(errors.New("count failed"))
+	_, err = m.GetRowCount("SELECT * FROM bad")
+	if err == nil {
+		t.Fatalf("expected GetRowCount error")
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM `bad`")).WillReturnError(errors.New("table count failed"))
+	_, err = m.GetTableRowCount("bad")
+	if err == nil {
+		t.Fatalf("expected GetTableRowCount error")
+	}
+}
+
+func TestMySQLGetTablesError(t *testing.T) {
+	db, mock := newSQLMock(t)
+	m := &MySQLDB{db: db}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type IN ('BASE TABLE', 'VIEW') ORDER BY table_name")).WillReturnError(errors.New("db down"))
+	_, err := m.GetTables()
+	if err == nil {
+		t.Fatalf("expected GetTables error")
+	}
+}
+
 func TestMySQLEdgeCases(t *testing.T) {
 	m := &MySQLDB{}
 	if err := m.CreateTable("users", nil); err == nil {

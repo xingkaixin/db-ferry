@@ -15,12 +15,13 @@ import (
 )
 
 const (
-	defaultTomlPath      = "task.toml"
-	configCommandName    = "config"
-	configInitCommand    = "init"
-	doctorCommandName    = "doctor"
-	configTemplateTarget = "task.toml"
+	defaultTomlPath   = "task.toml"
+	configCommandName = "config"
+	configInitCommand = "init"
+	doctorCommandName = "doctor"
 )
+
+var configTemplateTarget = "task.toml"
 
 var version = "dev"
 
