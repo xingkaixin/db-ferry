@@ -43,6 +43,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 		tomlPath    = flags.String("config", defaultTomlPath, "Path to task.toml configuration file")
 		verbose     = flags.Bool("v", false, "Enable verbose logging")
 		showVersion = flags.Bool("version", false, "Show version information")
+		dryRun      = flags.Bool("dry-run", false, "Preview the migration plan without executing")
 	)
 
 	if err := flags.Parse(args); err != nil {
@@ -80,6 +81,13 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 			log.Printf("Warning: failed to close resources: %v", closeErr)
 		}
 	}()
+
+	if *dryRun {
+		if err := proc.PlanAllTasks(stdout); err != nil {
+			return 1, fmt.Errorf("failed to generate plan: %w", err)
+		}
+		return 0, nil
+	}
 
 	if err := proc.ProcessAllTasks(); err != nil {
 		return 1, fmt.Errorf("failed to process tasks: %w", err)

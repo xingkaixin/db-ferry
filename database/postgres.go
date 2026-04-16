@@ -267,6 +267,11 @@ func (p *PostgresDB) createIndex(tableName string, index config.IndexConfig) err
 }
 
 func (p *PostgresDB) mapToPostgresType(column ColumnMetadata) string {
+	return MapToPostgresType(column)
+}
+
+// MapToPostgresType maps column metadata to a PostgreSQL column type.
+func MapToPostgresType(column ColumnMetadata) string {
 	typeName := strings.ToUpper(column.DatabaseType)
 	if typeName == "" {
 		typeName = strings.ToUpper(column.GoType)

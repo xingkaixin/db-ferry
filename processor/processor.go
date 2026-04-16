@@ -3,6 +3,7 @@ package processor
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 	"time"
@@ -500,4 +501,122 @@ func isTextualColumn(column database.ColumnMetadata) bool {
 
 func (p *Processor) Close() error {
 	return p.manager.CloseAll()
+}
+
+func (p *Processor) PlanAllTasks(w io.Writer) error {
+	totalTasks := 0
+	for _, task := range p.config.Tasks {
+		if !task.Ignore {
+			totalTasks++
+		}
+	}
+
+	taskIndex := 0
+	for i, task := range p.config.Tasks {
+		if task.Ignore {
+			continue
+		}
+		taskIndex++
+		if err := p.planTask(w, taskIndex, totalTasks, i+1, task); err != nil {
+			return fmt.Errorf("failed to plan task %s: %w", task.TableName, err)
+		}
+	}
+
+	return nil
+}
+
+func (p *Processor) planTask(w io.Writer, taskIndex, totalTasks, overallIndex int, task config.TaskConfig) error {
+	sourceDB, err := p.manager.GetSource(task.SourceDB)
+	if err != nil {
+		return err
+	}
+
+	targetDBCfg, ok := p.config.GetDatabase(task.TargetDB)
+	if !ok {
+		return fmt.Errorf("target_db '%s' is not defined", task.TargetDB)
+	}
+
+	resumeLiteral, err := p.resolveResumeLiteral(task)
+	if err != nil {
+		return err
+	}
+
+	querySQL, countSQL := buildTaskSQL(task.SQL, task.ResumeKey, resumeLiteral)
+
+	rows, err := sourceDB.Query(querySQL)
+	if err != nil {
+		return fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	columnsMeta, err := p.extractColumnMetadata(rows)
+	if err != nil {
+		return fmt.Errorf("failed to extract column metadata: %w", err)
+	}
+
+	if task.ResumeKey != "" {
+		resumeIndex := findColumnIndex(columnsMeta, task.ResumeKey)
+		if resumeIndex < 0 {
+			return fmt.Errorf("resume_key '%s' not found in query columns for table %s", task.ResumeKey, task.TableName)
+		}
+	}
+
+	if _, err := resolveMergeKeys(columnsMeta, task.MergeKeys); err != nil {
+		return err
+	}
+
+	var rowCount int
+	if count, err := sourceDB.GetRowCount(countSQL); err != nil {
+		rowCount = -1
+	} else {
+		rowCount = count
+	}
+
+	batchSize := task.BatchSize
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+
+	ddlStmts, err := database.GeneratePlanDDL(targetDBCfg.Type, task.TableName, columnsMeta, task.Mode, task.SkipCreateTable, task.Indexes)
+	if err != nil {
+		return fmt.Errorf("failed to generate DDL: %w", err)
+	}
+
+	fmt.Fprintf(w, "[PLAN] Task %d/%d: %s\n", taskIndex, totalTasks, task.TableName)
+	fmt.Fprintf(w, "  Source:  %s  →  Target:  %s\n", task.SourceDB, task.TargetDB)
+	fmt.Fprintf(w, "  Mode:    %s\n", task.Mode)
+	if len(ddlStmts) > 0 {
+		fmt.Fprintln(w, "  DDL:")
+		for _, stmt := range ddlStmts {
+			fmt.Fprintf(w, "    %s\n", stmt)
+		}
+	} else {
+		fmt.Fprintln(w, "  DDL:     (none)")
+	}
+	if rowCount >= 0 {
+		fmt.Fprintf(w, "  Rows:    ~%s\n", formatNumber(rowCount))
+	} else {
+		fmt.Fprintln(w, "  Rows:    (unknown)")
+	}
+	fmt.Fprintf(w, "  Batch:   %d\n", batchSize)
+
+	if overallIndex < len(p.config.Tasks) {
+		fmt.Fprintln(w)
+	}
+
+	return nil
+}
+
+func formatNumber(n int) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	s := fmt.Sprintf("%d", n)
+	var parts []string
+	for len(s) > 3 {
+		parts = append([]string{s[len(s)-3:]}, parts...)
+		s = s[:len(s)-3]
+	}
+	parts = append([]string{s}, parts...)
+	return strings.Join(parts, ",")
 }

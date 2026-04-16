@@ -287,6 +287,11 @@ func (s *SQLiteDB) buildIndexSQL(tableName string, index config.IndexConfig) (st
 }
 
 func (s *SQLiteDB) mapToSQLiteType(column ColumnMetadata) string {
+	return MapToSQLiteType(column)
+}
+
+// MapToSQLiteType maps column metadata to an SQLite column type.
+func MapToSQLiteType(column ColumnMetadata) string {
 	typeName := strings.ToUpper(column.DatabaseType)
 	if typeName == "" {
 		typeName = strings.ToUpper(column.GoType)
