@@ -374,44 +374,44 @@ func generateTOML(state *wizardState) (string, error) {
 }
 
 func writeDatabase(b *strings.Builder, db config.DatabaseConfig) {
-	b.WriteString(fmt.Sprintf("[[databases]]\n"))
-	b.WriteString(fmt.Sprintf("name = %q\n", db.Name))
-	b.WriteString(fmt.Sprintf("type = %q\n", db.Type))
+	fmt.Fprint(b, "[[databases]]\n")
+	fmt.Fprintf(b, "name = %q\n", db.Name)
+	fmt.Fprintf(b, "type = %q\n", db.Type)
 	if needsHostPort(db.Type) {
-		b.WriteString(fmt.Sprintf("host = %q\n", db.Host))
-		b.WriteString(fmt.Sprintf("port = %q\n", db.Port))
+		fmt.Fprintf(b, "host = %q\n", db.Host)
+		fmt.Fprintf(b, "port = %q\n", db.Port)
 		if db.Type == config.DatabaseTypeOracle {
-			b.WriteString(fmt.Sprintf("service = %q\n", db.Service))
+			fmt.Fprintf(b, "service = %q\n", db.Service)
 		} else {
-			b.WriteString(fmt.Sprintf("database = %q\n", db.Database))
+			fmt.Fprintf(b, "database = %q\n", db.Database)
 		}
-		b.WriteString(fmt.Sprintf("user = %q\n", db.User))
-		b.WriteString(fmt.Sprintf("password = %q\n", db.Password))
+		fmt.Fprintf(b, "user = %q\n", db.User)
+		fmt.Fprintf(b, "password = %q\n", db.Password)
 	} else {
-		b.WriteString(fmt.Sprintf("path = %q\n", db.Path))
+		fmt.Fprintf(b, "path = %q\n", db.Path)
 	}
 }
 
 func writeTask(b *strings.Builder, table string, state *wizardState) {
-	b.WriteString(fmt.Sprintf("[[tasks]]\n"))
-	b.WriteString(fmt.Sprintf("table_name = %q\n", table))
+	fmt.Fprint(b, "[[tasks]]\n")
+	fmt.Fprintf(b, "table_name = %q\n", table)
 	sql := fmt.Sprintf("SELECT * FROM %s", quoteSQLIdentifier(state.SourceDB.Type, table))
-	b.WriteString(fmt.Sprintf("sql = %q\n", sql))
-	b.WriteString(fmt.Sprintf("source_db = %q\n", state.SourceDB.Name))
-	b.WriteString(fmt.Sprintf("target_db = %q\n", state.TargetDB.Name))
-	b.WriteString(fmt.Sprintf("ignore = false\n"))
-	b.WriteString(fmt.Sprintf("mode = %q\n", state.Mode))
-	b.WriteString(fmt.Sprintf("batch_size = %d\n", state.BatchSize))
-	b.WriteString(fmt.Sprintf("max_retries = %d\n", state.MaxRetries))
+	fmt.Fprintf(b, "sql = %q\n", sql)
+	fmt.Fprintf(b, "source_db = %q\n", state.SourceDB.Name)
+	fmt.Fprintf(b, "target_db = %q\n", state.TargetDB.Name)
+	fmt.Fprint(b, "ignore = false\n")
+	fmt.Fprintf(b, "mode = %q\n", state.Mode)
+	fmt.Fprintf(b, "batch_size = %d\n", state.BatchSize)
+	fmt.Fprintf(b, "max_retries = %d\n", state.MaxRetries)
 	if state.Validate != config.TaskValidateNone {
-		b.WriteString(fmt.Sprintf("validate = %q\n", state.Validate))
+		fmt.Fprintf(b, "validate = %q\n", state.Validate)
 	}
 	if state.StateFile != "" {
-		b.WriteString(fmt.Sprintf("state_file = %q\n", state.StateFile))
-		b.WriteString(fmt.Sprintf("resume_key = %q\n", state.ResumeKey))
+		fmt.Fprintf(b, "state_file = %q\n", state.StateFile)
+		fmt.Fprintf(b, "resume_key = %q\n", state.ResumeKey)
 	}
 	if state.Mode == config.TaskModeMerge && len(state.MergeKeys) > 0 {
-		b.WriteString(fmt.Sprintf("merge_keys = %s\n", tomlStringArray(state.MergeKeys)))
+		fmt.Fprintf(b, "merge_keys = %s\n", tomlStringArray(state.MergeKeys))
 	}
 	b.WriteString("\n")
 }
