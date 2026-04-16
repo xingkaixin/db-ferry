@@ -41,6 +41,15 @@ func (o *OracleDB) Close() error {
 	return nil
 }
 
+func (o *OracleDB) Ping() error {
+	return o.db.Ping()
+}
+
+func (o *OracleDB) Exec(sql string) error {
+	_, err := o.db.Exec(sql)
+	return err
+}
+
 func (o *OracleDB) Query(sql string) (*sql.Rows, error) {
 	log.Printf("Executing Oracle query: %s", sql)
 	rows, err := o.db.Query(sql)

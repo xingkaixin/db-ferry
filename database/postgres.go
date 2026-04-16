@@ -41,6 +41,15 @@ func (p *PostgresDB) Close() error {
 	return nil
 }
 
+func (p *PostgresDB) Ping() error {
+	return p.db.Ping()
+}
+
+func (p *PostgresDB) Exec(sql string) error {
+	_, err := p.db.Exec(sql)
+	return err
+}
+
 func (p *PostgresDB) Query(sql string) (*sql.Rows, error) {
 	log.Printf("Executing PostgreSQL query: %s", sql)
 	rows, err := p.db.Query(sql)
