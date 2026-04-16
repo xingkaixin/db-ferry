@@ -88,6 +88,39 @@ func TestGenerateTOML(t *testing.T) {
 	}
 }
 
+func TestGenerateTOMLSampleValidation(t *testing.T) {
+	state := &wizardState{
+		SourceDB: config.DatabaseConfig{
+			Name: "src",
+			Type: "sqlite",
+			Path: "./src.db",
+		},
+		TargetDB: config.DatabaseConfig{
+			Name: "dst",
+			Type: "sqlite",
+			Path: "./dst.db",
+		},
+		SelectedTables:     []string{"users"},
+		Mode:               "replace",
+		BatchSize:          1000,
+		MaxRetries:         2,
+		Validate:           "sample",
+		ValidateSampleSize: 500,
+	}
+
+	out, err := generateTOML(state)
+	if err != nil {
+		t.Fatalf("generateTOML() error = %v", err)
+	}
+
+	if !strings.Contains(out, `validate = "sample"`) {
+		t.Fatalf("missing validate = sample")
+	}
+	if !strings.Contains(out, `validate_sample_size = 500`) {
+		t.Fatalf("missing validate_sample_size")
+	}
+}
+
 func TestGenerateTOMLOracleService(t *testing.T) {
 	state := &wizardState{
 		SourceDB: config.DatabaseConfig{

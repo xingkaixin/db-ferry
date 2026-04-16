@@ -29,6 +29,8 @@ const (
 const (
 	TaskValidateNone     = "none"
 	TaskValidateRowCount = "row_count"
+	TaskValidateChecksum = "checksum"
+	TaskValidateSample   = "sample"
 )
 
 // Supported DLQ formats.
@@ -103,9 +105,10 @@ type TaskConfig struct {
 	Ignore     bool     `toml:"ignore"`
 	Mode       string   `toml:"mode"`
 	BatchSize  int      `toml:"batch_size"`
-	MaxRetries int      `toml:"max_retries"`
-	Validate   string   `toml:"validate"`
-	MergeKeys  []string `toml:"merge_keys"`
+	MaxRetries       int    `toml:"max_retries"`
+	Validate         string `toml:"validate"`
+	ValidateSampleSize int  `toml:"validate_sample_size"`
+	MergeKeys        []string `toml:"merge_keys"`
 	ResumeKey  string   `toml:"resume_key"`
 	ResumeFrom string   `toml:"resume_from"`
 	StateFile  string   `toml:"state_file"`
@@ -246,9 +249,12 @@ func (c *Config) Validate() error {
 			task.Validate = TaskValidateNone
 		}
 		switch task.Validate {
-		case TaskValidateNone, TaskValidateRowCount:
+		case TaskValidateNone, TaskValidateRowCount, TaskValidateChecksum, TaskValidateSample:
 		default:
-			return fmt.Errorf("task %d: validate must be %q or %q", i+1, TaskValidateNone, TaskValidateRowCount)
+			return fmt.Errorf("task %d: validate must be %q, %q, %q, or %q", i+1, TaskValidateNone, TaskValidateRowCount, TaskValidateChecksum, TaskValidateSample)
+		}
+		if task.Validate == TaskValidateSample && task.ValidateSampleSize <= 0 {
+			return fmt.Errorf("task %d: validate_sample_size must be > 0 when validate is %q", i+1, TaskValidateSample)
 		}
 
 		if task.BatchSize < 0 {

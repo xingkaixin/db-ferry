@@ -183,6 +183,11 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		return err
 	}
 
+	sourceDBCfg, ok := p.config.GetDatabase(task.SourceDB)
+	if !ok {
+		return fmt.Errorf("source_db '%s' is not defined", task.SourceDB)
+	}
+
 	resumeLiteral, err := p.resolveResumeLiteral(task)
 	if err != nil {
 		return err
@@ -253,13 +258,14 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		log.Printf("Successfully executed all pre_sql hooks for table %s", task.TableName)
 	}
 
-	validateRowCount := task.Validate == config.TaskValidateRowCount
-	if validateRowCount && task.Mode == config.TaskModeMerge {
+	validateMode := task.Validate
+	if validateMode == config.TaskValidateRowCount && task.Mode == config.TaskModeMerge {
 		log.Printf("Row count validation skipped for merge mode on table %s", task.TableName)
-		validateRowCount = false
+		validateMode = config.TaskValidateNone
 	}
+
 	targetCountBefore := 0
-	if validateRowCount {
+	if validateMode == config.TaskValidateRowCount || validateMode == config.TaskValidateChecksum || validateMode == config.TaskValidateSample {
 		count, err := targetDB.GetTableRowCount(task.TableName)
 		if err != nil {
 			return fmt.Errorf("failed to get target row count before insert: %w", err)
@@ -364,16 +370,19 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		log.Printf("Successfully executed all post_sql hooks for table %s", task.TableName)
 	}
 
-	if validateRowCount {
-		targetCountAfter, err := targetDB.GetTableRowCount(task.TableName)
-		if err != nil {
-			return fmt.Errorf("failed to get target row count after insert: %w", err)
-		}
-		inserted := targetCountAfter - targetCountBefore
-		expected := processedRows - totalDLQ
-		if inserted != expected {
-			return fmt.Errorf("row count validation failed for table %s: expected %d inserted rows but got %d", task.TableName, expected, inserted)
-		}
+	targetDBCfg, ok := p.config.GetDatabase(task.TargetDB)
+	if !ok {
+		return fmt.Errorf("target_db '%s' is not defined", task.TargetDB)
+	}
+
+	validationTask := task
+	validationTask.Validate = validateMode
+	reportedProcessedRows := processedRows - totalDLQ
+	if reportedProcessedRows < 0 {
+		reportedProcessedRows = 0
+	}
+	if err := database.ValidateTask(sourceDB, targetDB, sourceDBCfg.Type, targetDBCfg.Type, validationTask, columnsMeta, countSQL, reportedProcessedRows, targetCountBefore); err != nil {
+		return err
 	}
 
 	if task.DLQPath != "" {

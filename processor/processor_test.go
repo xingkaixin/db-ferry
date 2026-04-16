@@ -53,6 +53,8 @@ func (m *retryTarget) UpsertData(string, []database.ColumnMetadata, [][]any, []s
 
 func (m *retryTarget) GetTableRowCount(string) (int, error) { return 0, nil }
 
+func (m *retryTarget) Query(string) (*sql.Rows, error) { return nil, nil }
+
 func (m *retryTarget) CreateIndexes(string, []config.IndexConfig) error { return nil }
 
 func (m *retryTarget) Exec(string) error { return nil }
@@ -605,7 +607,7 @@ func TestProcessTaskReplaceAndStateFile(t *testing.T) {
 	}
 }
 
-func TestProcessTaskMergeSkipsRowCountValidation(t *testing.T) {
+func TestProcessTaskMergeRowCountValidationFails(t *testing.T) {
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.db")
 	targetPath := filepath.Join(dir, "target.db")
@@ -642,8 +644,10 @@ func TestProcessTaskMergeSkipsRowCountValidation(t *testing.T) {
 	p := NewProcessor(manager, cfg)
 	t.Cleanup(func() { _ = p.Close() })
 
-	if err := p.processTask(cfg.Tasks[0]); err != nil {
-		t.Fatalf("processTask() merge error = %v", err)
+	// Merge processed 2 rows but only 1 net new row was inserted.
+	err := p.processTask(cfg.Tasks[0])
+	if err == nil || !strings.Contains(err.Error(), "row count validation failed") {
+		t.Fatalf("expected row count validation failure, got %v", err)
 	}
 
 	targetDB, err := sql.Open("sqlite3", targetPath)
@@ -723,6 +727,109 @@ func TestProcessTaskAppendWithValidationAndIndexes(t *testing.T) {
 	}
 	if indexExists != 1 {
 		t.Fatalf("expected index idx_dst_users_name to exist")
+	}
+}
+
+func TestProcessTaskChecksumValidation(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'a'), (2, 'b'), (3, 'c')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Validate:  config.TaskValidateChecksum,
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() checksum error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("target row count = %d, want 3", count)
+	}
+}
+
+func TestProcessTaskSampleValidation(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'a'), (2, 'b'), (3, 'c')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:          "dst_users",
+				SQL:                "SELECT id, name FROM src_users",
+				SourceDB:           "src",
+				TargetDB:           "dst",
+				Mode:               config.TaskModeReplace,
+				Validate:           config.TaskValidateSample,
+				ValidateSampleSize: 2,
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() sample error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("target row count = %d, want 3", count)
 	}
 }
 
