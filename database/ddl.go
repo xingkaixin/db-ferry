@@ -135,16 +135,15 @@ func BuildCreateIndexSQL(dbType, tableName string, index config.IndexConfig) (st
 
 // GeneratePlanDDL generates a list of DDL statements for a task in dry-run mode.
 func GeneratePlanDDL(dbType, tableName string, columns []ColumnMetadata, mode string, skipCreate bool, indexes []config.IndexConfig) ([]string, error) {
-	if skipCreate {
-		return nil, nil
-	}
-
 	var stmts []string
-	switch mode {
-	case config.TaskModeAppend, config.TaskModeMerge:
-		stmts = BuildCreateTableSQL(dbType, tableName, columns, false)
-	default:
-		stmts = BuildCreateTableSQL(dbType, tableName, columns, true)
+
+	if !skipCreate {
+		switch mode {
+		case config.TaskModeAppend, config.TaskModeMerge:
+			stmts = BuildCreateTableSQL(dbType, tableName, columns, false)
+		default:
+			stmts = BuildCreateTableSQL(dbType, tableName, columns, true)
+		}
 	}
 
 	for _, idx := range indexes {

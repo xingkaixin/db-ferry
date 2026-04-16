@@ -151,7 +151,18 @@ func TestGeneratePlanDDL(t *testing.T) {
 		t.Fatalf("GeneratePlanDDL() error = %v", err)
 	}
 	if len(ddl) != 0 {
-		t.Fatalf("expected no DDL when skip_create is true, got %d", len(ddl))
+		t.Fatalf("expected no DDL when skip_create is true and no indexes, got %d", len(ddl))
+	}
+
+	ddl, err = GeneratePlanDDL(config.DatabaseTypeSQLite, "users", cols, config.TaskModeReplace, true, indexes)
+	if err != nil {
+		t.Fatalf("GeneratePlanDDL() error = %v", err)
+	}
+	if len(ddl) != 1 {
+		t.Fatalf("expected 1 DDL statement when skip_create is true with indexes, got %d", len(ddl))
+	}
+	if !strings.Contains(ddl[0], "CREATE INDEX") {
+		t.Fatalf("expected index DDL when skip_create is true, got %s", ddl[0])
 	}
 }
 
