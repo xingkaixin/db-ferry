@@ -123,6 +123,25 @@ func TestDuckDBCreateIndexesAndHelpers(t *testing.T) {
 	}
 }
 
+func TestDuckDBPingAndExec(t *testing.T) {
+	db, mock := newSQLMock(t)
+	d := &DuckDB{db: db}
+
+	mock.ExpectPing()
+	if err := d.Ping(); err != nil {
+		t.Fatalf("Ping() error = %v", err)
+	}
+
+	mock.ExpectExec(regexp.QuoteMeta(`CREATE TABLE t (id INT)`)).WillReturnResult(sqlmock.NewResult(0, 0))
+	if err := d.Exec(`CREATE TABLE t (id INT)`); err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sqlmock expectations: %v", err)
+	}
+}
+
 func TestDuckDBEdgeCasesAndTypeMapping(t *testing.T) {
 	d := &DuckDB{}
 	if err := d.CreateTable("users", nil); err == nil {

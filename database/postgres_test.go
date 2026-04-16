@@ -125,6 +125,25 @@ func TestPostgresCreateIndexesAndHelpers(t *testing.T) {
 	}
 }
 
+func TestPostgresPingAndExec(t *testing.T) {
+	db, mock := newSQLMock(t)
+	p := &PostgresDB{db: db}
+
+	mock.ExpectPing()
+	if err := p.Ping(); err != nil {
+		t.Fatalf("Ping() error = %v", err)
+	}
+
+	mock.ExpectExec(regexp.QuoteMeta(`CREATE TABLE t (id INT)`)).WillReturnResult(sqlmock.NewResult(0, 0))
+	if err := p.Exec(`CREATE TABLE t (id INT)`); err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sqlmock expectations: %v", err)
+	}
+}
+
 func TestPostgresEdgeCasesAndTypeMapping(t *testing.T) {
 	p := &PostgresDB{}
 	if err := p.CreateTable("users", nil); err == nil {

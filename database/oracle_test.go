@@ -133,6 +133,25 @@ func TestOracleCreateIndexesAndHelpers(t *testing.T) {
 	}
 }
 
+func TestOraclePingAndExec(t *testing.T) {
+	db, mock := newSQLMock(t)
+	o := &OracleDB{db: db}
+
+	mock.ExpectPing()
+	if err := o.Ping(); err != nil {
+		t.Fatalf("Ping() error = %v", err)
+	}
+
+	mock.ExpectExec(regexp.QuoteMeta(`CREATE TABLE t (id INT)`)).WillReturnResult(sqlmock.NewResult(0, 0))
+	if err := o.Exec(`CREATE TABLE t (id INT)`); err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sqlmock expectations: %v", err)
+	}
+}
+
 func TestOracleEdgeCasesAndTypeMapping(t *testing.T) {
 	o := &OracleDB{}
 	if err := o.CreateTable("users", nil); err == nil {

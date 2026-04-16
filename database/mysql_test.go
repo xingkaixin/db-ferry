@@ -117,6 +117,25 @@ func TestMySQLCreateIndexes(t *testing.T) {
 	}
 }
 
+func TestMySQLPingAndExec(t *testing.T) {
+	db, mock := newSQLMock(t)
+	m := &MySQLDB{db: db}
+
+	mock.ExpectPing()
+	if err := m.Ping(); err != nil {
+		t.Fatalf("Ping() error = %v", err)
+	}
+
+	mock.ExpectExec(regexp.QuoteMeta("CREATE TABLE t (id INT)")).WillReturnResult(sqlmock.NewResult(0, 0))
+	if err := m.Exec("CREATE TABLE t (id INT)"); err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sqlmock expectations: %v", err)
+	}
+}
+
 func TestMySQLEdgeCases(t *testing.T) {
 	m := &MySQLDB{}
 	if err := m.CreateTable("users", nil); err == nil {

@@ -120,6 +120,23 @@ func TestSQLiteCreateIndexesAndBuildIndexSQL(t *testing.T) {
 	}
 }
 
+func TestSQLitePingAndExec(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
+	s, err := NewSQLiteDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteDB() error = %v", err)
+	}
+	defer s.Close()
+
+	if err := s.Ping(); err != nil {
+		t.Fatalf("Ping() error = %v", err)
+	}
+
+	if err := s.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+}
+
 func TestSQLiteEdgeCases(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
 	s, err := NewSQLiteDB(dbPath)
