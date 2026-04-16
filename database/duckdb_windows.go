@@ -57,3 +57,7 @@ func (d *DuckDB) GetTableRowCount(tableName string) (int, error) {
 func (d *DuckDB) CreateIndexes(tableName string, indexes []config.IndexConfig) error {
 	return fmt.Errorf("duckdb is not supported on windows builds")
 }
+
+func (d *DuckDB) Exec(sql string) error {
+	return fmt.Errorf("duckdb is not supported on windows builds")
+}

@@ -108,6 +108,8 @@ type TaskConfig struct {
 	// SkipCreateTable 跳过目标表的 drop/create 操作。
 	SkipCreateTable bool          `toml:"skip_create_table"`
 	Indexes         []IndexConfig `toml:"indexes,omitempty"`
+	PreSQL          []string      `toml:"pre_sql,omitempty"`
+	PostSQL         []string      `toml:"post_sql,omitempty"`
 }
 
 // Config is the top-level configuration structure decoded from task.toml.

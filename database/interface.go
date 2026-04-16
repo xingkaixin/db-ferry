@@ -57,4 +57,7 @@ type TargetDB interface {
 
 	// CreateIndexes 创建索引
 	CreateIndexes(tableName string, indexes []config.IndexConfig) error
+
+	// Exec 执行原始 SQL（用于 pre_sql / post_sql hooks）
+	Exec(sql string) error
 }
