@@ -54,13 +54,14 @@ type wizardState struct {
 	SourceTables   []string
 	SelectedTables []string
 
-	Mode       string
-	BatchSize  int
-	MaxRetries int
-	Validate   string
-	StateFile  string
-	ResumeKey  string
-	MergeKeys  []string
+	Mode               string
+	BatchSize          int
+	MaxRetries         int
+	Validate           string
+	ValidateSampleSize int
+	StateFile          string
+	ResumeKey          string
+	MergeKeys          []string
 }
 
 func runInteractiveWizard(stdout io.Writer) (int, error) {
@@ -323,6 +324,7 @@ func collectAdvancedOptions(state *wizardState) error {
 	batchSize := "1000"
 	maxRetries := "2"
 	validate := "none"
+	validateSampleSize := "1000"
 	stateFile := ""
 
 	fields := []huh.Field{
@@ -331,6 +333,8 @@ func collectAdvancedOptions(state *wizardState) error {
 		huh.NewSelect[string]().Title("Validation").Options(
 			huh.NewOption("none", config.TaskValidateNone),
 			huh.NewOption("row_count", config.TaskValidateRowCount),
+			huh.NewOption("checksum", config.TaskValidateChecksum),
+			huh.NewOption("sample", config.TaskValidateSample),
 		).Value(&validate),
 		huh.NewInput().Title("State file path (optional, for resume)").Value(&stateFile),
 	}
@@ -343,6 +347,16 @@ func collectAdvancedOptions(state *wizardState) error {
 	state.MaxRetries = parseInt(maxRetries, 2)
 	state.Validate = validate
 	state.StateFile = strings.TrimSpace(stateFile)
+
+	if state.Validate == config.TaskValidateSample {
+		if err := runHuhInput(huh.NewInput().
+			Title("Sample size").
+			Value(&validateSampleSize).
+			Validate(nonEmpty("sample size is required"))); err != nil {
+			return err
+		}
+		state.ValidateSampleSize = parseInt(validateSampleSize, 1000)
+	}
 
 	if state.StateFile != "" {
 		resumeKey := ""
@@ -424,6 +438,9 @@ func writeTask(b *strings.Builder, table string, state *wizardState) {
 	fmt.Fprintf(b, "max_retries = %d\n", state.MaxRetries)
 	if state.Validate != config.TaskValidateNone {
 		fmt.Fprintf(b, "validate = %q\n", state.Validate)
+	}
+	if state.Validate == config.TaskValidateSample {
+		fmt.Fprintf(b, "validate_sample_size = %d\n", state.ValidateSampleSize)
 	}
 	if state.StateFile != "" {
 		fmt.Fprintf(b, "state_file = %q\n", state.StateFile)

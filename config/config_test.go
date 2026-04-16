@@ -378,6 +378,32 @@ func TestValidateTaskFieldErrors(t *testing.T) {
 		}
 	})
 
+	t.Run("checksum validate ok", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Validate = TaskValidateChecksum
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected checksum validate to pass, got %v", err)
+		}
+	})
+
+	t.Run("sample validate requires sample size", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Validate = TaskValidateSample
+		cfg.Tasks[0].ValidateSampleSize = 0
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "validate_sample_size must be > 0") {
+			t.Fatalf("expected sample size error, got %v", err)
+		}
+	})
+
+	t.Run("sample validate ok", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Validate = TaskValidateSample
+		cfg.Tasks[0].ValidateSampleSize = 500
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected sample validate to pass, got %v", err)
+		}
+	})
+
 	t.Run("negative batch size", func(t *testing.T) {
 		cfg := baseConfig(t)
 		cfg.Tasks[0].BatchSize = -1

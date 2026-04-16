@@ -55,6 +55,9 @@ type TargetDB interface {
 	// GetTableRowCount 获取目标表的行数
 	GetTableRowCount(tableName string) (int, error)
 
+	// Query 执行查询并返回结果集（校验模块需要）
+	Query(sql string) (*sql.Rows, error)
+
 	// CreateIndexes 创建索引
 	CreateIndexes(tableName string, indexes []config.IndexConfig) error
 
