@@ -43,10 +43,6 @@ func (d *DuckDB) Close() error {
 	return nil
 }
 
-func (d *DuckDB) Ping() error {
-	return d.db.Ping()
-}
-
 func (d *DuckDB) Exec(sql string) error {
 	_, err := d.db.Exec(sql)
 	return err

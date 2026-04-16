@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"db-ferry/config"
 	"db-ferry/database"
@@ -21,6 +22,7 @@ const (
 	StatusPass Status = iota
 	StatusWarn
 	StatusFail
+	StatusSkip
 )
 
 func (s Status) String() string {
@@ -31,6 +33,8 @@ func (s Status) String() string {
 		return "WARN"
 	case StatusFail:
 		return "FAIL"
+	case StatusSkip:
+		return "SKIP"
 	default:
 		return "UNKNOWN"
 	}
@@ -40,7 +44,7 @@ func (s Status) color() string {
 	switch s {
 	case StatusPass:
 		return "\033[32m"
-	case StatusWarn:
+	case StatusWarn, StatusSkip:
 		return "\033[33m"
 	case StatusFail:
 		return "\033[31m"
@@ -54,11 +58,6 @@ type CheckResult struct {
 	Name    string
 	Status  Status
 	Message string
-}
-
-// execer is a minimal interface for executing raw SQL during diagnostics.
-type execer interface {
-	Exec(sql string) error
 }
 
 // Doctor runs diagnostic checks against a db-ferry configuration.
@@ -122,6 +121,12 @@ func (d *Doctor) runChecks() []CheckResult {
 		if status == StatusPass {
 			connected[dbCfg.Name] = true
 			msg = fmt.Sprintf("type=%s", dbCfg.Type)
+			// Also explicitly verify GetTarget for future source-only/target-only support.
+			if _, err := manager.GetTarget(dbCfg.Name); err != nil {
+				status = StatusFail
+				msg = err.Error()
+				connected[dbCfg.Name] = false
+			}
 		}
 		results = append(results, CheckResult{
 			Name:    fmt.Sprintf("Database connection: %s", dbCfg.Name),
@@ -132,6 +137,7 @@ func (d *Doctor) runChecks() []CheckResult {
 
 	// Track checked items to avoid duplicates
 	diskSpaceChecked := make(map[string]bool)
+	targetPermissionChecked := make(map[string]bool)
 
 	// Per-task checks
 	for _, task := range cfg.Tasks {
@@ -165,15 +171,32 @@ func (d *Doctor) runChecks() []CheckResult {
 				Status:  statusFromErr(err),
 				Message: errMsg(err),
 			})
+		} else {
+			results = append(results, CheckResult{
+				Name:    fmt.Sprintf("Column existence: %s", task.TableName),
+				Status:  StatusSkip,
+				Message: "skipped because source connection or SQL check failed",
+			})
 		}
 
 		// 6. Target permission
-		if connected[task.TargetDB] {
+		if connected[task.TargetDB] && !targetPermissionChecked[task.TargetDB] {
+			targetPermissionChecked[task.TargetDB] = true
 			err := checkTargetPermissions(manager, task, cfg)
 			results = append(results, CheckResult{
 				Name:    fmt.Sprintf("Target permission: %s", task.TableName),
 				Status:  statusFromErr(err),
 				Message: errMsg(err),
+			})
+		} else {
+			reason := "skipped because target database connection failed"
+			if targetPermissionChecked[task.TargetDB] {
+				reason = "skipped because target permission already checked"
+			}
+			results = append(results, CheckResult{
+				Name:    fmt.Sprintf("Target permission: %s", task.TableName),
+				Status:  StatusSkip,
+				Message: reason,
 			})
 		}
 
@@ -234,11 +257,7 @@ func (d *Doctor) printResults(w io.Writer, results []CheckResult) {
 		}
 	}
 
-	if useColor {
-		fmt.Fprintf(w, "\n%d checks passed, %d warning, %d failure. ", passCount, warnCount, failCount)
-	} else {
-		fmt.Fprintf(w, "\n%d checks passed, %d warning, %d failure. ", passCount, warnCount, failCount)
-	}
+	fmt.Fprintf(w, "\n%d checks passed, %d warning, %d failure. ", passCount, warnCount, failCount)
 
 	if failCount > 0 {
 		fmt.Fprintln(w, "Fix issues before running db-ferry.")
@@ -328,16 +347,11 @@ func checkTargetPermissions(manager *database.ConnectionManager, task config.Tas
 		return err
 	}
 
-	execDB, ok := targetDB.(execer)
-	if !ok {
-		return fmt.Errorf("target database does not support diagnostic execution")
-	}
-
 	targetDBCfg, _ := cfg.GetDatabase(task.TargetDB)
-	tempTable := "db_ferry_doctor_test"
+	tempTable := fmt.Sprintf("db_ferry_doctor_test_%d", time.Now().UnixNano())
 
 	// Pre-cleanup in case a previous interrupted run left the table behind.
-	_ = execDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
+	_ = targetDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
 
 	columns := []database.ColumnMetadata{
 		{Name: "doctor_value", DatabaseType: "INT", GoType: "int"},
@@ -348,7 +362,7 @@ func checkTargetPermissions(manager *database.ConnectionManager, task config.Tas
 	}
 
 	if err := targetDB.InsertData(tempTable, columns, [][]any{{1}}); err != nil {
-		_ = execDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
+		_ = targetDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
 		return fmt.Errorf("failed to insert data: %w", err)
 	}
 
@@ -357,17 +371,17 @@ func checkTargetPermissions(manager *database.ConnectionManager, task config.Tas
 	}
 	for i := range indexes {
 		if err := indexes[i].ParseColumns(); err != nil {
-			_ = execDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
+			_ = targetDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
 			return err
 		}
 	}
 
 	if err := targetDB.CreateIndexes(tempTable, indexes); err != nil {
-		_ = execDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
+		_ = targetDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
 		return fmt.Errorf("failed to create index: %w", err)
 	}
 
-	_ = execDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
+	_ = targetDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
 	return nil
 }
 

@@ -125,14 +125,9 @@ func TestPostgresCreateIndexesAndHelpers(t *testing.T) {
 	}
 }
 
-func TestPostgresPingAndExec(t *testing.T) {
+func TestPostgresExec(t *testing.T) {
 	db, mock := newSQLMock(t)
 	p := &PostgresDB{db: db}
-
-	mock.ExpectPing()
-	if err := p.Ping(); err != nil {
-		t.Fatalf("Ping() error = %v", err)
-	}
 
 	mock.ExpectExec(regexp.QuoteMeta(`CREATE TABLE t (id INT)`)).WillReturnResult(sqlmock.NewResult(0, 0))
 	if err := p.Exec(`CREATE TABLE t (id INT)`); err != nil {

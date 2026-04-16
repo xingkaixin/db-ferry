@@ -133,14 +133,9 @@ func TestOracleCreateIndexesAndHelpers(t *testing.T) {
 	}
 }
 
-func TestOraclePingAndExec(t *testing.T) {
+func TestOracleExec(t *testing.T) {
 	db, mock := newSQLMock(t)
 	o := &OracleDB{db: db}
-
-	mock.ExpectPing()
-	if err := o.Ping(); err != nil {
-		t.Fatalf("Ping() error = %v", err)
-	}
 
 	mock.ExpectExec(regexp.QuoteMeta(`CREATE TABLE t (id INT)`)).WillReturnResult(sqlmock.NewResult(0, 0))
 	if err := o.Exec(`CREATE TABLE t (id INT)`); err != nil {

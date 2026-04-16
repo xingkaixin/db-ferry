@@ -41,10 +41,6 @@ func (o *OracleDB) Close() error {
 	return nil
 }
 
-func (o *OracleDB) Ping() error {
-	return o.db.Ping()
-}
-
 func (o *OracleDB) Exec(sql string) error {
 	_, err := o.db.Exec(sql)
 	return err

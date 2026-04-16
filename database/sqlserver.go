@@ -41,10 +41,6 @@ func (s *SQLServerDB) Close() error {
 	return nil
 }
 
-func (s *SQLServerDB) Ping() error {
-	return s.db.Ping()
-}
-
 func (s *SQLServerDB) Exec(sql string) error {
 	_, err := s.db.Exec(sql)
 	return err

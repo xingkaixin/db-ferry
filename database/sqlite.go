@@ -41,10 +41,6 @@ func (s *SQLiteDB) Close() error {
 	return nil
 }
 
-func (s *SQLiteDB) Ping() error {
-	return s.db.Ping()
-}
-
 func (s *SQLiteDB) Exec(sql string) error {
 	_, err := s.db.Exec(sql)
 	return err

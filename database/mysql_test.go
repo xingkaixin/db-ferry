@@ -117,14 +117,9 @@ func TestMySQLCreateIndexes(t *testing.T) {
 	}
 }
 
-func TestMySQLPingAndExec(t *testing.T) {
+func TestMySQLExec(t *testing.T) {
 	db, mock := newSQLMock(t)
 	m := &MySQLDB{db: db}
-
-	mock.ExpectPing()
-	if err := m.Ping(); err != nil {
-		t.Fatalf("Ping() error = %v", err)
-	}
 
 	mock.ExpectExec(regexp.QuoteMeta("CREATE TABLE t (id INT)")).WillReturnResult(sqlmock.NewResult(0, 0))
 	if err := m.Exec("CREATE TABLE t (id INT)"); err != nil {
