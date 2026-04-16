@@ -10,6 +10,7 @@ import (
 
 	"db-ferry/config"
 	"db-ferry/database"
+	"db-ferry/doctor"
 	"db-ferry/processor"
 )
 
@@ -17,6 +18,7 @@ const (
 	defaultTomlPath      = "task.toml"
 	configCommandName    = "config"
 	configInitCommand    = "init"
+	doctorCommandName    = "doctor"
 	configTemplateTarget = "task.toml"
 )
 
@@ -61,7 +63,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 	}
 
 	if remainingArgs := flags.Args(); len(remainingArgs) > 0 {
-		return runCommand(remainingArgs, stdout)
+		return runCommand(remainingArgs, *tomlPath, stdout)
 	}
 
 	log.Println("Starting multi-database migration tool...")
@@ -89,10 +91,12 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 	return 0, nil
 }
 
-func runCommand(args []string, stdout io.Writer) (int, error) {
+func runCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
 	switch args[0] {
 	case configCommandName:
 		return runConfigCommand(args[1:], stdout)
+	case doctorCommandName:
+		return runDoctorCommand(args[1:], tomlPath, stdout)
 	default:
 		return 2, fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -112,6 +116,15 @@ func runConfigCommand(args []string, stdout io.Writer) (int, error) {
 	default:
 		return 2, fmt.Errorf("unknown config subcommand: %s", args[0])
 	}
+}
+
+func runDoctorCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
+	if len(args) > 0 {
+		return 2, fmt.Errorf("unknown doctor argument: %s", args[0])
+	}
+
+	doc := doctor.New(tomlPath)
+	return doc.Run(stdout), nil
 }
 
 func initConfigTemplate(stdout io.Writer) (int, error) {

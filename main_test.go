@@ -159,6 +159,80 @@ func TestRunConfigInitRejectsExtraArgs(t *testing.T) {
 	}
 }
 
+func TestRunDoctorCommand(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "db.sqlite")
+	cfgPath := filepath.Join(dir, "task.toml")
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open db error = %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create table error = %v", err)
+	}
+
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + dbPath + `"`,
+		"",
+		"[[databases]]",
+		`name = "dst"`,
+		`type = "sqlite"`,
+		`path = "` + filepath.Join(dir, "target.db") + `"`,
+		"",
+		"[[tasks]]",
+		`table_name = "users_copy"`,
+		`sql = "SELECT id FROM users"`,
+		`source_db = "src"`,
+		`target_db = "dst"`,
+		`mode = "replace"`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, runErr := run([]string{"-config", cfgPath, "doctor"}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run() error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run() code = %d, want 0\noutput:\n%s", code, out.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "[PASS] TOML syntax") {
+		t.Fatalf("expected doctor output to contain TOML pass, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Ready to ferry.") {
+		t.Fatalf("expected doctor output to contain ready message, got:\n%s", got)
+	}
+}
+
+func TestRunDoctorRejectsExtraArgs(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"doctor", "extra"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for extra args")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "unknown doctor argument") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunHappyPath(t *testing.T) {
 	oldWriter := log.Writer()
 	log.SetOutput(io.Discard)

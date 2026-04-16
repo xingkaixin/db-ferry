@@ -41,6 +41,15 @@ func (s *SQLiteDB) Close() error {
 	return nil
 }
 
+func (s *SQLiteDB) Ping() error {
+	return s.db.Ping()
+}
+
+func (s *SQLiteDB) Exec(sql string) error {
+	_, err := s.db.Exec(sql)
+	return err
+}
+
 func (s *SQLiteDB) Query(sql string) (*sql.Rows, error) {
 	log.Printf("Executing SQLite query: %s", sql)
 	rows, err := s.db.Query(sql)
