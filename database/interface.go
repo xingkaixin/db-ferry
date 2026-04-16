@@ -30,6 +30,9 @@ type SourceDB interface {
 
 	// GetRowCount 获取查询结果的行数
 	GetRowCount(sql string) (int, error)
+
+	// GetTables 获取数据库中所有可用的表和视图名称
+	GetTables() ([]string, error)
 }
 
 // TargetDB 定义目标数据库的通用接口

@@ -93,15 +93,19 @@ func (m *ConnectionManager) getOrOpen(alias string) (*connectionEntry, error) {
 }
 
 func (m *ConnectionManager) openConnection(dbCfg config.DatabaseConfig) (*connectionEntry, error) {
+	return openConnectionInternal(dbCfg)
+}
+
+func openConnectionInternal(dbCfg config.DatabaseConfig) (*connectionEntry, error) {
 	switch dbCfg.Type {
 	case config.DatabaseTypeOracle:
-		conn, err := NewOracleDB(buildOracleDSN(dbCfg))
+		conn, err := NewOracleDB(BuildOracleDSN(dbCfg))
 		if err != nil {
 			return nil, err
 		}
 		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
 	case config.DatabaseTypeMySQL:
-		conn, err := NewMySQLDB(buildMySQLDSN(dbCfg))
+		conn, err := NewMySQLDB(BuildMySQLDSN(dbCfg))
 		if err != nil {
 			return nil, err
 		}
@@ -119,13 +123,13 @@ func (m *ConnectionManager) openConnection(dbCfg config.DatabaseConfig) (*connec
 		}
 		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
 	case config.DatabaseTypePostgreSQL:
-		conn, err := NewPostgresDB(buildPostgresDSN(dbCfg))
+		conn, err := NewPostgresDB(BuildPostgresDSN(dbCfg))
 		if err != nil {
 			return nil, err
 		}
 		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
 	case config.DatabaseTypeSQLServer:
-		conn, err := NewSQLServerDB(buildSQLServerDSN(dbCfg))
+		conn, err := NewSQLServerDB(BuildSQLServerDSN(dbCfg))
 		if err != nil {
 			return nil, err
 		}
@@ -135,7 +139,31 @@ func (m *ConnectionManager) openConnection(dbCfg config.DatabaseConfig) (*connec
 	}
 }
 
-func buildOracleDSN(dbCfg config.DatabaseConfig) string {
+// OpenSource opens a standalone source connection from a database config.
+func OpenSource(dbCfg config.DatabaseConfig) (SourceDB, error) {
+	entry, err := openConnectionInternal(dbCfg)
+	if err != nil {
+		return nil, err
+	}
+	if entry.source == nil {
+		return nil, fmt.Errorf("database type '%s' cannot be used as source", dbCfg.Type)
+	}
+	return entry.source, nil
+}
+
+// OpenTarget opens a standalone target connection from a database config.
+func OpenTarget(dbCfg config.DatabaseConfig) (TargetDB, error) {
+	entry, err := openConnectionInternal(dbCfg)
+	if err != nil {
+		return nil, err
+	}
+	if entry.target == nil {
+		return nil, fmt.Errorf("database type '%s' cannot be used as target", dbCfg.Type)
+	}
+	return entry.target, nil
+}
+
+func BuildOracleDSN(dbCfg config.DatabaseConfig) string {
 	return fmt.Sprintf("oracle://%s:%s@%s:%s/%s",
 		dbCfg.User,
 		dbCfg.Password,
@@ -145,7 +173,7 @@ func buildOracleDSN(dbCfg config.DatabaseConfig) string {
 	)
 }
 
-func buildMySQLDSN(dbCfg config.DatabaseConfig) string {
+func BuildMySQLDSN(dbCfg config.DatabaseConfig) string {
 	params := "parseTime=true"
 	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?%s",
 		dbCfg.User,
@@ -157,7 +185,7 @@ func buildMySQLDSN(dbCfg config.DatabaseConfig) string {
 	)
 }
 
-func buildPostgresDSN(dbCfg config.DatabaseConfig) string {
+func BuildPostgresDSN(dbCfg config.DatabaseConfig) string {
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s",
 		dbCfg.Host,
 		dbCfg.Port,
@@ -167,7 +195,7 @@ func buildPostgresDSN(dbCfg config.DatabaseConfig) string {
 	)
 }
 
-func buildSQLServerDSN(dbCfg config.DatabaseConfig) string {
+func BuildSQLServerDSN(dbCfg config.DatabaseConfig) string {
 	return fmt.Sprintf("sqlserver://%s:%s@%s:%s?database=%s",
 		dbCfg.User,
 		dbCfg.Password,

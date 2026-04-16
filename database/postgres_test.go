@@ -144,6 +144,32 @@ func TestPostgresPingAndExec(t *testing.T) {
 	}
 }
 
+func TestPostgresGetTables(t *testing.T) {
+	db, mock := newSQLMock(t)
+	p := &PostgresDB{db: db}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type IN ('BASE TABLE', 'VIEW') ORDER BY table_name")).
+		WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("users").AddRow("orders"))
+
+	tables, err := p.GetTables()
+	if err != nil {
+		t.Fatalf("GetTables() error = %v", err)
+	}
+	want := []string{"users", "orders"}
+	if len(tables) != len(want) {
+		t.Fatalf("GetTables() = %v, want %v", tables, want)
+	}
+	for i := range want {
+		if tables[i] != want[i] {
+			t.Fatalf("GetTables()[%d] = %s, want %s", i, tables[i], want[i])
+		}
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sqlmock expectations: %v", err)
+	}
+}
+
 func TestPostgresEdgeCasesAndTypeMapping(t *testing.T) {
 	p := &PostgresDB{}
 	if err := p.CreateTable("users", nil); err == nil {

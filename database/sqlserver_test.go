@@ -150,6 +150,32 @@ func TestSQLServerPingAndExec(t *testing.T) {
 	}
 }
 
+func TestSQLServerGetTables(t *testing.T) {
+	db, mock := newSQLMock(t)
+	s := &SQLServerDB{db: db}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_type IN ('BASE TABLE', 'VIEW') ORDER BY table_name")).
+		WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("users").AddRow("orders"))
+
+	tables, err := s.GetTables()
+	if err != nil {
+		t.Fatalf("GetTables() error = %v", err)
+	}
+	want := []string{"users", "orders"}
+	if len(tables) != len(want) {
+		t.Fatalf("GetTables() = %v, want %v", tables, want)
+	}
+	for i := range want {
+		if tables[i] != want[i] {
+			t.Fatalf("GetTables()[%d] = %s, want %s", i, tables[i], want[i])
+		}
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sqlmock expectations: %v", err)
+	}
+}
+
 func TestSQLServerEdgeCasesAndTypeMapping(t *testing.T) {
 	s := &SQLServerDB{}
 	if err := s.CreateTable("users", nil); err == nil {

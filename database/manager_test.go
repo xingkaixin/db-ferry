@@ -72,28 +72,28 @@ func TestConnectionManagerOpenConnectionUnsupportedType(t *testing.T) {
 }
 
 func TestDSNBuilders(t *testing.T) {
-	oracle := buildOracleDSN(config.DatabaseConfig{
+	oracle := BuildOracleDSN(config.DatabaseConfig{
 		User: "u", Password: "p", Host: "h", Port: "1521", Service: "svc",
 	})
 	if oracle != "oracle://u:p@h:1521/svc" {
 		t.Fatalf("unexpected oracle DSN: %s", oracle)
 	}
 
-	mysql := buildMySQLDSN(config.DatabaseConfig{
+	mysql := BuildMySQLDSN(config.DatabaseConfig{
 		User: "u", Password: "p", Host: "h", Port: "3306", Database: "d",
 	})
 	if !strings.Contains(mysql, "u:p@tcp(h:3306)/d?parseTime=true") {
 		t.Fatalf("unexpected mysql DSN: %s", mysql)
 	}
 
-	postgres := buildPostgresDSN(config.DatabaseConfig{
+	postgres := BuildPostgresDSN(config.DatabaseConfig{
 		Host: "h", Port: "5432", User: "u", Password: "p", Database: "d",
 	})
 	if !strings.Contains(postgres, "host=h port=5432 user=u password=p dbname=d") {
 		t.Fatalf("unexpected postgres DSN: %s", postgres)
 	}
 
-	sqlserver := buildSQLServerDSN(config.DatabaseConfig{
+	sqlserver := BuildSQLServerDSN(config.DatabaseConfig{
 		User: "u", Password: "p", Host: "h", Port: "1433", Database: "d",
 	})
 	if sqlserver != "sqlserver://u:p@h:1433?database=d" {

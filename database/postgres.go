@@ -68,6 +68,31 @@ func (p *PostgresDB) GetRowCount(sql string) (int, error) {
 	return count, nil
 }
 
+func (p *PostgresDB) GetTables() ([]string, error) {
+	query := `
+		SELECT table_name
+		FROM information_schema.tables
+		WHERE table_schema = 'public'
+		  AND table_type IN ('BASE TABLE', 'VIEW')
+		ORDER BY table_name
+	`
+	rows, err := p.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tables: %w", err)
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("failed to scan table name: %w", err)
+		}
+		tables = append(tables, name)
+	}
+	return tables, rows.Err()
+}
+
 func (p *PostgresDB) CreateTable(tableName string, columns []ColumnMetadata) error {
 	return p.createTable(tableName, columns, true)
 }

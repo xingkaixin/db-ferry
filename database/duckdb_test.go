@@ -142,6 +142,32 @@ func TestDuckDBPingAndExec(t *testing.T) {
 	}
 }
 
+func TestDuckDBGetTables(t *testing.T) {
+	db, mock := newSQLMock(t)
+	d := &DuckDB{db: db}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_type IN ('BASE TABLE', 'VIEW') ORDER BY table_name")).
+		WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("users").AddRow("orders"))
+
+	tables, err := d.GetTables()
+	if err != nil {
+		t.Fatalf("GetTables() error = %v", err)
+	}
+	want := []string{"users", "orders"}
+	if len(tables) != len(want) {
+		t.Fatalf("GetTables() = %v, want %v", tables, want)
+	}
+	for i := range want {
+		if tables[i] != want[i] {
+			t.Fatalf("GetTables()[%d] = %s, want %s", i, tables[i], want[i])
+		}
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sqlmock expectations: %v", err)
+	}
+}
+
 func TestDuckDBEdgeCasesAndTypeMapping(t *testing.T) {
 	d := &DuckDB{}
 	if err := d.CreateTable("users", nil); err == nil {
