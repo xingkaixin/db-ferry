@@ -432,3 +432,20 @@ func TestDropTableSQL(t *testing.T) {
 		t.Fatalf("unexpected sqlserver drop: %s", got)
 	}
 }
+
+func TestStatusColor(t *testing.T) {
+	cases := []struct {
+		status Status
+		want   string
+	}{
+		{StatusPass, "\033[32m"},
+		{StatusWarn, "\033[33m"},
+		{StatusFail, "\033[31m"},
+		{Status(99), "\033[0m"},
+	}
+	for _, tc := range cases {
+		if got := tc.status.color(); got != tc.want {
+			t.Fatalf("color() for %s = %q, want %q", tc.status, got, tc.want)
+		}
+	}
+}

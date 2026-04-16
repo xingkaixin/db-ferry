@@ -131,6 +131,25 @@ func TestSQLServerCreateIndexesAndHelpers(t *testing.T) {
 	}
 }
 
+func TestSQLServerPingAndExec(t *testing.T) {
+	db, mock := newSQLMock(t)
+	s := &SQLServerDB{db: db}
+
+	mock.ExpectPing()
+	if err := s.Ping(); err != nil {
+		t.Fatalf("Ping() error = %v", err)
+	}
+
+	mock.ExpectExec(regexp.QuoteMeta(`CREATE TABLE t (id INT)`)).WillReturnResult(sqlmock.NewResult(0, 0))
+	if err := s.Exec(`CREATE TABLE t (id INT)`); err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sqlmock expectations: %v", err)
+	}
+}
+
 func TestSQLServerEdgeCasesAndTypeMapping(t *testing.T) {
 	s := &SQLServerDB{}
 	if err := s.CreateTable("users", nil); err == nil {
