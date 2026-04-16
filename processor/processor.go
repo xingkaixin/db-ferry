@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -22,6 +23,7 @@ type Processor struct {
 	manager    *database.ConnectionManager
 	config     *config.Config
 	stateFiles map[string]*stateFile
+	stateMu    sync.Mutex
 }
 
 var sleepFn = time.Sleep
@@ -138,12 +140,8 @@ func NewProcessor(manager *database.ConnectionManager, cfg *config.Config) *Proc
 }
 
 func (p *Processor) ProcessAllTasks() error {
-	totalTasks := 0
-	for _, task := range p.config.Tasks {
-		if !task.Ignore {
-			totalTasks++
-		}
-	}
+	tasks, _, deps, children, inDegree := p.buildTaskGraph()
+	totalTasks := len(tasks)
 
 	var taskProgress *utils.ProgressManager
 	if totalTasks > 0 {
@@ -151,26 +149,197 @@ func (p *Processor) ProcessAllTasks() error {
 		defer taskProgress.Finish()
 	}
 
-	for i, task := range p.config.Tasks {
-		if task.Ignore {
-			log.Printf("Skipping ignored task: %s", task.TableName)
-			continue
-		}
+	maxConcurrent := p.config.MaxConcurrentTasks
+	if maxConcurrent <= 0 {
+		maxConcurrent = 3
+	}
 
-		log.Printf("Processing task %d/%d: %s", i+1, len(p.config.Tasks), task.TableName)
-		if err := p.processTask(task); err != nil {
-			return fmt.Errorf("failed to process task %s: %w", task.TableName, err)
+	// Fast path: single task or explicitly serial.
+	if totalTasks <= 1 || maxConcurrent == 1 {
+		for _, task := range p.config.Tasks {
+			if task.Ignore {
+				log.Printf("Skipping ignored task: %s", task.TableName)
+				continue
+			}
+			log.Printf("Processing task: %s", task.TableName)
+			if err := p.processTask(task); err != nil {
+				return fmt.Errorf("failed to process task %s: %w", task.TableName, err)
+			}
+			log.Printf("Successfully completed task: %s", task.TableName)
+			if taskProgress != nil {
+				taskProgress.Increment()
+			}
 		}
-		log.Printf("Successfully completed task: %s", task.TableName)
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sched := &taskScheduler{
+		p:             p,
+		tasks:         tasks,
+		deps:          deps,
+		children:      children,
+		sem:           make(chan struct{}, maxConcurrent),
+		ctx:           ctx,
+		cancel:        cancel,
+		results:       make([]error, totalTasks),
+		resultReady:   make([]chan struct{}, totalTasks),
+		remainingDeps: make([]int, totalTasks),
+	}
+	copy(sched.remainingDeps, inDegree)
+	for i := 0; i < totalTasks; i++ {
+		sched.resultReady[i] = make(chan struct{}, 1)
+	}
+
+	for i := 0; i < totalTasks; i++ {
+		if inDegree[i] == 0 {
+			sched.wg.Add(1)
+			go sched.runTask(i)
+		}
+	}
+
+	sched.wg.Wait()
+
+	var firstErr error
+	for i := 0; i < totalTasks; i++ {
+		<-sched.resultReady[i]
+		if sched.results[i] != nil && firstErr == nil {
+			firstErr = sched.results[i]
+		}
 		if taskProgress != nil {
 			taskProgress.Increment()
 		}
 	}
 
-	return nil
+	return firstErr
+}
+
+type taskScheduler struct {
+	p             *Processor
+	tasks         []config.TaskConfig
+	deps          map[int][]int
+	children      map[int][]int
+	sem           chan struct{}
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
+	results       []error
+	resultReady   []chan struct{}
+	resultsMu     sync.Mutex
+	remainingDeps []int
+	depMu         sync.Mutex
+}
+
+func (s *taskScheduler) setResult(idx int, err error) {
+	s.resultsMu.Lock()
+	s.results[idx] = err
+	close(s.resultReady[idx])
+	s.resultsMu.Unlock()
+}
+
+func (s *taskScheduler) waitResult(depIdx int) error {
+	<-s.resultReady[depIdx]
+	s.resultsMu.Lock()
+	err := s.results[depIdx]
+	s.resultsMu.Unlock()
+	return err
+}
+
+func (s *taskScheduler) runTask(idx int) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC in task %s: %v", s.tasks[idx].TableName, r)
+			s.setResult(idx, fmt.Errorf("panic in task %s: %v", s.tasks[idx].TableName, r))
+			s.cancel()
+		}
+		s.onTaskComplete(idx)
+		s.wg.Done()
+	}()
+
+	for _, depIdx := range s.deps[idx] {
+		select {
+		case <-s.ctx.Done():
+			s.setResult(idx, fmt.Errorf("cancelled due to upstream failure"))
+			return
+		default:
+			if err := s.waitResult(depIdx); err != nil {
+				s.setResult(idx, fmt.Errorf("upstream task %s failed: %w", s.tasks[depIdx].TableName, err))
+				return
+			}
+		}
+	}
+
+	select {
+	case <-s.ctx.Done():
+		s.setResult(idx, fmt.Errorf("cancelled due to upstream failure"))
+		return
+	case s.sem <- struct{}{}:
+	}
+	defer func() { <-s.sem }()
+
+	log.Printf("Processing task: %s", s.tasks[idx].TableName)
+	err := s.p.processTaskInternal(s.tasks[idx], true)
+	if err != nil {
+		log.Printf("Task %s failed: %v", s.tasks[idx].TableName, err)
+		s.cancel()
+	} else {
+		log.Printf("Successfully completed task: %s", s.tasks[idx].TableName)
+	}
+	s.setResult(idx, err)
+}
+
+func (s *taskScheduler) onTaskComplete(idx int) {
+	s.depMu.Lock()
+	for _, child := range s.children[idx] {
+		s.remainingDeps[child]--
+		if s.remainingDeps[child] == 0 {
+			s.depMu.Unlock()
+			s.wg.Add(1)
+			go s.runTask(child)
+			s.depMu.Lock()
+		}
+	}
+	s.depMu.Unlock()
+}
+
+func (p *Processor) buildTaskGraph() (tasks []config.TaskConfig, taskIndex map[string][]int, deps map[int][]int, children map[int][]int, inDegree []int) {
+	taskIndex = make(map[string][]int)
+	for _, task := range p.config.Tasks {
+		if task.Ignore {
+			continue
+		}
+		idx := len(tasks)
+		tasks = append(tasks, task)
+		taskIndex[task.TableName] = append(taskIndex[task.TableName], idx)
+	}
+
+	n := len(tasks)
+	deps = make(map[int][]int)
+	children = make(map[int][]int)
+	inDegree = make([]int, n)
+
+	for i, task := range tasks {
+		for _, depName := range task.DependsOn {
+			if depIndices, ok := taskIndex[depName]; ok {
+				for _, depIdx := range depIndices {
+					deps[i] = append(deps[i], depIdx)
+					children[depIdx] = append(children[depIdx], i)
+					inDegree[i]++
+				}
+			}
+		}
+	}
+
+	return
 }
 
 func (p *Processor) processTask(task config.TaskConfig) error {
+	return p.processTaskInternal(task, false)
+}
+
+func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) error {
 	log.Printf("Executing query for table %s", task.TableName)
 
 	sourceDB, err := p.manager.GetSource(task.SourceDB)
@@ -277,12 +446,14 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 	}
 
 	var progress *utils.ProgressManager
-	if totalRows > 0 {
-		progress = utils.NewProgressManager(int64(totalRows), fmt.Sprintf("Processing %s", task.TableName))
-	} else {
-		progress = utils.NewProgressManager(-1, fmt.Sprintf("Processing %s (unknown row count)", task.TableName))
+	if !silent {
+		if totalRows > 0 {
+			progress = utils.NewProgressManager(int64(totalRows), fmt.Sprintf("Processing %s", task.TableName))
+		} else {
+			progress = utils.NewProgressManager(-1, fmt.Sprintf("Processing %s (unknown row count)", task.TableName))
+		}
+		defer progress.Finish()
 	}
-	defer progress.Finish()
 
 	batchSize := task.BatchSize
 	if batchSize <= 0 {
@@ -306,10 +477,12 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		batch = append(batch, row)
 		processedRows++
 
-		if totalRows > 0 {
-			progress.SetCurrent(int64(processedRows))
-		} else {
-			progress.Increment()
+		if progress != nil {
+			if totalRows > 0 {
+				progress.SetCurrent(int64(processedRows))
+			} else {
+				progress.Increment()
+			}
 		}
 
 		if len(batch) >= batchSize {
@@ -336,7 +509,7 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		}
 	}
 
-	if totalRows > 0 {
+	if progress != nil && totalRows > 0 {
 		progress.SetCurrent(int64(processedRows))
 		if processedRows < totalRows {
 			log.Printf("Warning: processed %d rows but expected %d for table %s", processedRows, totalRows, task.TableName)

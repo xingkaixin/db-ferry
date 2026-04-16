@@ -483,3 +483,84 @@ func TestValidateDatabaseDefinitionErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateDependsOn(t *testing.T) {
+	t.Run("depends_on references missing table", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].DependsOn = []string{"missing"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "depends_on table 'missing' not found") {
+			t.Fatalf("expected depends_on missing error, got %v", err)
+		}
+	})
+
+	t.Run("two-task cycle detected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks = append(cfg.Tasks, TaskConfig{
+			TableName: "orders",
+			SQL:       "SELECT id FROM orders",
+			SourceDB:  "src",
+			TargetDB:  "dst",
+			DependsOn: []string{"users"},
+		})
+		cfg.Tasks[0].DependsOn = []string{"orders"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "circular dependency") {
+			t.Fatalf("expected circular dependency error, got %v", err)
+		}
+	})
+
+	t.Run("three-task cycle detected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks = append(cfg.Tasks,
+			TaskConfig{
+				TableName: "orders",
+				SQL:       "SELECT id FROM orders",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				DependsOn: []string{"items"},
+			},
+			TaskConfig{
+				TableName: "items",
+				SQL:       "SELECT id FROM items",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				DependsOn: []string{"users"},
+			},
+		)
+		cfg.Tasks[0].DependsOn = []string{"orders"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "circular dependency") {
+			t.Fatalf("expected circular dependency error, got %v", err)
+		}
+	})
+
+	t.Run("valid dependency chain passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks = append(cfg.Tasks, TaskConfig{
+			TableName: "orders",
+			SQL:       "SELECT id FROM orders",
+			SourceDB:  "src",
+			TargetDB:  "dst",
+			DependsOn: []string{"users"},
+		})
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+
+	t.Run("ignored task does not participate in cycle", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks = append(cfg.Tasks, TaskConfig{
+			TableName: "orders",
+			SQL:       "SELECT id FROM orders",
+			SourceDB:  "src",
+			TargetDB:  "dst",
+			Ignore:    true,
+			DependsOn: []string{"users"},
+		})
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+}

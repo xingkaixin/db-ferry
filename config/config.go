@@ -123,12 +123,14 @@ type TaskConfig struct {
 	Indexes   []IndexConfig `toml:"indexes,omitempty"`
 	PreSQL    []string      `toml:"pre_sql,omitempty"`
 	PostSQL   []string      `toml:"post_sql,omitempty"`
+	DependsOn []string      `toml:"depends_on"`
 }
 
 // Config is the top-level configuration structure decoded from task.toml.
 type Config struct {
-	Databases []DatabaseConfig `toml:"databases"`
-	Tasks     []TaskConfig     `toml:"tasks"`
+	Databases          []DatabaseConfig `toml:"databases"`
+	Tasks              []TaskConfig     `toml:"tasks"`
+	MaxConcurrentTasks int              `toml:"max_concurrent_tasks"`
 
 	databaseMap map[string]DatabaseConfig
 }
@@ -317,6 +319,14 @@ func (c *Config) Validate() error {
 		c.Tasks[i] = task
 	}
 
+	if err := validateTaskDependencies(c.Tasks); err != nil {
+		return err
+	}
+
+	if err := detectTaskCycle(c.Tasks); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -419,6 +429,86 @@ func (c *Config) DatabasesMap() map[string]DatabaseConfig {
 		out[k] = v
 	}
 	return out
+}
+
+func validateTaskDependencies(tasks []TaskConfig) error {
+	tableNames := make(map[string]struct{})
+	for _, task := range tasks {
+		if !task.Ignore {
+			tableNames[task.TableName] = struct{}{}
+		}
+	}
+
+	for i, task := range tasks {
+		if task.Ignore {
+			continue
+		}
+		for _, dep := range task.DependsOn {
+			if _, ok := tableNames[dep]; !ok {
+				return fmt.Errorf("task %d: depends_on table '%s' not found", i+1, dep)
+			}
+		}
+	}
+
+	return nil
+}
+
+func detectTaskCycle(tasks []TaskConfig) error {
+	taskIndex := make(map[string][]int)
+	var filtered []TaskConfig
+	for _, task := range tasks {
+		if task.Ignore {
+			continue
+		}
+		idx := len(filtered)
+		filtered = append(filtered, task)
+		taskIndex[task.TableName] = append(taskIndex[task.TableName], idx)
+	}
+
+	n := len(filtered)
+	if n == 0 {
+		return nil
+	}
+
+	adj := make([][]int, n)
+	inDegree := make([]int, n)
+
+	for i, task := range filtered {
+		for _, depName := range task.DependsOn {
+			if depIndices, ok := taskIndex[depName]; ok {
+				for _, depIdx := range depIndices {
+					adj[depIdx] = append(adj[depIdx], i)
+					inDegree[i]++
+				}
+			}
+		}
+	}
+
+	queue := make([]int, 0, n)
+	for i := 0; i < n; i++ {
+		if inDegree[i] == 0 {
+			queue = append(queue, i)
+		}
+	}
+
+	visited := 0
+	for len(queue) > 0 {
+		u := queue[0]
+		queue = queue[1:]
+		visited++
+		for _, v := range adj[u] {
+			inDegree[v]--
+			if inDegree[v] == 0 {
+				queue = append(queue, v)
+			}
+		}
+	}
+
+	if visited != n {
+		return fmt.Errorf("circular dependency detected among tasks")
+	}
+
+	return nil
 }
 
 func normalizeKeys(keys []string) ([]string, error) {
