@@ -19,7 +19,7 @@ type wizardState struct {
 	SourceDB config.DatabaseConfig
 	TargetDB config.DatabaseConfig
 
-	SourceTables []string
+	SourceTables   []string
 	SelectedTables []string
 
 	Mode       string
@@ -27,6 +27,8 @@ type wizardState struct {
 	MaxRetries int
 	Validate   string
 	StateFile  string
+	ResumeKey  string
+	MergeKeys  []string
 }
 
 func runInteractiveWizard(stdout io.Writer) (int, error) {
@@ -300,7 +302,7 @@ func collectAdvancedOptions(state *wizardState) error {
 	batchSize := "1000"
 	maxRetries := "2"
 	validate := "none"
-	stateFile := "./state/db-ferry.json"
+	stateFile := ""
 
 	fields := []huh.Field{
 		huh.NewInput().Title("Batch size").Value(&batchSize).Validate(nonEmpty("batch size is required")),
@@ -320,6 +322,31 @@ func collectAdvancedOptions(state *wizardState) error {
 	state.MaxRetries = parseInt(maxRetries, 2)
 	state.Validate = validate
 	state.StateFile = strings.TrimSpace(stateFile)
+
+	if state.StateFile != "" {
+		resumeKey := ""
+		if err := huh.NewInput().
+			Title("Resume key (required with state_file)").
+			Value(&resumeKey).
+			Validate(nonEmpty("resume key is required")).
+			Run(); err != nil {
+			return err
+		}
+		state.ResumeKey = strings.TrimSpace(resumeKey)
+	}
+
+	if state.Mode == config.TaskModeMerge {
+		keysStr := ""
+		if err := huh.NewInput().
+			Title("Merge keys (comma-separated)").
+			Value(&keysStr).
+			Validate(nonEmpty("merge keys are required")).
+			Run(); err != nil {
+			return err
+		}
+		state.MergeKeys = parseStringList(keysStr)
+	}
+
 	return nil
 }
 
@@ -368,7 +395,8 @@ func writeDatabase(b *strings.Builder, db config.DatabaseConfig) {
 func writeTask(b *strings.Builder, table string, state *wizardState) {
 	b.WriteString(fmt.Sprintf("[[tasks]]\n"))
 	b.WriteString(fmt.Sprintf("table_name = %q\n", table))
-	b.WriteString(fmt.Sprintf("sql = \"SELECT * FROM %s\"\n", table))
+	sql := fmt.Sprintf("SELECT * FROM %s", quoteSQLIdentifier(state.SourceDB.Type, table))
+	b.WriteString(fmt.Sprintf("sql = %q\n", sql))
 	b.WriteString(fmt.Sprintf("source_db = %q\n", state.SourceDB.Name))
 	b.WriteString(fmt.Sprintf("target_db = %q\n", state.TargetDB.Name))
 	b.WriteString(fmt.Sprintf("ignore = false\n"))
@@ -380,6 +408,10 @@ func writeTask(b *strings.Builder, table string, state *wizardState) {
 	}
 	if state.StateFile != "" {
 		b.WriteString(fmt.Sprintf("state_file = %q\n", state.StateFile))
+		b.WriteString(fmt.Sprintf("resume_key = %q\n", state.ResumeKey))
+	}
+	if state.Mode == config.TaskModeMerge && len(state.MergeKeys) > 0 {
+		b.WriteString(fmt.Sprintf("merge_keys = %s\n", tomlStringArray(state.MergeKeys)))
 	}
 	b.WriteString("\n")
 }
@@ -423,4 +455,36 @@ func parseInt(s string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func parseStringList(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func tomlStringArray(items []string) string {
+	quoted := make([]string, len(items))
+	for i, item := range items {
+		quoted[i] = fmt.Sprintf("%q", item)
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+func quoteSQLIdentifier(dbType, name string) string {
+	switch dbType {
+	case config.DatabaseTypeMySQL:
+		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+	case config.DatabaseTypeSQLServer:
+		return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
+	default:
+		// postgresql, oracle, sqlite, duckdb
+		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+	}
 }

@@ -72,7 +72,7 @@ func (p *PostgresDB) GetTables() ([]string, error) {
 	query := `
 		SELECT table_name
 		FROM information_schema.tables
-		WHERE table_schema = 'public'
+		WHERE table_schema = current_schema()
 		  AND table_type IN ('BASE TABLE', 'VIEW')
 		ORDER BY table_name
 	`

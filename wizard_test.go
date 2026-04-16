@@ -10,12 +10,12 @@ import (
 func TestGenerateTOML(t *testing.T) {
 	state := &wizardState{
 		SourceDB: config.DatabaseConfig{
-			Name: "src",
-			Type: "mysql",
-			Host: "localhost",
-			Port: "3306",
+			Name:     "src",
+			Type:     "mysql",
+			Host:     "localhost",
+			Port:     "3306",
 			Database: "src_db",
-			User: "root",
+			User:     "root",
 			Password: "secret",
 		},
 		TargetDB: config.DatabaseConfig{
@@ -24,11 +24,12 @@ func TestGenerateTOML(t *testing.T) {
 			Path: "./data/output.db",
 		},
 		SelectedTables: []string{"users", "orders"},
-		Mode:       "append",
-		BatchSize:  2000,
-		MaxRetries: 3,
-		Validate:   "row_count",
-		StateFile:  "./state/db-ferry.json",
+		Mode:           "append",
+		BatchSize:      2000,
+		MaxRetries:     3,
+		Validate:       "row_count",
+		StateFile:      "./state/db-ferry.json",
+		ResumeKey:      "run-001",
 	}
 
 	out, err := generateTOML(state)
@@ -51,10 +52,10 @@ func TestGenerateTOML(t *testing.T) {
 	if !strings.Contains(out, `path = "./data/output.db"`) {
 		t.Fatalf("missing target path")
 	}
-	if !strings.Contains(out, `sql = "SELECT * FROM users"`) {
+	if !strings.Contains(out, "sql = \"SELECT * FROM `users`\"") {
 		t.Fatalf("missing users task sql")
 	}
-	if !strings.Contains(out, `sql = "SELECT * FROM orders"`) {
+	if !strings.Contains(out, "sql = \"SELECT * FROM `orders`\"") {
 		t.Fatalf("missing orders task sql")
 	}
 	if !strings.Contains(out, `mode = "append"`) {
@@ -69,6 +70,9 @@ func TestGenerateTOML(t *testing.T) {
 	if !strings.Contains(out, `state_file = "./state/db-ferry.json"`) {
 		t.Fatalf("missing state_file")
 	}
+	if !strings.Contains(out, `resume_key = "run-001"`) {
+		t.Fatalf("missing resume_key")
+	}
 
 	// Ensure exactly two tasks are generated
 	count := strings.Count(out, "[[tasks]]")
@@ -80,12 +84,12 @@ func TestGenerateTOML(t *testing.T) {
 func TestGenerateTOMLOracleService(t *testing.T) {
 	state := &wizardState{
 		SourceDB: config.DatabaseConfig{
-			Name:    "ora_src",
-			Type:    "oracle",
-			Host:    "dbhost",
-			Port:    "1521",
-			Service: "ORCLPDB1",
-			User:    "hr",
+			Name:     "ora_src",
+			Type:     "oracle",
+			Host:     "dbhost",
+			Port:     "1521",
+			Service:  "ORCLPDB1",
+			User:     "hr",
 			Password: "secret",
 		},
 		TargetDB: config.DatabaseConfig{
@@ -98,10 +102,10 @@ func TestGenerateTOMLOracleService(t *testing.T) {
 			Password: "secret",
 		},
 		SelectedTables: []string{"employees"},
-		Mode:       "replace",
-		BatchSize:  1000,
-		MaxRetries: 2,
-		Validate:   "none",
+		Mode:           "replace",
+		BatchSize:      1000,
+		MaxRetries:     2,
+		Validate:       "none",
 	}
 
 	out, err := generateTOML(state)
@@ -114,6 +118,9 @@ func TestGenerateTOMLOracleService(t *testing.T) {
 	}
 	if !strings.Contains(out, `database = "warehouse"`) {
 		t.Fatalf("missing postgres database")
+	}
+	if !strings.Contains(out, `sql = "SELECT * FROM \"employees\""`) {
+		t.Fatalf("missing employees task sql")
 	}
 	if strings.Contains(out, `validate =`) {
 		t.Fatalf("validate should not appear when set to none")
@@ -187,5 +194,46 @@ func TestNonEmptyValidator(t *testing.T) {
 	}
 	if err := v(""); err == nil {
 		t.Fatalf("expected error for empty string")
+	}
+}
+
+func TestParseStringList(t *testing.T) {
+	if got := parseStringList("a, b, c"); len(got) != 3 || got[0] != "a" || got[1] != "b" || got[2] != "c" {
+		t.Fatalf("unexpected parseStringList result: %v", got)
+	}
+	if got := parseStringList("  a  , , b "); len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("unexpected parseStringList result: %v", got)
+	}
+}
+
+func TestTomlStringArray(t *testing.T) {
+	if got := tomlStringArray([]string{"a", "b"}); got != `["a", "b"]` {
+		t.Fatalf("tomlStringArray() = %s", got)
+	}
+	if got := tomlStringArray(nil); got != "[]" {
+		t.Fatalf("tomlStringArray(nil) = %s", got)
+	}
+}
+
+func TestQuoteSQLIdentifier(t *testing.T) {
+	cases := []struct {
+		dbType string
+		name   string
+		want   string
+	}{
+		{config.DatabaseTypeMySQL, "users", "`users`"},
+		{config.DatabaseTypeMySQL, "u`s", "`u``s`"},
+		{config.DatabaseTypePostgreSQL, "users", `"users"`},
+		{config.DatabaseTypePostgreSQL, `u"s`, `"u""s"`},
+		{config.DatabaseTypeSQLServer, "users", "[users]"},
+		{config.DatabaseTypeSQLServer, "u]s", "[u]]s]"},
+		{config.DatabaseTypeOracle, "users", `"users"`},
+		{config.DatabaseTypeSQLite, "users", `"users"`},
+		{config.DatabaseTypeDuckDB, "users", `"users"`},
+	}
+	for _, tc := range cases {
+		if got := quoteSQLIdentifier(tc.dbType, tc.name); got != tc.want {
+			t.Fatalf("quoteSQLIdentifier(%q, %q) = %q, want %q", tc.dbType, tc.name, got, tc.want)
+		}
 	}
 }
