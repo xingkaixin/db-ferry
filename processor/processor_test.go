@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -614,5 +615,230 @@ func setupSQLiteExec(t *testing.T, dbPath, sqlText string) {
 	defer db.Close()
 	if _, err := db.Exec(sqlText); err != nil {
 		t.Fatalf("exec error = %v", err)
+	}
+}
+
+func TestPlanAllTasks(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER PRIMARY KEY, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'alice'), (2, 'bob')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeMySQL, Host: "localhost", User: "u", Password: "p", Database: "db"},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				BatchSize: 500,
+				Indexes: []config.IndexConfig{
+					{Name: "idx_name", Columns: []string{"name"}},
+				},
+			},
+			{
+				TableName: "ignored_table",
+				SQL:       "SELECT id FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Ignore:    true,
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	var buf bytes.Buffer
+	if err := p.PlanAllTasks(&buf); err != nil {
+		t.Fatalf("PlanAllTasks() error = %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "[PLAN] Task 1/1: dst_users") {
+		t.Fatalf("expected plan header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Source:  src  →  Target:  dst") {
+		t.Fatalf("expected source/target line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Mode:    replace") {
+		t.Fatalf("expected mode line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "DROP TABLE IF EXISTS") {
+		t.Fatalf("expected DROP TABLE in DDL, got:\n%s", out)
+	}
+	if !strings.Contains(out, "CREATE TABLE") {
+		t.Fatalf("expected CREATE TABLE in DDL, got:\n%s", out)
+	}
+	if !strings.Contains(out, "CREATE INDEX") {
+		t.Fatalf("expected CREATE INDEX in DDL, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Rows:    ~2") {
+		t.Fatalf("expected row count, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Batch:   500") {
+		t.Fatalf("expected batch size, got:\n%s", out)
+	}
+	if strings.Contains(out, "ignored_table") {
+		t.Fatalf("ignored task should not appear in plan")
+	}
+}
+
+func TestPlanAllTasksAppendMode(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER PRIMARY KEY)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id) VALUES (1)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypePostgreSQL, Host: "localhost", User: "u", Password: "p", Database: "db"},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:       "dst_users",
+				SQL:             "SELECT id FROM src_users",
+				SourceDB:        "src",
+				TargetDB:        "dst",
+				Mode:            config.TaskModeAppend,
+				SkipCreateTable: true,
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	var buf bytes.Buffer
+	if err := p.PlanAllTasks(&buf); err != nil {
+		t.Fatalf("PlanAllTasks() error = %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Mode:    append") {
+		t.Fatalf("expected append mode, got:\n%s", out)
+	}
+	if !strings.Contains(out, "DDL:     (none)") {
+		t.Fatalf("expected no DDL when skip_create_table=true, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Rows:    ~1") {
+		t.Fatalf("expected row count, got:\n%s", out)
+	}
+}
+
+func TestPlanAllTasksResumeKey(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	statePath := filepath.Join(dir, "state", "resume.json")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER PRIMARY KEY, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'a'), (2, 'b'), (3, 'c')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: filepath.Join(dir, "target.db")},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:  "dst_users",
+				SQL:        "SELECT id, name FROM src_users",
+				SourceDB:   "src",
+				TargetDB:   "dst",
+				Mode:       config.TaskModeReplace,
+				ResumeKey:  "id",
+				ResumeFrom: "1",
+				StateFile:  statePath,
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	var buf bytes.Buffer
+	if err := p.PlanAllTasks(&buf); err != nil {
+		t.Fatalf("PlanAllTasks() error = %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Rows:    ~2") {
+		t.Fatalf("expected 2 rows with resume from 1, got:\n%s", out)
+	}
+}
+
+func TestPlanAllTasksMissingResumeColumn(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(name) VALUES ('a')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: filepath.Join(dir, "target.db")},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:  "dst_users",
+				SQL:        "SELECT name FROM src_users",
+				SourceDB:   "src",
+				TargetDB:   "dst",
+				ResumeKey:  "id",
+				ResumeFrom: "0",
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	var buf bytes.Buffer
+	err := p.PlanAllTasks(&buf)
+	if err == nil || !strings.Contains(err.Error(), "no such column: id") {
+		t.Fatalf("expected query error for missing resume column, got %v", err)
+	}
+}
+
+func TestFormatNumber(t *testing.T) {
+	cases := []struct {
+		n    int
+		want string
+	}{
+		{0, "0"},
+		{999, "999"},
+		{1000, "1,000"},
+		{1234567, "1,234,567"},
+	}
+	for _, tc := range cases {
+		got := formatNumber(tc.n)
+		if got != tc.want {
+			t.Fatalf("formatNumber(%d) = %q, want %q", tc.n, got, tc.want)
+		}
 	}
 }

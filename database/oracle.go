@@ -279,6 +279,11 @@ func (o *OracleDB) createIndex(tableName string, index config.IndexConfig) error
 }
 
 func (o *OracleDB) mapToOracleType(column ColumnMetadata) string {
+	return MapToOracleType(column)
+}
+
+// MapToOracleType maps column metadata to an Oracle column type.
+func MapToOracleType(column ColumnMetadata) string {
 	typeName := strings.ToUpper(column.DatabaseType)
 	if typeName == "" {
 		typeName = strings.ToUpper(column.GoType)

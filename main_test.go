@@ -229,6 +229,86 @@ func TestRunHappyPath(t *testing.T) {
 	}
 }
 
+func TestRunDryRun(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	cfgPath := filepath.Join(dir, "task.toml")
+
+	sourceDB, err := sql.Open("sqlite3", sourcePath)
+	if err != nil {
+		t.Fatalf("open source db error = %v", err)
+	}
+	t.Cleanup(func() { _ = sourceDB.Close() })
+
+	if _, err := sourceDB.Exec(`CREATE TABLE src_users (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create source table error = %v", err)
+	}
+	if _, err := sourceDB.Exec(`INSERT INTO src_users(id, name) VALUES (1, 'alice'), (2, 'bob')`); err != nil {
+		t.Fatalf("insert source rows error = %v", err)
+	}
+
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + sourcePath + `"`,
+		"",
+		"[[databases]]",
+		`name = "dst"`,
+		`type = "sqlite"`,
+		`path = "` + filepath.Join(dir, "target.db") + `"`,
+		"",
+		"[[tasks]]",
+		`table_name = "dst_users"`,
+		`sql = "SELECT id, name FROM src_users ORDER BY id"`,
+		`source_db = "src"`,
+		`target_db = "dst"`,
+		`mode = "replace"`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, runErr := run([]string{"-config", cfgPath, "-dry-run"}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run() error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run() code = %d, want 0", code)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "[PLAN]") {
+		t.Fatalf("expected [PLAN] output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "dst_users") {
+		t.Fatalf("expected table name in output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "~2") {
+		t.Fatalf("expected row count in output, got:\n%s", got)
+	}
+
+	targetDB, err := sql.Open("sqlite3", filepath.Join(dir, "target.db"))
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	t.Cleanup(func() { _ = targetDB.Close() })
+
+	var tableExists int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='dst_users'`).Scan(&tableExists); err != nil {
+		t.Fatalf("query target table existence error = %v", err)
+	}
+	if tableExists != 0 {
+		t.Fatalf("dry-run should not create target table")
+	}
+}
+
 func chdirForTest(t *testing.T, dir string) {
 	t.Helper()
 

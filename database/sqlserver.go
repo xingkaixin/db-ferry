@@ -282,6 +282,11 @@ func (s *SQLServerDB) createIndex(tableName string, index config.IndexConfig) er
 }
 
 func (s *SQLServerDB) mapToSQLServerType(column ColumnMetadata) string {
+	return MapToSQLServerType(column)
+}
+
+// MapToSQLServerType maps column metadata to a SQL Server column type.
+func MapToSQLServerType(column ColumnMetadata) string {
 	typeName := strings.ToUpper(column.DatabaseType)
 	if typeName == "" {
 		typeName = strings.ToUpper(column.GoType)

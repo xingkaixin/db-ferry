@@ -263,6 +263,11 @@ func (m *MySQLDB) createIndex(tableName string, index config.IndexConfig) error 
 }
 
 func (m *MySQLDB) mapToMySQLType(column ColumnMetadata) string {
+	return MapToMySQLType(column)
+}
+
+// MapToMySQLType maps column metadata to a MySQL column type.
+func MapToMySQLType(column ColumnMetadata) string {
 	typeName := strings.ToUpper(column.DatabaseType)
 	if typeName == "" {
 		typeName = strings.ToUpper(column.GoType)

@@ -267,6 +267,11 @@ func (d *DuckDB) createIndex(tableName string, index config.IndexConfig) error {
 }
 
 func (d *DuckDB) mapToDuckDBType(column ColumnMetadata) string {
+	return MapToDuckDBType(column)
+}
+
+// MapToDuckDBType maps column metadata to a DuckDB column type.
+func MapToDuckDBType(column ColumnMetadata) string {
 	typeName := strings.ToUpper(column.DatabaseType)
 	if typeName == "" {
 		typeName = strings.ToUpper(column.GoType)
