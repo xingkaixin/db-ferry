@@ -71,6 +71,61 @@ func TestConnectionManagerOpenConnectionUnsupportedType(t *testing.T) {
 	}
 }
 
+func TestConnectionManagerGetSourceAndTargetRoles(t *testing.T) {
+	m := NewConnectionManager(&config.Config{})
+	// Manually inject an entry that has only a source (no target)
+	m.connections["src_only"] = &connectionEntry{source: &SQLiteDB{}}
+	_, err := m.GetTarget("src_only")
+	if err == nil {
+		t.Fatalf("expected error when using source-only db as target")
+	}
+	if !strings.Contains(err.Error(), "not configured as a target") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Manually inject an entry that has only a target (no source)
+	m.connections["tgt_only"] = &connectionEntry{target: &SQLiteDB{}}
+	_, err = m.GetSource("tgt_only")
+	if err == nil {
+		t.Fatalf("expected error when using target-only db as source")
+	}
+	if !strings.Contains(err.Error(), "not configured as a source") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestOpenSourceAndTarget(t *testing.T) {
+	// Unsupported type
+	_, err := OpenSource(config.DatabaseConfig{Type: "unknown"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported database type") {
+		t.Fatalf("expected unsupported type error for OpenSource, got %v", err)
+	}
+	_, err = OpenTarget(config.DatabaseConfig{Type: "unknown"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported database type") {
+		t.Fatalf("expected unsupported type error for OpenTarget, got %v", err)
+	}
+
+	// Valid SQLite path
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	src, err := OpenSource(config.DatabaseConfig{Type: config.DatabaseTypeSQLite, Path: dbPath})
+	if err != nil {
+		t.Fatalf("OpenSource(sqlite) error = %v", err)
+	}
+	if src == nil {
+		t.Fatalf("expected non-nil source")
+	}
+	_ = src.Close()
+
+	tgt, err := OpenTarget(config.DatabaseConfig{Type: config.DatabaseTypeSQLite, Path: dbPath})
+	if err != nil {
+		t.Fatalf("OpenTarget(sqlite) error = %v", err)
+	}
+	if tgt == nil {
+		t.Fatalf("expected non-nil target")
+	}
+	_ = tgt.Close()
+}
+
 func TestDSNBuilders(t *testing.T) {
 	oracle := BuildOracleDSN(config.DatabaseConfig{
 		User: "u", Password: "p", Host: "h", Port: "1521", Service: "svc",

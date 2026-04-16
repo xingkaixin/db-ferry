@@ -120,6 +120,25 @@ func TestSQLiteCreateIndexesAndBuildIndexSQL(t *testing.T) {
 	}
 }
 
+func TestSQLiteQueryAndCountErrors(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
+	s, err := NewSQLiteDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteDB() error = %v", err)
+	}
+	defer s.Close()
+
+	_, err = s.Query("SELECT * FROM nonexistent")
+	if err == nil {
+		t.Fatalf("expected query error for missing table")
+	}
+
+	_, err = s.GetRowCount("SELECT * FROM nonexistent")
+	if err == nil {
+		t.Fatalf("expected GetRowCount error for missing table")
+	}
+}
+
 func TestSQLitePingAndExec(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
 	s, err := NewSQLiteDB(dbPath)
@@ -134,6 +153,22 @@ func TestSQLitePingAndExec(t *testing.T) {
 
 	if err := s.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY)`); err != nil {
 		t.Fatalf("Exec() error = %v", err)
+	}
+}
+
+func TestSQLiteGetTablesError(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
+	s, err := NewSQLiteDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteDB() error = %v", err)
+	}
+	defer s.Close()
+
+	// Close the underlying DB to force GetTables to fail.
+	_ = s.db.Close()
+	_, err = s.GetTables()
+	if err == nil {
+		t.Fatalf("expected GetTables error after closing db")
 	}
 }
 
@@ -164,6 +199,22 @@ func TestSQLiteGetTables(t *testing.T) {
 		if tables[i] != want[i] {
 			t.Fatalf("GetTables()[%d] = %s, want %s", i, tables[i], want[i])
 		}
+	}
+}
+
+func TestSQLiteNewDBError(t *testing.T) {
+	// Use a directory path where SQLite cannot create a database file.
+	dir := t.TempDir()
+	_, err := NewSQLiteDB(dir)
+	if err == nil {
+		t.Fatalf("expected error when opening directory as sqlite db")
+	}
+}
+
+func TestSQLiteCloseNilDB(t *testing.T) {
+	s := &SQLiteDB{db: nil}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close() with nil db should return nil, got %v", err)
 	}
 }
 

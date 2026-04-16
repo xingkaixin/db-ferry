@@ -14,6 +14,38 @@ import (
 	"github.com/charmbracelet/huh/spinner"
 )
 
+// testable runners for interactive components
+var (
+	runHuhForm        = func(f *huh.Form) error { return f.Run() }
+	runHuhConfirm     = func(c *huh.Confirm) error { return c.Run() }
+	runHuhSelect      = func(s *huh.Select[string]) error { return s.Run() }
+	runHuhMultiSelect = func(m *huh.MultiSelect[string]) error { return m.Run() }
+	runHuhInput       = func(i *huh.Input) error { return i.Run() }
+	runSpinner        = func(s *spinner.Spinner) error { return s.Run() }
+)
+
+// testable connection testers
+var (
+	testSourceFn    = testSourceAndListTables
+	testTargetFn    = testTargetConnection
+	runSelectTables = selectTables
+)
+
+// confirm callbacks for testing
+var (
+	confirmWriteConfig = func(confirmed *bool) error {
+		return runHuhConfirm(huh.NewConfirm().
+			Title("Ready to create task.toml?").
+			Description("The configuration will be written to the current directory.").
+			Value(confirmed))
+	}
+	confirmOverwriteConfig = func(overwrite *bool) error {
+		return runHuhConfirm(huh.NewConfirm().
+			Title(fmt.Sprintf("%s already exists. Overwrite?", configTemplateTarget)).
+			Value(overwrite))
+	}
+)
+
 // wizardState holds all user inputs during the interactive session.
 type wizardState struct {
 	SourceDB config.DatabaseConfig
@@ -40,7 +72,7 @@ func runInteractiveWizard(stdout io.Writer) (int, error) {
 	}
 
 	// Step 2: test source connection & list tables
-	sourceTables, sourceConn, err := testSourceAndListTables(state.SourceDB)
+	sourceTables, sourceConn, err := testSourceFn(state.SourceDB)
 	if err != nil {
 		return 1, err
 	}
@@ -54,7 +86,7 @@ func runInteractiveWizard(stdout io.Writer) (int, error) {
 	}
 
 	// Step 3: select tables
-	if err := selectTables(state); err != nil {
+	if err := runSelectTables(state); err != nil {
 		return 1, err
 	}
 	if len(state.SelectedTables) == 0 {
@@ -67,7 +99,7 @@ func runInteractiveWizard(stdout io.Writer) (int, error) {
 	}
 
 	// Step 5: test target connection
-	targetConn, err := testTargetConnection(state.TargetDB)
+	targetConn, err := testTargetFn(state.TargetDB)
 	if err != nil {
 		return 1, err
 	}
@@ -87,11 +119,7 @@ func runInteractiveWizard(stdout io.Writer) (int, error) {
 	}
 
 	confirmed := false
-	if err := huh.NewConfirm().
-		Title("Ready to create task.toml?").
-		Description("The configuration will be written to the current directory.").
-		Value(&confirmed).
-		Run(); err != nil {
+	if err := confirmWriteConfig(&confirmed); err != nil {
 		return 1, err
 	}
 	if !confirmed {
@@ -101,10 +129,7 @@ func runInteractiveWizard(stdout io.Writer) (int, error) {
 
 	if _, err := os.Stat(configTemplateTarget); err == nil {
 		overwrite := false
-		if err := huh.NewConfirm().
-			Title(fmt.Sprintf("%s already exists. Overwrite?", configTemplateTarget)).
-			Value(&overwrite).
-			Run(); err != nil {
+		if err := confirmOverwriteConfig(&overwrite); err != nil {
 			return 1, err
 		}
 		if !overwrite {
@@ -123,7 +148,7 @@ func runInteractiveWizard(stdout io.Writer) (int, error) {
 
 func collectSourceDB(state *wizardState) error {
 	dbType := ""
-	if err := huh.NewSelect[string]().
+	if err := runHuhSelect(huh.NewSelect[string]().
 		Title("Select source database type").
 		Options(
 			huh.NewOption("Oracle", config.DatabaseTypeOracle),
@@ -133,8 +158,7 @@ func collectSourceDB(state *wizardState) error {
 			huh.NewOption("SQLite", config.DatabaseTypeSQLite),
 			huh.NewOption("DuckDB", config.DatabaseTypeDuckDB),
 		).
-		Value(&dbType).
-		Run(); err != nil {
+		Value(&dbType)); err != nil {
 		return err
 	}
 	state.SourceDB.Type = dbType
@@ -171,12 +195,12 @@ func collectSourceDB(state *wizardState) error {
 		fields = append(fields, huh.NewInput().Title("File Path").Value(&state.SourceDB.Path).Validate(nonEmpty("path is required")))
 	}
 
-	return huh.NewForm(huh.NewGroup(fields...)).Run()
+	return runHuhForm(huh.NewForm(huh.NewGroup(fields...)))
 }
 
 func collectTargetDB(state *wizardState) error {
 	dbType := ""
-	if err := huh.NewSelect[string]().
+	if err := runHuhSelect(huh.NewSelect[string]().
 		Title("Select target database type").
 		Options(
 			huh.NewOption("Oracle", config.DatabaseTypeOracle),
@@ -186,8 +210,7 @@ func collectTargetDB(state *wizardState) error {
 			huh.NewOption("SQLite", config.DatabaseTypeSQLite),
 			huh.NewOption("DuckDB", config.DatabaseTypeDuckDB),
 		).
-		Value(&dbType).
-		Run(); err != nil {
+		Value(&dbType)); err != nil {
 		return err
 	}
 	state.TargetDB.Type = dbType
@@ -227,7 +250,7 @@ func collectTargetDB(state *wizardState) error {
 		fields = append(fields, huh.NewInput().Title("File Path").Value(&state.TargetDB.Path).Validate(nonEmpty("path is required")))
 	}
 
-	return huh.NewForm(huh.NewGroup(fields...)).Run()
+	return runHuhForm(huh.NewForm(huh.NewGroup(fields...)))
 }
 
 func testSourceAndListTables(dbCfg config.DatabaseConfig) ([]string, database.SourceDB, error) {
@@ -243,7 +266,7 @@ func testSourceAndListTables(dbCfg config.DatabaseConfig) ([]string, database.So
 		tables, err = src.GetTables()
 	}
 
-	if spinErr := spinner.New().Title("Testing source connection...").Action(action).Run(); spinErr != nil {
+	if spinErr := runSpinner(spinner.New().Title("Testing source connection...").Action(action)); spinErr != nil {
 		return nil, nil, spinErr
 	}
 	if err != nil {
@@ -260,7 +283,7 @@ func testTargetConnection(dbCfg config.DatabaseConfig) (database.TargetDB, error
 		tgt, err = database.OpenTarget(dbCfg)
 	}
 
-	if spinErr := spinner.New().Title("Testing target connection...").Action(action).Run(); spinErr != nil {
+	if spinErr := runSpinner(spinner.New().Title("Testing target connection...").Action(action)); spinErr != nil {
 		return nil, spinErr
 	}
 	if err != nil {
@@ -275,17 +298,16 @@ func selectTables(state *wizardState) error {
 		options[i] = huh.NewOption(t, t)
 	}
 
-	return huh.NewMultiSelect[string]().
+	return runHuhMultiSelect(huh.NewMultiSelect[string]().
 		Title("Select tables/views to migrate").
 		Description(fmt.Sprintf("Found %d object(s) in the source database", len(state.SourceTables))).
 		Options(options...).
-		Value(&state.SelectedTables).
-		Run()
+		Value(&state.SelectedTables))
 }
 
 func collectAdvancedOptions(state *wizardState) error {
 	mode := "replace"
-	if err := huh.NewSelect[string]().
+	if err := runHuhSelect(huh.NewSelect[string]().
 		Title("Default migration mode").
 		Description("replace = drop & recreate; append = insert only; merge = upsert").
 		Options(
@@ -293,8 +315,7 @@ func collectAdvancedOptions(state *wizardState) error {
 			huh.NewOption("append", config.TaskModeAppend),
 			huh.NewOption("merge", config.TaskModeMerge),
 		).
-		Value(&mode).
-		Run(); err != nil {
+		Value(&mode)); err != nil {
 		return err
 	}
 	state.Mode = mode
@@ -314,7 +335,7 @@ func collectAdvancedOptions(state *wizardState) error {
 		huh.NewInput().Title("State file path (optional, for resume)").Value(&stateFile),
 	}
 
-	if err := huh.NewForm(huh.NewGroup(fields...)).Run(); err != nil {
+	if err := runHuhForm(huh.NewForm(huh.NewGroup(fields...))); err != nil {
 		return err
 	}
 
@@ -325,11 +346,10 @@ func collectAdvancedOptions(state *wizardState) error {
 
 	if state.StateFile != "" {
 		resumeKey := ""
-		if err := huh.NewInput().
+		if err := runHuhInput(huh.NewInput().
 			Title("Resume key (required with state_file)").
 			Value(&resumeKey).
-			Validate(nonEmpty("resume key is required")).
-			Run(); err != nil {
+			Validate(nonEmpty("resume key is required"))); err != nil {
 			return err
 		}
 		state.ResumeKey = strings.TrimSpace(resumeKey)
@@ -337,11 +357,10 @@ func collectAdvancedOptions(state *wizardState) error {
 
 	if state.Mode == config.TaskModeMerge {
 		keysStr := ""
-		if err := huh.NewInput().
+		if err := runHuhInput(huh.NewInput().
 			Title("Merge keys (comma-separated)").
 			Value(&keysStr).
-			Validate(nonEmpty("merge keys are required")).
-			Run(); err != nil {
+			Validate(nonEmpty("merge keys are required"))); err != nil {
 			return err
 		}
 		state.MergeKeys = parseStringList(keysStr)

@@ -170,6 +170,40 @@ func TestPostgresGetTables(t *testing.T) {
 	}
 }
 
+func TestPostgresQueryAndCountErrors(t *testing.T) {
+	db, mock := newSQLMock(t)
+	p := &PostgresDB{db: db}
+
+	mock.ExpectQuery("SELECT 1").WillReturnError(errors.New("query failed"))
+	_, err := p.Query("SELECT 1")
+	if err == nil {
+		t.Fatalf("expected Query error")
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM (SELECT * FROM bad) AS count_query")).WillReturnError(errors.New("count failed"))
+	_, err = p.GetRowCount("SELECT * FROM bad")
+	if err == nil {
+		t.Fatalf("expected GetRowCount error")
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM \"bad\"")).WillReturnError(errors.New("table count failed"))
+	_, err = p.GetTableRowCount("bad")
+	if err == nil {
+		t.Fatalf("expected GetTableRowCount error")
+	}
+}
+
+func TestPostgresGetTablesError(t *testing.T) {
+	db, mock := newSQLMock(t)
+	p := &PostgresDB{db: db}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_type IN ('BASE TABLE', 'VIEW') ORDER BY table_name")).WillReturnError(errors.New("db down"))
+	_, err := p.GetTables()
+	if err == nil {
+		t.Fatalf("expected GetTables error")
+	}
+}
+
 func TestPostgresEdgeCasesAndTypeMapping(t *testing.T) {
 	p := &PostgresDB{}
 	if err := p.CreateTable("users", nil); err == nil {

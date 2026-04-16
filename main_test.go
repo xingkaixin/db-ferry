@@ -159,6 +159,51 @@ func TestRunConfigInitRejectsExtraArgs(t *testing.T) {
 	}
 }
 
+func TestRunUnknownCommand(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"unknown"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for unknown command")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "unknown command") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunConfigMissingSubcommand(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"config"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for missing subcommand")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "missing config subcommand") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunConfigUnknownSubcommand(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"config", "unknown"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for unknown subcommand")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "unknown config subcommand") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunDoctorCommand(t *testing.T) {
 	oldWriter := log.Writer()
 	log.SetOutput(io.Discard)
@@ -233,6 +278,30 @@ func TestRunDoctorRejectsExtraArgs(t *testing.T) {
 	}
 }
 
+func TestInitConfigTemplateStatError(t *testing.T) {
+	dir := t.TempDir()
+	chdirForTest(t, dir)
+
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatalf("chmod error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o755)
+	})
+
+	var out bytes.Buffer
+	code, err := initConfigTemplate(&out)
+	if err == nil {
+		t.Fatalf("expected error when stat fails")
+	}
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(err.Error(), "failed to check") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunConfigInitInteractiveFlagLong(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
@@ -262,6 +331,86 @@ func TestRunConfigInitInteractiveFlagShort(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "does not accept positional arguments") || strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("interactive flag was not recognized: %v", err)
+	}
+}
+
+func TestRunInvalidFlag(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"-badflag"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for invalid flag")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+}
+
+func TestRunConfigInitInvalidFlag(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"config", "init", "-badflag"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for invalid flag")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+}
+
+func TestRunProcessError(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+	cfgPath := filepath.Join(dir, "task.toml")
+
+	sourceDB, err := sql.Open("sqlite3", sourcePath)
+	if err != nil {
+		t.Fatalf("open source db error = %v", err)
+	}
+	t.Cleanup(func() { _ = sourceDB.Close() })
+
+	if _, err := sourceDB.Exec(`CREATE TABLE src_users (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create source table error = %v", err)
+	}
+
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + sourcePath + `"`,
+		"",
+		"[[databases]]",
+		`name = "dst"`,
+		`type = "sqlite"`,
+		`path = "` + targetPath + `"`,
+		"",
+		"[[tasks]]",
+		`table_name = "dst_users"`,
+		`sql = "SELECT id, name FROM nonexistent_table ORDER BY id"`,
+		`source_db = "src"`,
+		`target_db = "dst"`,
+		`mode = "replace"`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, runErr := run([]string{"-config", cfgPath}, &out, &errOut)
+	if runErr == nil {
+		t.Fatalf("expected error for failed task")
+	}
+	if code != 1 {
+		t.Fatalf("run() code = %d, want 1", code)
+	}
+	if !strings.Contains(runErr.Error(), "failed to process tasks") {
+		t.Fatalf("unexpected error: %v", runErr)
 	}
 }
 
@@ -412,6 +561,51 @@ func TestRunDryRun(t *testing.T) {
 	}
 	if tableExists != 0 {
 		t.Fatalf("dry-run should not create target table")
+	}
+}
+
+func TestRunVerbose(t *testing.T) {
+	oldFlags := log.Flags()
+	t.Cleanup(func() { log.SetFlags(oldFlags) })
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"-version", "-v"}, &out, &errOut)
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("run() code = %d, want 0", code)
+	}
+}
+
+func TestInitConfigTemplateWriteError(t *testing.T) {
+	dir := t.TempDir()
+	chdirForTest(t, dir)
+
+	// Create a file where task.toml should be written, but make the parent
+	// directory read-only so WriteFile fails.
+	readOnlyDir := filepath.Join(dir, "readonly")
+	if err := os.Mkdir(readOnlyDir, 0o555); err != nil {
+		t.Fatalf("mkdir error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(readOnlyDir, 0o755) })
+
+	// Override target so it points inside the read-only directory.
+	origTarget := configTemplateTarget
+	configTemplateTarget = filepath.Join(readOnlyDir, "task.toml")
+	t.Cleanup(func() { configTemplateTarget = origTarget })
+
+	var out bytes.Buffer
+	code, err := initConfigTemplate(&out)
+	if err == nil {
+		t.Fatalf("expected error when write fails")
+	}
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(err.Error(), "failed to write") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

@@ -185,6 +185,23 @@ func TestValidateIndexRules(t *testing.T) {
 	})
 }
 
+func TestLoadConfigInvalidFile(t *testing.T) {
+	_, err := LoadConfig("/nonexistent/path/task.toml")
+	if err == nil {
+		t.Fatalf("expected error for missing file")
+	}
+
+	dir := t.TempDir()
+	badPath := filepath.Join(dir, "bad.toml")
+	if err := os.WriteFile(badPath, []byte("not valid toml = ["), 0o644); err != nil {
+		t.Fatalf("write file error = %v", err)
+	}
+	_, err = LoadConfig(badPath)
+	if err == nil {
+		t.Fatalf("expected error for invalid toml")
+	}
+}
+
 func TestLoadConfigGetDatabaseAndMapCopy(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "task.toml")
