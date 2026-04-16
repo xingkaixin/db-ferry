@@ -148,7 +148,7 @@ func TestPostgresGetTables(t *testing.T) {
 	db, mock := newSQLMock(t)
 	p := &PostgresDB{db: db}
 
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type IN ('BASE TABLE', 'VIEW') ORDER BY table_name")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_type IN ('BASE TABLE', 'VIEW') ORDER BY table_name")).
 		WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("users").AddRow("orders"))
 
 	tables, err := p.GetTables()
