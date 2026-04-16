@@ -68,6 +68,8 @@ db-ferry 是一个声明式 CLI 工具（Go 编写），通过 TOML 配置文件
 | `state_file` | 断点状态文件路径（JSON） | — |
 | `allow_same_table` | 允许源库=目标库时执行（⚠️ 风险） | false |
 | `skip_create_table` | 跳过目标表 drop/create | false |
+| `dlq_path` | 死信队列文件路径，隔离失败行 | — |
+| `dlq_format` | 死信队列格式: jsonl/csv | jsonl |
 
 ### Step 4: 配置索引（可选）
 

@@ -31,6 +31,12 @@ const (
 	TaskValidateRowCount = "row_count"
 )
 
+// Supported DLQ formats.
+const (
+	DLQFormatJSONL = "jsonl"
+	DLQFormatCSV   = "csv"
+)
+
 // DatabaseConfig describes a named database connection definition.
 type DatabaseConfig struct {
 	Name string `toml:"name"`
@@ -106,7 +112,11 @@ type TaskConfig struct {
 	// AllowSameTable 明确允许同库执行并覆盖目标表（存在数据丢失风险）。
 	AllowSameTable bool `toml:"allow_same_table"`
 	// SkipCreateTable 跳过目标表的 drop/create 操作。
-	SkipCreateTable bool          `toml:"skip_create_table"`
+	SkipCreateTable bool `toml:"skip_create_table"`
+	// DLQPath 死信队列文件路径，用于保存插入失败的行。
+	DLQPath string `toml:"dlq_path,omitempty"`
+	// DLQFormat 死信队列文件格式，支持 jsonl 和 csv，默认为 jsonl。
+	DLQFormat string `toml:"dlq_format,omitempty"`
 	Indexes         []IndexConfig `toml:"indexes,omitempty"`
 	PreSQL          []string      `toml:"pre_sql,omitempty"`
 	PostSQL         []string      `toml:"post_sql,omitempty"`
@@ -246,6 +256,14 @@ func (c *Config) Validate() error {
 		}
 		if task.MaxRetries < 0 {
 			return fmt.Errorf("task %d: max_retries must be >= 0", i+1)
+		}
+
+		task.DLQFormat = strings.ToLower(strings.TrimSpace(task.DLQFormat))
+		if task.DLQFormat == "" {
+			task.DLQFormat = DLQFormatJSONL
+		}
+		if task.DLQFormat != DLQFormatJSONL && task.DLQFormat != DLQFormatCSV {
+			return fmt.Errorf("task %d: dlq_format must be %q or %q", i+1, DLQFormatJSONL, DLQFormatCSV)
 		}
 
 		task.ResumeKey = strings.TrimSpace(task.ResumeKey)

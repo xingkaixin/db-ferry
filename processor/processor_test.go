@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -272,15 +273,19 @@ func TestInsertBatchWithRetry(t *testing.T) {
 		insertErrs: []error{errors.New("first"), nil},
 	}
 
-	err := p.insertBatchWithRetry(
+	dlqCount, err := p.insertBatchWithRetry(
 		target,
 		config.TaskConfig{Mode: config.TaskModeReplace, MaxRetries: 2, TableName: "t"},
 		[]database.ColumnMetadata{{Name: "id"}},
 		[][]any{{1}},
 		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("insertBatchWithRetry() error = %v", err)
+	}
+	if dlqCount != 0 {
+		t.Fatalf("expected 0 DLQ rows, got %d", dlqCount)
 	}
 	if target.insertCall != 2 {
 		t.Fatalf("expected 2 insert attempts, got %d", target.insertCall)
@@ -292,18 +297,243 @@ func TestInsertBatchWithRetry(t *testing.T) {
 	mergeTarget := &retryTarget{
 		upsertErrs: []error{errors.New("fail"), errors.New("fail")},
 	}
-	err = p.insertBatchWithRetry(
+	dlqCount, err = p.insertBatchWithRetry(
 		mergeTarget,
 		config.TaskConfig{Mode: config.TaskModeMerge, MaxRetries: 1, TableName: "t"},
 		[]database.ColumnMetadata{{Name: "id"}},
 		[][]any{{1}},
 		[]string{"id"},
+		nil,
 	)
 	if err == nil {
 		t.Fatalf("expected retry exhaustion error")
 	}
+	if dlqCount != 0 {
+		t.Fatalf("expected 0 DLQ rows without DLQ path, got %d", dlqCount)
+	}
 	if mergeTarget.upsertCall != 2 {
 		t.Fatalf("expected 2 upsert attempts, got %d", mergeTarget.upsertCall)
+	}
+}
+
+type selectiveTarget struct {
+	insertCall int
+	upsertCall int
+	failBatch  bool
+	failKeys   map[any]struct{}
+}
+
+func (m *selectiveTarget) Close() error                                          { return nil }
+func (m *selectiveTarget) CreateTable(string, []database.ColumnMetadata) error   { return nil }
+func (m *selectiveTarget) EnsureTable(string, []database.ColumnMetadata) error   { return nil }
+func (m *selectiveTarget) GetTableRowCount(string) (int, error)                  { return 0, nil }
+func (m *selectiveTarget) CreateIndexes(string, []config.IndexConfig) error      { return nil }
+
+func (m *selectiveTarget) InsertData(string, []database.ColumnMetadata, [][]any) error {
+	m.insertCall++
+	return nil
+}
+
+func (m *selectiveTarget) UpsertData(string, []database.ColumnMetadata, [][]any, []string) error {
+	m.upsertCall++
+	return nil
+}
+
+type failingBatchTarget struct {
+	selectiveTarget
+}
+
+func (m *failingBatchTarget) InsertData(_ string, _ []database.ColumnMetadata, values [][]any) error {
+	m.insertCall++
+	if len(values) > 1 || m.failBatch {
+		m.failBatch = false
+		return errors.New("batch fail")
+	}
+	if len(values) == 1 && len(values[0]) > 0 {
+		if _, ok := m.failKeys[values[0][0]]; ok {
+			return errors.New("row fail")
+		}
+	}
+	return nil
+}
+
+func TestInsertBatchWithRetryDLQ(t *testing.T) {
+	origSleep := sleepFn
+	sleepFn = func(time.Duration) {}
+	t.Cleanup(func() { sleepFn = origSleep })
+
+	dir := t.TempDir()
+	dlqPath := filepath.Join(dir, "dlq.jsonl")
+
+	dlqw, err := newDLQWriter(dlqPath, config.DLQFormatJSONL, []database.ColumnMetadata{{Name: "id"}, {Name: "name"}})
+	if err != nil {
+		t.Fatalf("newDLQWriter() error = %v", err)
+	}
+	defer dlqw.close()
+
+	p := &Processor{}
+	target := &failingBatchTarget{}
+	target.failBatch = true
+	target.failKeys = map[any]struct{}{2: {}}
+
+	dlqCount, err := p.insertBatchWithRetry(
+		target,
+		config.TaskConfig{Mode: config.TaskModeReplace, MaxRetries: 1, TableName: "t"},
+		[]database.ColumnMetadata{{Name: "id"}, {Name: "name"}},
+		[][]any{{1, "a"}, {2, "b"}, {3, "c"}},
+		nil,
+		dlqw,
+	)
+	if err != nil {
+		t.Fatalf("insertBatchWithRetry() error = %v", err)
+	}
+	if dlqCount != 1 {
+		t.Fatalf("expected 1 DLQ row, got %d", dlqCount)
+	}
+
+	data, err := os.ReadFile(dlqPath)
+	if err != nil {
+		t.Fatalf("ReadFile(DLQ) error = %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 DLQ line, got %d", len(lines))
+	}
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("unmarshal DLQ line error = %v", err)
+	}
+	if entry["error"] != "row fail" {
+		t.Fatalf("unexpected DLQ error field: %v", entry["error"])
+	}
+	if entry["table_name"] != "t" {
+		t.Fatalf("unexpected DLQ table_name: %v", entry["table_name"])
+	}
+}
+
+func TestInsertBatchWithRetryDLQCSV(t *testing.T) {
+	origSleep := sleepFn
+	sleepFn = func(time.Duration) {}
+	t.Cleanup(func() { sleepFn = origSleep })
+
+	dir := t.TempDir()
+	dlqPath := filepath.Join(dir, "dlq.csv")
+
+	dlqw, err := newDLQWriter(dlqPath, config.DLQFormatCSV, []database.ColumnMetadata{{Name: "id"}, {Name: "name"}})
+	if err != nil {
+		t.Fatalf("newDLQWriter() error = %v", err)
+	}
+	defer dlqw.close()
+
+	p := &Processor{}
+	target := &failingBatchTarget{}
+	target.failBatch = true
+	target.failKeys = map[any]struct{}{"bad": {}}
+
+	dlqCount, err := p.insertBatchWithRetry(
+		target,
+		config.TaskConfig{Mode: config.TaskModeReplace, MaxRetries: 0, TableName: "users"},
+		[]database.ColumnMetadata{{Name: "id"}, {Name: "name"}},
+		[][]any{{"ok", "alice"}, {"bad", "bob"}},
+		nil,
+		dlqw,
+	)
+	if err != nil {
+		t.Fatalf("insertBatchWithRetry() error = %v", err)
+	}
+	if dlqCount != 1 {
+		t.Fatalf("expected 1 DLQ row, got %d", dlqCount)
+	}
+
+	data, err := os.ReadFile(dlqPath)
+	if err != nil {
+		t.Fatalf("ReadFile(DLQ) error = %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 CSV lines (header + 1 row), got %d", len(lines))
+	}
+	if !strings.Contains(lines[0], "id") || !strings.Contains(lines[0], "_dlq_error") {
+		t.Fatalf("unexpected CSV header: %s", lines[0])
+	}
+	if !strings.Contains(lines[1], "bad") || !strings.Contains(lines[1], "bob") {
+		t.Fatalf("unexpected CSV data line: %s", lines[1])
+	}
+}
+
+func TestProcessTaskWithDLQ(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+	dlqPath := filepath.Join(dir, "dlq", "failed.jsonl")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'a'), (1, 'b_duplicate'), (2, 'c')`)
+
+	setupSQLiteSource(t, targetPath, `CREATE TABLE dst_users (id INTEGER PRIMARY KEY, name TEXT)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:       "dst_users",
+				SQL:             "SELECT id, name FROM src_users",
+				SourceDB:        "src",
+				TargetDB:        "dst",
+				Mode:            config.TaskModeAppend,
+				BatchSize:       2,
+				SkipCreateTable: true,
+				DLQPath:         dlqPath,
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("target row count = %d, want 2", count)
+	}
+
+	data, err := os.ReadFile(dlqPath)
+	if err != nil {
+		t.Fatalf("ReadFile(DLQ) error = %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 DLQ line, got %d", len(lines))
+	}
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("unmarshal DLQ line error = %v", err)
+	}
+	row, ok := entry["row"].([]any)
+	if !ok || len(row) != 2 {
+		t.Fatalf("unexpected DLQ row format: %v", entry["row"])
+	}
+	if fmt.Sprint(row[1]) != "b_duplicate" {
+		t.Fatalf("expected DLQ row name 'b_duplicate', got %v", row[1])
 	}
 }
 

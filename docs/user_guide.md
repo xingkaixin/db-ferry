@@ -143,6 +143,8 @@ password = "test_pass"
 - `resume_key`: 用于增量/断点续传的字段名
 - `resume_from`: 增量起点的 SQL 字面量(排除该值)
 - `state_file`: 断点状态文件(JSON),自动记录上次迁移的 `resume_key` 值
+- `dlq_path`: 死信队列文件路径。当批量插入最终失败时,将失败的单行写入该文件而不是导致整个任务失败
+- `dlq_format`: 死信队列格式,支持 `jsonl`(默认)和 `csv`
 
 #### 示例5:简单全表迁移
 
