@@ -154,7 +154,7 @@ func TestRunConfigInitRejectsExtraArgs(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("run() code = %d, want 2", code)
 	}
-	if !strings.Contains(err.Error(), "does not accept additional arguments") {
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -230,6 +230,38 @@ func TestRunDoctorRejectsExtraArgs(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unknown doctor argument") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunConfigInitInteractiveFlagLong(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"config", "init", "--interactive"}, &out, &errOut)
+	// Interactive wizard requires a terminal; it will fail with a specific error.
+	// We just verify the flag is parsed and the wizard is invoked rather than the template copy.
+	if err == nil {
+		t.Fatalf("expected error when running interactive wizard without terminal")
+	}
+	if code != 1 {
+		t.Fatalf("run() code = %d, want 1", code)
+	}
+	if strings.Contains(err.Error(), "does not accept positional arguments") || strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("interactive flag was not recognized: %v", err)
+	}
+}
+
+func TestRunConfigInitInteractiveFlagShort(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"config", "init", "-i"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error when running interactive wizard without terminal")
+	}
+	if code != 1 {
+		t.Fatalf("run() code = %d, want 1", code)
+	}
+	if strings.Contains(err.Error(), "does not accept positional arguments") || strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("interactive flag was not recognized: %v", err)
 	}
 }
 

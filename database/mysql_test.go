@@ -136,6 +136,32 @@ func TestMySQLPingAndExec(t *testing.T) {
 	}
 }
 
+func TestMySQLGetTables(t *testing.T) {
+	db, mock := newSQLMock(t)
+	m := &MySQLDB{db: db}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type IN ('BASE TABLE', 'VIEW') ORDER BY table_name")).
+		WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("users").AddRow("orders"))
+
+	tables, err := m.GetTables()
+	if err != nil {
+		t.Fatalf("GetTables() error = %v", err)
+	}
+	want := []string{"users", "orders"}
+	if len(tables) != len(want) {
+		t.Fatalf("GetTables() = %v, want %v", tables, want)
+	}
+	for i := range want {
+		if tables[i] != want[i] {
+			t.Fatalf("GetTables()[%d] = %s, want %s", i, tables[i], want[i])
+		}
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sqlmock expectations: %v", err)
+	}
+}
+
 func TestMySQLEdgeCases(t *testing.T) {
 	m := &MySQLDB{}
 	if err := m.CreateTable("users", nil); err == nil {

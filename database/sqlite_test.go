@@ -137,6 +137,36 @@ func TestSQLitePingAndExec(t *testing.T) {
 	}
 }
 
+func TestSQLiteGetTables(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
+	s, err := NewSQLiteDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteDB() error = %v", err)
+	}
+	defer s.Close()
+
+	if _, err := s.db.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create table error = %v", err)
+	}
+	if _, err := s.db.Exec(`CREATE VIEW active_users AS SELECT * FROM users WHERE name IS NOT NULL`); err != nil {
+		t.Fatalf("create view error = %v", err)
+	}
+
+	tables, err := s.GetTables()
+	if err != nil {
+		t.Fatalf("GetTables() error = %v", err)
+	}
+	want := []string{"active_users", "users"}
+	if len(tables) != len(want) {
+		t.Fatalf("GetTables() = %v, want %v", tables, want)
+	}
+	for i := range want {
+		if tables[i] != want[i] {
+			t.Fatalf("GetTables()[%d] = %s, want %s", i, tables[i], want[i])
+		}
+	}
+}
+
 func TestSQLiteEdgeCases(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
 	s, err := NewSQLiteDB(dbPath)

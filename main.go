@@ -117,10 +117,7 @@ func runConfigCommand(args []string, stdout io.Writer) (int, error) {
 
 	switch args[0] {
 	case configInitCommand:
-		if len(args) > 1 {
-			return 2, fmt.Errorf("config init does not accept additional arguments")
-		}
-		return initConfigTemplate(stdout)
+		return runConfigInitCommand(args[1:], stdout)
 	default:
 		return 2, fmt.Errorf("unknown config subcommand: %s", args[0])
 	}
@@ -133,6 +130,27 @@ func runDoctorCommand(args []string, tomlPath string, stdout io.Writer) (int, er
 
 	doc := doctor.New(tomlPath)
 	return doc.Run(stdout), nil
+}
+
+func runConfigInitCommand(args []string, stdout io.Writer) (int, error) {
+	flags := flag.NewFlagSet("config init", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+
+	interactive := flags.Bool("interactive", false, "Run interactive configuration wizard")
+	flags.BoolVar(interactive, "i", false, "Run interactive configuration wizard (shorthand)")
+
+	if err := flags.Parse(args); err != nil {
+		return 2, err
+	}
+
+	if len(flags.Args()) > 0 {
+		return 2, fmt.Errorf("config init does not accept positional arguments")
+	}
+
+	if *interactive {
+		return runInteractiveWizard(stdout)
+	}
+	return initConfigTemplate(stdout)
 }
 
 func initConfigTemplate(stdout io.Writer) (int, error) {

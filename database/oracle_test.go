@@ -152,6 +152,32 @@ func TestOraclePingAndExec(t *testing.T) {
 	}
 }
 
+func TestOracleGetTables(t *testing.T) {
+	db, mock := newSQLMock(t)
+	o := &OracleDB{db: db}
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM user_tables UNION ALL SELECT view_name FROM user_views ORDER BY 1")).
+		WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("EMPLOYEES").AddRow("DEPARTMENTS"))
+
+	tables, err := o.GetTables()
+	if err != nil {
+		t.Fatalf("GetTables() error = %v", err)
+	}
+	want := []string{"EMPLOYEES", "DEPARTMENTS"}
+	if len(tables) != len(want) {
+		t.Fatalf("GetTables() = %v, want %v", tables, want)
+	}
+	for i := range want {
+		if tables[i] != want[i] {
+			t.Fatalf("GetTables()[%d] = %s, want %s", i, tables[i], want[i])
+		}
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sqlmock expectations: %v", err)
+	}
+}
+
 func TestOracleEdgeCasesAndTypeMapping(t *testing.T) {
 	o := &OracleDB{}
 	if err := o.CreateTable("users", nil); err == nil {

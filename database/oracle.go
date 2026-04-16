@@ -68,6 +68,30 @@ func (o *OracleDB) GetRowCount(sql string) (int, error) {
 	return count, nil
 }
 
+func (o *OracleDB) GetTables() ([]string, error) {
+	query := `
+		SELECT table_name FROM user_tables
+		UNION ALL
+		SELECT view_name FROM user_views
+		ORDER BY 1
+	`
+	rows, err := o.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tables: %w", err)
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("failed to scan table name: %w", err)
+		}
+		tables = append(tables, name)
+	}
+	return tables, rows.Err()
+}
+
 func (o *OracleDB) CreateTable(tableName string, columns []ColumnMetadata) error {
 	return o.createTable(tableName, columns, true)
 }
