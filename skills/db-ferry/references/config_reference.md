@@ -87,6 +87,8 @@
 | state_file | string | 否 | — | 断点状态文件路径（JSON 格式） |
 | allow_same_table | bool | 否 | false | 允许 source_db == target_db |
 | skip_create_table | bool | 否 | false | 跳过目标表 DROP/CREATE |
+| dlq_path | string | 否 | — | 死信队列文件路径，用于隔离插入失败的行 |
+| dlq_format | string | 否 | `"jsonl"` | 死信队列格式: jsonl/csv |
 
 ## 索引配置字段
 
@@ -126,6 +128,7 @@ columns 格式支持排序指定：
 | batch_size >= 0 | 不能为负数 |
 | max_retries >= 0 | 不能为负数 |
 | 验证模式只能是 none 或 row_count | validate 字段值有限制 |
+| dlq_format 只能是 jsonl 或 csv | 默认为 jsonl |
 | 索引 name 全局唯一 | 跨表也不能重复 |
 | 索引 columns 不能空 | 至少一列 |
 | 索引列格式正确 | ASC/DESC 排序器必须合法 |

@@ -2,10 +2,15 @@ package processor
 
 import (
 	"database/sql"
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"db-ferry/config"
@@ -20,6 +25,109 @@ type Processor struct {
 }
 
 var sleepFn = time.Sleep
+
+type dlqWriter struct {
+	path      string
+	format    string
+	file      *os.File
+	csvWriter *csv.Writer
+	mu        sync.Mutex
+}
+
+func newDLQWriter(path, format string, columns []database.ColumnMetadata) (*dlqWriter, error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create DLQ directory %s: %w", dir, err)
+	}
+
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DLQ file %s: %w", path, err)
+	}
+
+	w := &dlqWriter{
+		path:   path,
+		format: format,
+		file:   file,
+	}
+
+	if format == config.DLQFormatCSV {
+		stat, err := file.Stat()
+		if err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("failed to stat DLQ file: %w", err)
+		}
+		w.csvWriter = csv.NewWriter(file)
+		if stat.Size() == 0 {
+			headers := make([]string, len(columns)+3)
+			for i, col := range columns {
+				headers[i] = col.Name
+			}
+			headers[len(columns)] = "_dlq_error"
+			headers[len(columns)+1] = "_dlq_table_name"
+			headers[len(columns)+2] = "_dlq_timestamp"
+			if err := w.csvWriter.Write(headers); err != nil {
+				_ = file.Close()
+				return nil, fmt.Errorf("failed to write CSV header: %w", err)
+			}
+			w.csvWriter.Flush()
+		}
+	}
+
+	return w, nil
+}
+
+func (w *dlqWriter) write(row []any, errMsg, taskKey, tableName string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	timestamp := time.Now().Format(time.RFC3339)
+
+	if w.format == config.DLQFormatCSV {
+		record := make([]string, len(row)+3)
+		for i, v := range row {
+			if v == nil {
+				record[i] = ""
+			} else {
+				record[i] = fmt.Sprint(v)
+			}
+		}
+		record[len(row)] = errMsg
+		record[len(row)+1] = tableName
+		record[len(row)+2] = timestamp
+		if err := w.csvWriter.Write(record); err != nil {
+			return err
+		}
+		w.csvWriter.Flush()
+		return w.csvWriter.Error()
+	}
+
+	entry := map[string]any{
+		"row":        row,
+		"error":      errMsg,
+		"task_name":  taskKey,
+		"table_name": tableName,
+		"timestamp":  timestamp,
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+	if _, err := w.file.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *dlqWriter) close() error {
+	if w == nil {
+		return nil
+	}
+	if w.csvWriter != nil {
+		w.csvWriter.Flush()
+	}
+	return w.file.Close()
+}
 
 func NewProcessor(manager *database.ConnectionManager, cfg *config.Config) *Processor {
 	return &Processor{
@@ -113,6 +221,15 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		return err
 	}
 
+	var dlqw *dlqWriter
+	if task.DLQPath != "" {
+		dlqw, err = newDLQWriter(task.DLQPath, task.DLQFormat, columnsMeta)
+		if err != nil {
+			return fmt.Errorf("failed to initialize DLQ writer: %w", err)
+		}
+		defer dlqw.close()
+	}
+
 	if task.SkipCreateTable {
 		log.Printf("Skipping table creation for %s", task.TableName)
 	} else {
@@ -173,6 +290,7 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 	}
 	var batch [][]any
 	processedRows := 0
+	totalDLQ := 0
 	var lastResumeValue any
 
 	for rows.Next() {
@@ -195,9 +313,11 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		}
 
 		if len(batch) >= batchSize {
-			if err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys); err != nil {
+			dlqCount, err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys, dlqw)
+			if err != nil {
 				return fmt.Errorf("failed to insert batch: %w", err)
 			}
+			totalDLQ += dlqCount
 			if err := p.updateResumeState(task, lastResumeValue); err != nil {
 				return err
 			}
@@ -206,9 +326,11 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 	}
 
 	if len(batch) > 0 {
-		if err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys); err != nil {
+		dlqCount, err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys, dlqw)
+		if err != nil {
 			return fmt.Errorf("failed to insert final batch: %w", err)
 		}
+		totalDLQ += dlqCount
 		if err := p.updateResumeState(task, lastResumeValue); err != nil {
 			return err
 		}
@@ -248,12 +370,17 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 			return fmt.Errorf("failed to get target row count after insert: %w", err)
 		}
 		inserted := targetCountAfter - targetCountBefore
-		if inserted != processedRows {
-			return fmt.Errorf("row count validation failed for table %s: expected %d inserted rows but got %d", task.TableName, processedRows, inserted)
+		expected := processedRows - totalDLQ
+		if inserted != expected {
+			return fmt.Errorf("row count validation failed for table %s: expected %d inserted rows but got %d", task.TableName, expected, inserted)
 		}
 	}
 
-	log.Printf("Successfully processed %d rows for table %s", processedRows, task.TableName)
+	if task.DLQPath != "" {
+		log.Printf("Processed %d rows, %d rows written to DLQ for table %s", processedRows, totalDLQ, task.TableName)
+	} else {
+		log.Printf("Successfully processed %d rows for table %s", processedRows, task.TableName)
+	}
 	return nil
 }
 
@@ -302,28 +429,52 @@ func (p *Processor) updateResumeState(task config.TaskConfig, value any) error {
 	return nil
 }
 
-func (p *Processor) insertBatchWithRetry(targetDB database.TargetDB, task config.TaskConfig, columns []database.ColumnMetadata, batch [][]any, mergeKeys []string) error {
+func (p *Processor) insertBatchWithRetry(targetDB database.TargetDB, task config.TaskConfig, columns []database.ColumnMetadata, batch [][]any, mergeKeys []string, dlqw *dlqWriter) (int, error) {
+	var lastErr error
 	attempts := task.MaxRetries + 1
 	for attempt := 1; attempt <= attempts; attempt++ {
-		var err error
 		switch task.Mode {
 		case config.TaskModeMerge:
-			err = targetDB.UpsertData(task.TableName, columns, batch, mergeKeys)
+			lastErr = targetDB.UpsertData(task.TableName, columns, batch, mergeKeys)
 		default:
-			err = targetDB.InsertData(task.TableName, columns, batch)
+			lastErr = targetDB.InsertData(task.TableName, columns, batch)
 		}
-		if err == nil {
-			return nil
+		if lastErr == nil {
+			return 0, nil
 		}
-		if attempt == attempts {
-			return err
+		if attempt < attempts {
+			wait := time.Duration(attempt) * time.Second
+			log.Printf("Insert batch failed (attempt %d/%d): %v; retrying in %s", attempt, attempts, lastErr, wait)
+			sleepFn(wait)
 		}
-		wait := time.Duration(attempt) * time.Second
-		log.Printf("Insert batch failed (attempt %d/%d): %v; retrying in %s", attempt, attempts, err, wait)
-		sleepFn(wait)
 	}
 
-	return nil
+	if dlqw == nil {
+		return 0, lastErr
+	}
+
+	log.Printf("Batch insert failed after %d attempts, falling back to row-by-row for table %s: %v", attempts, task.TableName, lastErr)
+	taskKey := p.taskKey(task)
+	dlqCount := 0
+	for _, row := range batch {
+		var rowErr error
+		switch task.Mode {
+		case config.TaskModeMerge:
+			rowErr = targetDB.UpsertData(task.TableName, columns, [][]any{row}, mergeKeys)
+		default:
+			rowErr = targetDB.InsertData(task.TableName, columns, [][]any{row})
+		}
+		if rowErr != nil {
+			if err := dlqw.write(row, rowErr.Error(), taskKey, task.TableName); err != nil {
+				return dlqCount, fmt.Errorf("failed to write to DLQ: %w", err)
+			}
+			dlqCount++
+		}
+	}
+	if dlqCount > 0 {
+		log.Printf("Wrote %d/%d rows to DLQ for table %s", dlqCount, len(batch), task.TableName)
+	}
+	return dlqCount, nil
 }
 
 func execHookSQLs(targetDB database.TargetDB, sqls []string) error {

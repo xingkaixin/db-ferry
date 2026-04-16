@@ -393,6 +393,35 @@ func TestValidateTaskFieldErrors(t *testing.T) {
 			t.Fatalf("expected negative max retries error, got %v", err)
 		}
 	})
+
+	t.Run("invalid dlq format", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].DLQFormat = "xml"
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "dlq_format must be") {
+			t.Fatalf("expected invalid dlq_format error, got %v", err)
+		}
+	})
+
+	t.Run("dlq format defaults to jsonl", func(t *testing.T) {
+		cfg := baseConfig(t)
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if cfg.Tasks[0].DLQFormat != DLQFormatJSONL {
+			t.Fatalf("expected DLQFormat default %q, got %q", DLQFormatJSONL, cfg.Tasks[0].DLQFormat)
+		}
+	})
+
+	t.Run("dlq format normalization", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].DLQFormat = "CSV"
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if cfg.Tasks[0].DLQFormat != DLQFormatCSV {
+			t.Fatalf("expected normalized DLQFormat %q, got %q", DLQFormatCSV, cfg.Tasks[0].DLQFormat)
+		}
+	})
 }
 
 func TestValidateDatabaseDefinitionErrors(t *testing.T) {
