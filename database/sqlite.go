@@ -97,6 +97,27 @@ func (s *SQLiteDB) EnsureTable(tableName string, columns []ColumnMetadata) error
 	return s.createTable(tableName, columns, false)
 }
 
+func (s *SQLiteDB) GetTableColumns(tableName string) ([]ColumnMetadata, error) {
+	query := fmt.Sprintf(`PRAGMA table_info("%s")`, strings.ReplaceAll(tableName, `"`, `""`))
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get table columns: %w", err)
+	}
+	defer rows.Close()
+
+	var cols []ColumnMetadata
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return nil, fmt.Errorf("failed to scan column: %w", err)
+		}
+		cols = append(cols, ColumnMetadata{Name: name, DatabaseType: typ})
+	}
+	return cols, rows.Err()
+}
+
 func (s *SQLiteDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")

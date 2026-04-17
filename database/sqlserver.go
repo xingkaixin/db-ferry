@@ -96,6 +96,29 @@ func (s *SQLServerDB) EnsureTable(tableName string, columns []ColumnMetadata) er
 	return s.createTable(tableName, columns, false)
 }
 
+func (s *SQLServerDB) GetTableColumns(tableName string) ([]ColumnMetadata, error) {
+	query := `
+		SELECT COLUMN_NAME, DATA_TYPE
+		FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_NAME = @p1
+	`
+	rows, err := s.db.Query(query, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get table columns: %w", err)
+	}
+	defer rows.Close()
+
+	var cols []ColumnMetadata
+	for rows.Next() {
+		var name, dataType string
+		if err := rows.Scan(&name, &dataType); err != nil {
+			return nil, fmt.Errorf("failed to scan column: %w", err)
+		}
+		cols = append(cols, ColumnMetadata{Name: name, DatabaseType: dataType})
+	}
+	return cols, rows.Err()
+}
+
 func (s *SQLServerDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")

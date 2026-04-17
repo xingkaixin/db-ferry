@@ -96,6 +96,25 @@ func (o *OracleDB) EnsureTable(tableName string, columns []ColumnMetadata) error
 	return o.createTable(tableName, columns, false)
 }
 
+func (o *OracleDB) GetTableColumns(tableName string) ([]ColumnMetadata, error) {
+	query := `SELECT column_name, data_type FROM user_tab_columns WHERE table_name = :1`
+	rows, err := o.db.Query(query, strings.ToUpper(tableName))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get table columns: %w", err)
+	}
+	defer rows.Close()
+
+	var cols []ColumnMetadata
+	for rows.Next() {
+		var name, dataType string
+		if err := rows.Scan(&name, &dataType); err != nil {
+			return nil, fmt.Errorf("failed to scan column: %w", err)
+		}
+		cols = append(cols, ColumnMetadata{Name: name, DatabaseType: dataType})
+	}
+	return cols, rows.Err()
+}
+
 func (o *OracleDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")

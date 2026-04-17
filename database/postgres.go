@@ -97,6 +97,29 @@ func (p *PostgresDB) EnsureTable(tableName string, columns []ColumnMetadata) err
 	return p.createTable(tableName, columns, false)
 }
 
+func (p *PostgresDB) GetTableColumns(tableName string) ([]ColumnMetadata, error) {
+	query := `
+		SELECT column_name, data_type
+		FROM information_schema.columns
+		WHERE table_schema = current_schema() AND table_name = $1
+	`
+	rows, err := p.db.Query(query, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get table columns: %w", err)
+	}
+	defer rows.Close()
+
+	var cols []ColumnMetadata
+	for rows.Next() {
+		var name, dataType string
+		if err := rows.Scan(&name, &dataType); err != nil {
+			return nil, fmt.Errorf("failed to scan column: %w", err)
+		}
+		cols = append(cols, ColumnMetadata{Name: name, DatabaseType: dataType})
+	}
+	return cols, rows.Err()
+}
+
 func (p *PostgresDB) createTable(tableName string, columns []ColumnMetadata, dropExisting bool) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns provided for table creation")

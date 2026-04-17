@@ -357,6 +357,11 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) err
 		return fmt.Errorf("source_db '%s' is not defined", task.SourceDB)
 	}
 
+	targetDBCfg, ok := p.config.GetDatabase(task.TargetDB)
+	if !ok {
+		return fmt.Errorf("target_db '%s' is not defined", task.TargetDB)
+	}
+
 	resumeLiteral, err := p.resolveResumeLiteral(task)
 	if err != nil {
 		return err
@@ -416,6 +421,11 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) err
 		case config.TaskModeAppend, config.TaskModeMerge:
 			if err := targetDB.EnsureTable(task.TableName, columnsMeta); err != nil {
 				return fmt.Errorf("failed to ensure target table: %w", err)
+			}
+			if task.SchemaEvolution {
+				if err := database.SyncSchema(targetDB, targetDBCfg.Type, task.TableName, columnsMeta); err != nil {
+					return fmt.Errorf("failed to sync schema: %w", err)
+				}
 			}
 		default:
 			if err := targetDB.CreateTable(task.TableName, columnsMeta); err != nil {
@@ -544,7 +554,7 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) err
 		log.Printf("Successfully executed all post_sql hooks for table %s", task.TableName)
 	}
 
-	targetDBCfg, ok := p.config.GetDatabase(task.TargetDB)
+	targetDBCfg, ok = p.config.GetDatabase(task.TargetDB)
 	if !ok {
 		return fmt.Errorf("target_db '%s' is not defined", task.TargetDB)
 	}
@@ -957,6 +967,9 @@ func (p *Processor) planTask(w io.Writer, taskIndex, totalTasks, overallIndex in
 		fmt.Fprintln(w, "  Rows:    (unknown)")
 	}
 	fmt.Fprintf(w, "  Batch:   %d\n", batchSize)
+	if task.SchemaEvolution && (task.Mode == config.TaskModeAppend || task.Mode == config.TaskModeMerge) {
+		fmt.Fprintln(w, "  Schema:  evolution enabled (missing columns will be added via ALTER TABLE)")
+	}
 
 	if overallIndex < len(p.config.Tasks) {
 		fmt.Fprintln(w)

@@ -46,6 +46,9 @@ type TargetDB interface {
 	// EnsureTable 创建目标表(如果不存在)
 	EnsureTable(tableName string, columns []ColumnMetadata) error
 
+	// GetTableColumns 获取目标表的现有列信息
+	GetTableColumns(tableName string) ([]ColumnMetadata, error)
+
 	// InsertData 批量插入数据
 	InsertData(tableName string, columns []ColumnMetadata, values [][]any) error
 

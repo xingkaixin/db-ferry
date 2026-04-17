@@ -149,6 +149,8 @@ type TaskConfig struct {
 	AllowSameTable bool `toml:"allow_same_table"`
 	// SkipCreateTable 跳过目标表的 drop/create 操作。
 	SkipCreateTable bool `toml:"skip_create_table"`
+	// SchemaEvolution 在 append/merge 模式下自动为目标表添加源端新增列。
+	SchemaEvolution bool `toml:"schema_evolution"`
 	// DLQPath 死信队列文件路径，用于保存插入失败的行。
 	DLQPath string `toml:"dlq_path,omitempty"`
 	// DLQFormat 死信队列文件格式，支持 jsonl 和 csv，默认为 jsonl。
