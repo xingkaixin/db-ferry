@@ -13,7 +13,7 @@ import (
 
 func createTestSQLiteDB(t *testing.T, path string) database.SourceDB {
 	t.Helper()
-	src, err := database.NewSQLiteDB(path)
+	src, err := database.NewSQLiteDB(path, 0, 0, "")
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}

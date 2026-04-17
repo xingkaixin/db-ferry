@@ -262,7 +262,7 @@ func handleEstimateMigration(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	}
 
 	// Rough heuristic: base 5s + 0.05s per 1000 rows for file targets, 0.02s for network targets.
-	var secondsPerK float64 = 0.05
+	secondsPerK := 0.05
 	if targetMap, ok := req.GetArguments()["target_db"].(map[string]any); ok {
 		targetType := strings.ToLower(getString(targetMap, "type"))
 		if targetType == config.DatabaseTypePostgreSQL || targetType == config.DatabaseTypeMySQL ||
