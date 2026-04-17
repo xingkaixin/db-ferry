@@ -126,6 +126,14 @@ target_db = "oracle_hr"
 ignore = true
 
 #########################
+# History Configuration #
+#########################
+
+[history]
+enabled = true
+table_name = "db_ferry_migrations"
+
+#########################
 # Notes                #
 #########################
 # - Define all source and target databases in the [[databases]] section using unique names (aliases)
@@ -145,3 +153,4 @@ ignore = true
 # - dlq_path isolates insert failures instead of failing the entire task; dlq_format supports jsonl (default) and csv
 # - depends_on declares task dependencies using table_name, enabling DAG-based scheduling
 # - max_concurrent_tasks controls global parallelism (default 3 when unset or <= 0)
+# - history.enabled writes migration audit records to the target database table (auto-created if missing)

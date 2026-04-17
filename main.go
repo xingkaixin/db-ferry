@@ -7,6 +7,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"sort"
+	"text/tabwriter"
+	"time"
 
 	"db-ferry/config"
 	"db-ferry/database"
@@ -15,10 +18,11 @@ import (
 )
 
 const (
-	defaultTomlPath   = "task.toml"
-	configCommandName = "config"
-	configInitCommand = "init"
-	doctorCommandName = "doctor"
+	defaultTomlPath    = "task.toml"
+	configCommandName  = "config"
+	configInitCommand  = "init"
+	doctorCommandName  = "doctor"
+	historyCommandName = "history"
 )
 
 var configTemplateTarget = "task.toml"
@@ -78,7 +82,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 	log.Printf("Loaded %d tasks from configuration", len(cfg.Tasks))
 
 	manager := database.NewConnectionManager(cfg)
-	proc := processor.NewProcessor(manager, cfg)
+	proc := processor.NewProcessorWithVersion(manager, cfg, version)
 	defer func() {
 		if closeErr := proc.Close(); closeErr != nil {
 			log.Printf("Warning: failed to close resources: %v", closeErr)
@@ -106,6 +110,8 @@ func runCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
 		return runConfigCommand(args[1:], stdout)
 	case doctorCommandName:
 		return runDoctorCommand(args[1:], tomlPath, stdout)
+	case historyCommandName:
+		return runHistoryCommand(args[1:], tomlPath, stdout)
 	default:
 		return 2, fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -131,6 +137,87 @@ func runDoctorCommand(args []string, tomlPath string, stdout io.Writer) (int, er
 
 	doc := doctor.New(tomlPath)
 	return doc.Run(stdout), nil
+}
+
+func runHistoryCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
+	flags := flag.NewFlagSet("history", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	limit := flags.Int("n", 10, "Number of recent migrations to show")
+	if err := flags.Parse(args); err != nil {
+		return 2, err
+	}
+	if len(flags.Args()) > 0 {
+		return 2, fmt.Errorf("unknown history argument: %s", flags.Args()[0])
+	}
+
+	cfg, err := config.LoadConfig(tomlPath)
+	if err != nil {
+		return 1, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	// Collect unique target database aliases from non-ignored tasks.
+	targetAliases := make(map[string]struct{})
+	for _, task := range cfg.Tasks {
+		if !task.Ignore {
+			targetAliases[task.TargetDB] = struct{}{}
+		}
+	}
+	if len(targetAliases) == 0 {
+		fmt.Fprintln(stdout, "No target databases found.")
+		return 0, nil
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	defer func() { _ = manager.CloseAll() }()
+
+	var allRecords []database.MigrationRecord
+	for alias := range targetAliases {
+		targetDB, err := manager.GetTarget(alias)
+		if err != nil {
+			log.Printf("Warning: failed to connect to target %s: %v", alias, err)
+			continue
+		}
+		dbCfg, ok := cfg.GetDatabase(alias)
+		if !ok {
+			continue
+		}
+		recorder := database.NewHistoryRecorder(dbCfg.Type, cfg.History.Table())
+		records, err := recorder.List(targetDB, *limit)
+		if err != nil {
+			// Table may not exist yet; skip silently.
+			continue
+		}
+		allRecords = append(allRecords, records...)
+	}
+
+	if len(allRecords) == 0 {
+		fmt.Fprintln(stdout, "No migration history found.")
+		return 0, nil
+	}
+
+	sort.Slice(allRecords, func(i, j int) bool {
+		return allRecords[i].StartedAt.After(allRecords[j].StartedAt)
+	})
+	if len(allRecords) > *limit {
+		allRecords = allRecords[:*limit]
+	}
+
+	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "STARTED\tTASK\tMODE\tROWS\tFAILED\tRESULT\tSOURCE\tTARGET")
+	for _, rec := range allRecords {
+		started := rec.StartedAt.Format(time.RFC3339)
+		if rec.StartedAt.IsZero() {
+			started = "-"
+		}
+		result := rec.ValidationResult
+		if result == "" {
+			result = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\t%s\t%s\n",
+			started, rec.TaskName, rec.Mode, rec.RowsProcessed, rec.RowsFailed, result, rec.SourceDB, rec.TargetDB)
+	}
+	_ = w.Flush()
+	return 0, nil
 }
 
 func runConfigInitCommand(args []string, stdout io.Writer) (int, error) {

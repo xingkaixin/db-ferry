@@ -20,10 +20,13 @@ import (
 )
 
 type Processor struct {
-	manager    *database.ConnectionManager
-	config     *config.Config
-	stateFiles map[string]*stateFile
-	stateMu    sync.Mutex
+	manager           *database.ConnectionManager
+	config            *config.Config
+	stateFiles        map[string]*stateFile
+	stateMu           sync.Mutex
+	historyRecorders  map[string]*database.HistoryRecorder
+	historyMu         sync.Mutex
+	version           string
 }
 
 var sleepFn = time.Sleep
@@ -132,10 +135,17 @@ func (w *dlqWriter) close() error {
 }
 
 func NewProcessor(manager *database.ConnectionManager, cfg *config.Config) *Processor {
+	return NewProcessorWithVersion(manager, cfg, "dev")
+}
+
+// NewProcessorWithVersion creates a processor with an explicit version string.
+func NewProcessorWithVersion(manager *database.ConnectionManager, cfg *config.Config, version string) *Processor {
 	return &Processor{
-		manager:    manager,
-		config:     cfg,
-		stateFiles: make(map[string]*stateFile),
+		manager:          manager,
+		config:           cfg,
+		stateFiles:       make(map[string]*stateFile),
+		historyRecorders: make(map[string]*database.HistoryRecorder),
+		version:          version,
 	}
 }
 
@@ -339,7 +349,7 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 	return p.processTaskInternal(task, false)
 }
 
-func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) error {
+func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (err error) {
 	log.Printf("Executing query for table %s", task.TableName)
 
 	sourceDB, err := p.manager.GetSource(task.SourceDB)
@@ -350,6 +360,24 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) err
 	targetDB, err := p.manager.GetTarget(task.TargetDB)
 	if err != nil {
 		return err
+	}
+
+	var historyID string
+	var recorder *database.HistoryRecorder
+	if p.config.History.Enabled {
+		recorder = p.getHistoryRecorder(task.TargetDB)
+		if ensureErr := recorder.EnsureTable(targetDB); ensureErr != nil {
+			log.Printf("Warning: failed to ensure history table: %v", ensureErr)
+		} else {
+			rec := &database.MigrationRecord{
+				TaskName: task.TableName,
+				SourceDB: task.SourceDB,
+				TargetDB: task.TargetDB,
+				Mode:     task.Mode,
+				Version:  p.version,
+			}
+			historyID, _ = recorder.Start(targetDB, rec)
+		}
 	}
 
 	sourceDBCfg, ok := p.config.GetDatabase(task.SourceDB)
@@ -464,6 +492,20 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) err
 	totalDLQ := 0
 	var lastResumeValue any
 
+	if historyID != "" && recorder != nil {
+		defer func() {
+			validationResult := "success"
+			errMsg := ""
+			if err != nil {
+				errMsg = err.Error()
+				validationResult = "failed"
+			}
+			if finishErr := recorder.Finish(targetDB, historyID, int64(processedRows), int64(totalDLQ), validationResult, errMsg); finishErr != nil {
+				log.Printf("Warning: failed to finish history record: %v", finishErr)
+			}
+		}()
+	}
+
 	for rows.Next() {
 		row, err := p.scanRow(rows, columnsMeta)
 		if err != nil {
@@ -557,6 +599,27 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) err
 		log.Printf("Successfully processed %d rows for table %s", processedRows, task.TableName)
 	}
 	return nil
+}
+
+func (p *Processor) getHistoryRecorder(targetDBAlias string) *database.HistoryRecorder {
+	p.historyMu.Lock()
+	defer p.historyMu.Unlock()
+
+	if r, ok := p.historyRecorders[targetDBAlias]; ok {
+		return r
+	}
+
+	dbCfg, ok := p.config.GetDatabase(targetDBAlias)
+	if !ok {
+		// Fallback to generic recorder if config missing (should not happen).
+		r := database.NewHistoryRecorder(config.DatabaseTypeSQLite, p.config.History.Table())
+		p.historyRecorders[targetDBAlias] = r
+		return r
+	}
+
+	r := database.NewHistoryRecorder(dbCfg.Type, p.config.History.Table())
+	p.historyRecorders[targetDBAlias] = r
+	return r
 }
 
 func (p *Processor) resolveResumeLiteral(task config.TaskConfig) (string, error) {
