@@ -73,6 +73,12 @@ var supportedMaskRules = map[string]struct{}{
 	MaskRuleHash:          {},
 }
 
+// ShardConfig defines range-based sharding for a single table.
+type ShardConfig struct {
+	Enabled bool `toml:"enabled"`
+	Shards  int  `toml:"shards"`
+}
+
 // ReplicaConfig describes a read-only replica connection.
 type ReplicaConfig struct {
 	Host     string `toml:"host"`
@@ -208,6 +214,7 @@ type TaskConfig struct {
 	PreSQL    []string        `toml:"pre_sql,omitempty"`
 	PostSQL   []string        `toml:"post_sql,omitempty"`
 	DependsOn []string        `toml:"depends_on"`
+	Shard     ShardConfig     `toml:"shard,omitempty"`
 }
 
 // HistoryConfig controls migration audit logging.
@@ -396,6 +403,22 @@ func (c *Config) Validate() error {
 		}
 		if task.ResumeKey != "" && task.StateFile == "" && task.ResumeFrom == "" {
 			return fmt.Errorf("task %d: resume_key requires resume_from or state_file", i+1)
+		}
+
+
+		if task.Shard.Enabled {
+			if task.ResumeKey == "" {
+				return fmt.Errorf("task %d: shard requires resume_key", i+1)
+			}
+			if task.Shard.Shards <= 1 {
+				return fmt.Errorf("task %d: shard.shards must be > 1", i+1)
+			}
+			if task.Mode == TaskModeReplace {
+				return fmt.Errorf("task %d: shard is not supported in replace mode; use append or merge", i+1)
+			}
+			if task.StateFile != "" {
+				return fmt.Errorf("task %d: state_file is not supported with shard", i+1)
+			}
 		}
 
 		seenTarget := make(map[string]struct{})
