@@ -12,7 +12,7 @@ import (
 func newTestSQLiteTarget(t *testing.T) TargetDB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "history.db")
-	s, err := NewSQLiteDB(dbPath, 0, 0)
+	s, err := NewSQLiteDB(dbPath, 0, 0, "")
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}

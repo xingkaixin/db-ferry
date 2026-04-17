@@ -22,7 +22,7 @@ var (
 	_ TargetDB = (*DuckDB)(nil)
 )
 
-func NewDuckDB(path string, maxOpen, maxIdle int) (*DuckDB, error) {
+func NewDuckDB(path string, maxOpen, maxIdle int, encryptionKey string) (*DuckDB, error) {
 	db, err := sql.Open("duckdb", path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open duckdb database: %w", err)
@@ -32,6 +32,13 @@ func NewDuckDB(path string, maxOpen, maxIdle int) (*DuckDB, error) {
 	}
 	if maxIdle > 0 {
 		db.SetMaxIdleConns(maxIdle)
+	}
+
+	if encryptionKey != "" {
+		if _, err := db.Exec("PRAGMA key = ?", encryptionKey); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("failed to set duckdb encryption key: %w", err)
+		}
 	}
 
 	if err = db.Ping(); err != nil {

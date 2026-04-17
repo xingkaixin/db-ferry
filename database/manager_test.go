@@ -128,31 +128,43 @@ func TestOpenSourceAndTarget(t *testing.T) {
 }
 
 func TestDSNBuilders(t *testing.T) {
-	oracle := BuildOracleDSN(config.DatabaseConfig{
+	oracle, err := BuildOracleDSN(config.DatabaseConfig{
 		User: "u", Password: "p", Host: "h", Port: "1521", Service: "svc",
 	})
+	if err != nil {
+		t.Fatalf("BuildOracleDSN() error = %v", err)
+	}
 	if oracle != "oracle://u:p@h:1521/svc" {
 		t.Fatalf("unexpected oracle DSN: %s", oracle)
 	}
 
-	mysql := BuildMySQLDSN(config.DatabaseConfig{
+	mysql, err := BuildMySQLDSN(config.DatabaseConfig{
 		User: "u", Password: "p", Host: "h", Port: "3306", Database: "d",
 	})
+	if err != nil {
+		t.Fatalf("BuildMySQLDSN() error = %v", err)
+	}
 	if !strings.Contains(mysql, "u:p@tcp(h:3306)/d?parseTime=true") {
 		t.Fatalf("unexpected mysql DSN: %s", mysql)
 	}
 
-	postgres := BuildPostgresDSN(config.DatabaseConfig{
+	postgres, err := BuildPostgresDSN(config.DatabaseConfig{
 		Host: "h", Port: "5432", User: "u", Password: "p", Database: "d",
 	})
+	if err != nil {
+		t.Fatalf("BuildPostgresDSN() error = %v", err)
+	}
 	if !strings.Contains(postgres, "host=h port=5432 user=u password=p dbname=d") {
 		t.Fatalf("unexpected postgres DSN: %s", postgres)
 	}
 
-	sqlserver := BuildSQLServerDSN(config.DatabaseConfig{
+	sqlserver, err := BuildSQLServerDSN(config.DatabaseConfig{
 		User: "u", Password: "p", Host: "h", Port: "1433", Database: "d",
 	})
-	if sqlserver != "sqlserver://u:p@h:1433?database=d" {
+	if err != nil {
+		t.Fatalf("BuildSQLServerDSN() error = %v", err)
+	}
+	if sqlserver != "sqlserver://u:p@h:1433?database=d&encrypt=disable" {
 		t.Fatalf("unexpected sqlserver DSN: %s", sqlserver)
 	}
 }
@@ -317,4 +329,79 @@ func TestConnectionManagerPoolSettings(t *testing.T) {
 		t.Fatalf("expected MaxOpenConnections=7, got %d", stats.MaxOpenConnections)
 	}
 	// MaxIdleConnections is not directly exposed in Stats, but we verified the setter was called.
+}
+
+func TestDSNBuildersWithTLS(t *testing.T) {
+	t.Run("oracle with SSL", func(t *testing.T) {
+		dsn, err := BuildOracleDSN(config.DatabaseConfig{
+			User: "u", Password: "p", Host: "h", Port: "1521", Service: "svc",
+			SSLMode: config.SSLModeRequire, SSLCert: "cert_dn", SSLRootCert: "wallet_dir",
+		})
+		if err != nil {
+			t.Fatalf("BuildOracleDSN() error = %v", err)
+		}
+		if !strings.Contains(dsn, "SSL=true") {
+			t.Fatalf("expected SSL=true in DSN: %s", dsn)
+		}
+		if !strings.Contains(dsn, "SSL_SERVER_CERT_DN=cert_dn") {
+			t.Fatalf("expected SSL_SERVER_CERT_DN in DSN: %s", dsn)
+		}
+		if !strings.Contains(dsn, "WALLET_LOCATION=wallet_dir") {
+			t.Fatalf("expected WALLET_LOCATION in DSN: %s", dsn)
+		}
+	})
+
+	t.Run("postgres with SSL", func(t *testing.T) {
+		dsn, err := BuildPostgresDSN(config.DatabaseConfig{
+			Host: "h", Port: "5432", User: "u", Password: "p", Database: "d",
+			SSLMode: config.SSLModeVerifyFull, SSLCert: "client.crt", SSLKey: "client.key", SSLRootCert: "ca.crt",
+		})
+		if err != nil {
+			t.Fatalf("BuildPostgresDSN() error = %v", err)
+		}
+		if !strings.Contains(dsn, "sslmode=verify-full") {
+			t.Fatalf("expected sslmode in DSN: %s", dsn)
+		}
+		if !strings.Contains(dsn, "sslcert=client.crt") {
+			t.Fatalf("expected sslcert in DSN: %s", dsn)
+		}
+		if !strings.Contains(dsn, "sslkey=client.key") {
+			t.Fatalf("expected sslkey in DSN: %s", dsn)
+		}
+		if !strings.Contains(dsn, "sslrootcert=ca.crt") {
+			t.Fatalf("expected sslrootcert in DSN: %s", dsn)
+		}
+	})
+
+	t.Run("sqlserver with SSL require", func(t *testing.T) {
+		dsn, err := BuildSQLServerDSN(config.DatabaseConfig{
+			User: "u", Password: "p", Host: "h", Port: "1433", Database: "d",
+			SSLMode: config.SSLModeRequire,
+		})
+		if err != nil {
+			t.Fatalf("BuildSQLServerDSN() error = %v", err)
+		}
+		if !strings.Contains(dsn, "encrypt=true") {
+			t.Fatalf("expected encrypt=true in DSN: %s", dsn)
+		}
+		if !strings.Contains(dsn, "TrustServerCertificate=true") {
+			t.Fatalf("expected TrustServerCertificate=true in DSN: %s", dsn)
+		}
+	})
+
+	t.Run("sqlserver with SSL verify", func(t *testing.T) {
+		dsn, err := BuildSQLServerDSN(config.DatabaseConfig{
+			User: "u", Password: "p", Host: "h", Port: "1433", Database: "d",
+			SSLMode: config.SSLModeVerifyCA,
+		})
+		if err != nil {
+			t.Fatalf("BuildSQLServerDSN() error = %v", err)
+		}
+		if !strings.Contains(dsn, "encrypt=true") {
+			t.Fatalf("expected encrypt=true in DSN: %s", dsn)
+		}
+		if !strings.Contains(dsn, "TrustServerCertificate=false") {
+			t.Fatalf("expected TrustServerCertificate=false in DSN: %s", dsn)
+		}
+	})
 }

@@ -175,37 +175,53 @@ func (m *ConnectionManager) openConnection(dbCfg config.DatabaseConfig) (*connec
 func openConnectionInternal(dbCfg config.DatabaseConfig) (*connectionEntry, error) {
 	switch dbCfg.Type {
 	case config.DatabaseTypeOracle:
-		conn, err := NewOracleDB(BuildOracleDSN(dbCfg), dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle)
+		dsn, err := BuildOracleDSN(dbCfg)
+		if err != nil {
+			return nil, err
+		}
+		conn, err := NewOracleDB(dsn, dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle)
 		if err != nil {
 			return nil, err
 		}
 		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
 	case config.DatabaseTypeMySQL:
-		conn, err := NewMySQLDB(BuildMySQLDSN(dbCfg), dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle)
+		dsn, err := BuildMySQLDSN(dbCfg)
+		if err != nil {
+			return nil, err
+		}
+		conn, err := NewMySQLDB(dsn, dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle)
 		if err != nil {
 			return nil, err
 		}
 		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
 	case config.DatabaseTypeSQLite:
-		conn, err := NewSQLiteDB(dbCfg.Path, dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle)
+		conn, err := NewSQLiteDB(dbCfg.Path, dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle, dbCfg.EncryptionKey)
 		if err != nil {
 			return nil, err
 		}
 		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
 	case config.DatabaseTypeDuckDB:
-		conn, err := NewDuckDB(dbCfg.Path, dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle)
+		conn, err := NewDuckDB(dbCfg.Path, dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle, dbCfg.EncryptionKey)
 		if err != nil {
 			return nil, err
 		}
 		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
 	case config.DatabaseTypePostgreSQL:
-		conn, err := NewPostgresDB(BuildPostgresDSN(dbCfg), dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle)
+		dsn, err := BuildPostgresDSN(dbCfg)
+		if err != nil {
+			return nil, err
+		}
+		conn, err := NewPostgresDB(dsn, dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle)
 		if err != nil {
 			return nil, err
 		}
 		return &connectionEntry{source: conn, target: conn, close: conn.Close}, nil
 	case config.DatabaseTypeSQLServer:
-		conn, err := NewSQLServerDB(BuildSQLServerDSN(dbCfg), dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle)
+		dsn, err := BuildSQLServerDSN(dbCfg)
+		if err != nil {
+			return nil, err
+		}
+		conn, err := NewSQLServerDB(dsn, dbCfg.PoolMaxOpen, dbCfg.PoolMaxIdle)
 		if err != nil {
 			return nil, err
 		}
@@ -250,18 +266,40 @@ func openSourceConnection(dbCfg config.DatabaseConfig) (SourceDB, error) {
 // testOpenSourceHook is used by tests to mock replica connections.
 var testOpenSourceHook func(config.DatabaseConfig) (SourceDB, error)
 
-func BuildOracleDSN(dbCfg config.DatabaseConfig) string {
-	return fmt.Sprintf("oracle://%s:%s@%s:%s/%s",
+func BuildOracleDSN(dbCfg config.DatabaseConfig) (string, error) {
+	dsn := fmt.Sprintf("oracle://%s:%s@%s:%s/%s",
 		dbCfg.User,
 		dbCfg.Password,
 		dbCfg.Host,
 		dbCfg.Port,
 		dbCfg.Service,
 	)
+
+	if dbCfg.SSLMode != config.SSLModeDisable && dbCfg.SSLMode != "" {
+		params := "SSL=true"
+		if dbCfg.SSLCert != "" {
+			params += "&SSL_SERVER_CERT_DN=" + dbCfg.SSLCert
+		}
+		if dbCfg.SSLRootCert != "" {
+			params += "&WALLET_LOCATION=" + dbCfg.SSLRootCert
+		}
+		dsn += "?" + params
+	}
+
+	return dsn, nil
 }
 
-func BuildMySQLDSN(dbCfg config.DatabaseConfig) string {
+func BuildMySQLDSN(dbCfg config.DatabaseConfig) (string, error) {
 	params := "parseTime=true"
+
+	if dbCfg.SSLMode != config.SSLModeDisable && dbCfg.SSLMode != "" {
+		tlsName, err := registerMySQLTLSConfig(dbCfg)
+		if err != nil {
+			return "", err
+		}
+		params += "&tls=" + tlsName
+	}
+
 	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?%s",
 		dbCfg.User,
 		dbCfg.Password,
@@ -269,25 +307,52 @@ func BuildMySQLDSN(dbCfg config.DatabaseConfig) string {
 		dbCfg.Port,
 		dbCfg.Database,
 		params,
-	)
+	), nil
 }
 
-func BuildPostgresDSN(dbCfg config.DatabaseConfig) string {
-	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s",
+func BuildPostgresDSN(dbCfg config.DatabaseConfig) (string, error) {
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s",
 		dbCfg.Host,
 		dbCfg.Port,
 		dbCfg.User,
 		dbCfg.Password,
 		dbCfg.Database,
 	)
+
+	if dbCfg.SSLMode != "" {
+		dsn += " sslmode=" + dbCfg.SSLMode
+	}
+	if dbCfg.SSLCert != "" {
+		dsn += " sslcert=" + dbCfg.SSLCert
+	}
+	if dbCfg.SSLKey != "" {
+		dsn += " sslkey=" + dbCfg.SSLKey
+	}
+	if dbCfg.SSLRootCert != "" {
+		dsn += " sslrootcert=" + dbCfg.SSLRootCert
+	}
+
+	return dsn, nil
 }
 
-func BuildSQLServerDSN(dbCfg config.DatabaseConfig) string {
-	return fmt.Sprintf("sqlserver://%s:%s@%s:%s?database=%s",
+func BuildSQLServerDSN(dbCfg config.DatabaseConfig) (string, error) {
+	params := ""
+
+	switch dbCfg.SSLMode {
+	case config.SSLModeDisable, "":
+		params = "encrypt=disable"
+	case config.SSLModeRequire:
+		params = "encrypt=true&TrustServerCertificate=true"
+	case config.SSLModeVerifyCA, config.SSLModeVerifyFull:
+		params = "encrypt=true&TrustServerCertificate=false"
+	}
+
+	return fmt.Sprintf("sqlserver://%s:%s@%s:%s?database=%s&%s",
 		dbCfg.User,
 		dbCfg.Password,
 		dbCfg.Host,
 		dbCfg.Port,
 		dbCfg.Database,
-	)
+		params,
+	), nil
 }

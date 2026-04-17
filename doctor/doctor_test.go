@@ -399,6 +399,83 @@ func TestDoctorDiskSpaceFail(t *testing.T) {
 	}
 }
 
+func TestDoctorTLSConfigFail(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "task.toml")
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + filepath.Join(dir, "src.db") + `"`,
+		`ssl_mode = "require"`,
+		`ssl_cert = "/nonexistent/cert.pem"`,
+		"",
+		"[[tasks]]",
+		`table_name = "users"`,
+		`sql = "SELECT 1"`,
+		`source_db = "src"`,
+		`target_db = "src"`,
+		`allow_same_table = true`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	doc := New(cfgPath)
+	code := doc.Run(&out)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d\noutput:\n%s", code, out.String())
+	}
+	output := out.String()
+	if !strings.Contains(output, "[FAIL] Configuration validation") {
+		t.Fatalf("expected config validation failure, got:\n%s", output)
+	}
+	if !strings.Contains(output, "ssl_cert file not found") {
+		t.Fatalf("expected ssl_cert file not found message, got:\n%s", output)
+	}
+}
+
+func TestDoctorTLSHandshakeFail(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "task.toml")
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "pg"`,
+		`type = "postgresql"`,
+		`host = "127.0.0.1"`,
+		`port = "1"`,
+		`user = "u"`,
+		`password = "p"`,
+		`database = "db"`,
+		`ssl_mode = "require"`,
+		"",
+		"[[tasks]]",
+		`table_name = "users"`,
+		`sql = "SELECT 1"`,
+		`source_db = "pg"`,
+		`target_db = "pg"`,
+		`allow_same_table = true`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	doc := New(cfgPath)
+	code := doc.Run(&out)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d\noutput:\n%s", code, out.String())
+	}
+	output := out.String()
+	if !strings.Contains(output, "[FAIL] TLS configuration: pg") {
+		t.Fatalf("expected TLS config failure, got:\n%s", output)
+	}
+	if !strings.Contains(output, "TLS handshake failed") {
+		t.Fatalf("expected TLS handshake failed message, got:\n%s", output)
+	}
+}
+
 func TestTrimSQL(t *testing.T) {
 	tests := []struct {
 		input    string

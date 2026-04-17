@@ -332,7 +332,7 @@ func TestTestSourceAndListTables_InvalidConfig(t *testing.T) {
 
 func TestTestSourceAndListTables_Success(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "src.db")
-	s, err := database.NewSQLiteDB(dbPath, 0, 0)
+	s, err := database.NewSQLiteDB(dbPath, 0, 0, "")
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}
@@ -367,7 +367,7 @@ func TestTestTargetConnection_InvalidConfig(t *testing.T) {
 
 func TestTestTargetConnection_Success(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "tgt.db")
-	s, err := database.NewSQLiteDB(dbPath, 0, 0)
+	s, err := database.NewSQLiteDB(dbPath, 0, 0, "")
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}

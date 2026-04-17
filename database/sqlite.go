@@ -20,7 +20,7 @@ var (
 	_ TargetDB = (*SQLiteDB)(nil)
 )
 
-func NewSQLiteDB(dbPath string, maxOpen, maxIdle int) (*SQLiteDB, error) {
+func NewSQLiteDB(dbPath string, maxOpen, maxIdle int, encryptionKey string) (*SQLiteDB, error) {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
@@ -30,6 +30,13 @@ func NewSQLiteDB(dbPath string, maxOpen, maxIdle int) (*SQLiteDB, error) {
 	}
 	if maxIdle > 0 {
 		db.SetMaxIdleConns(maxIdle)
+	}
+
+	if encryptionKey != "" {
+		if _, err := db.Exec("PRAGMA key = ?", encryptionKey); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("failed to set sqlite encryption key: %w", err)
+		}
 	}
 
 	if err = db.Ping(); err != nil {
