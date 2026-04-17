@@ -323,11 +323,11 @@ type selectiveTarget struct {
 	failKeys   map[any]struct{}
 }
 
-func (m *selectiveTarget) Close() error                                          { return nil }
-func (m *selectiveTarget) CreateTable(string, []database.ColumnMetadata) error   { return nil }
-func (m *selectiveTarget) EnsureTable(string, []database.ColumnMetadata) error   { return nil }
-func (m *selectiveTarget) GetTableRowCount(string) (int, error)                  { return 0, nil }
-func (m *selectiveTarget) CreateIndexes(string, []config.IndexConfig) error      { return nil }
+func (m *selectiveTarget) Close() error                                        { return nil }
+func (m *selectiveTarget) CreateTable(string, []database.ColumnMetadata) error { return nil }
+func (m *selectiveTarget) EnsureTable(string, []database.ColumnMetadata) error { return nil }
+func (m *selectiveTarget) GetTableRowCount(string) (int, error)                { return 0, nil }
+func (m *selectiveTarget) CreateIndexes(string, []config.IndexConfig) error    { return nil }
 
 func (m *selectiveTarget) InsertData(string, []database.ColumnMetadata, [][]any) error {
 	m.insertCall++

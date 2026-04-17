@@ -116,10 +116,10 @@ type TaskConfig struct {
 	// DLQPath 死信队列文件路径，用于保存插入失败的行。
 	DLQPath string `toml:"dlq_path,omitempty"`
 	// DLQFormat 死信队列文件格式，支持 jsonl 和 csv，默认为 jsonl。
-	DLQFormat string `toml:"dlq_format,omitempty"`
-	Indexes         []IndexConfig `toml:"indexes,omitempty"`
-	PreSQL          []string      `toml:"pre_sql,omitempty"`
-	PostSQL         []string      `toml:"post_sql,omitempty"`
+	DLQFormat string        `toml:"dlq_format,omitempty"`
+	Indexes   []IndexConfig `toml:"indexes,omitempty"`
+	PreSQL    []string      `toml:"pre_sql,omitempty"`
+	PostSQL   []string      `toml:"post_sql,omitempty"`
 }
 
 // Config is the top-level configuration structure decoded from task.toml.
