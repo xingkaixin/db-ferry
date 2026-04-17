@@ -98,20 +98,20 @@ func (ic *IndexConfig) ParseColumns() error {
 
 // TaskConfig defines a single migration job.
 type TaskConfig struct {
-	TableName  string   `toml:"table_name"`
-	SQL        string   `toml:"sql"`
-	SourceDB   string   `toml:"source_db"`
-	TargetDB   string   `toml:"target_db"`
-	Ignore     bool     `toml:"ignore"`
-	Mode       string   `toml:"mode"`
-	BatchSize  int      `toml:"batch_size"`
-	MaxRetries       int    `toml:"max_retries"`
-	Validate         string `toml:"validate"`
-	ValidateSampleSize int  `toml:"validate_sample_size"`
-	MergeKeys        []string `toml:"merge_keys"`
-	ResumeKey  string   `toml:"resume_key"`
-	ResumeFrom string   `toml:"resume_from"`
-	StateFile  string   `toml:"state_file"`
+	TableName          string   `toml:"table_name"`
+	SQL                string   `toml:"sql"`
+	SourceDB           string   `toml:"source_db"`
+	TargetDB           string   `toml:"target_db"`
+	Ignore             bool     `toml:"ignore"`
+	Mode               string   `toml:"mode"`
+	BatchSize          int      `toml:"batch_size"`
+	MaxRetries         int      `toml:"max_retries"`
+	Validate           string   `toml:"validate"`
+	ValidateSampleSize int      `toml:"validate_sample_size"`
+	MergeKeys          []string `toml:"merge_keys"`
+	ResumeKey          string   `toml:"resume_key"`
+	ResumeFrom         string   `toml:"resume_from"`
+	StateFile          string   `toml:"state_file"`
 	// AllowSameTable 明确允许同库执行并覆盖目标表（存在数据丢失风险）。
 	AllowSameTable bool `toml:"allow_same_table"`
 	// SkipCreateTable 跳过目标表的 drop/create 操作。
