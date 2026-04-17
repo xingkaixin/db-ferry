@@ -84,6 +84,37 @@ func TestSQLiteEnsureTableAndUpsert(t *testing.T) {
 	}
 }
 
+func TestSQLiteGetTableColumns(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
+	s, err := NewSQLiteDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteDB() error = %v", err)
+	}
+	defer s.Close()
+
+	cols := []ColumnMetadata{
+		{Name: "id", DatabaseType: "INTEGER"},
+		{Name: "name", DatabaseType: "VARCHAR"},
+	}
+	if err := s.CreateTable("users", cols); err != nil {
+		t.Fatalf("CreateTable() error = %v", err)
+	}
+
+	got, err := s.GetTableColumns("users")
+	if err != nil {
+		t.Fatalf("GetTableColumns() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("GetTableColumns() returned %d columns, want 2", len(got))
+	}
+	if got[0].Name != "id" {
+		t.Fatalf("GetTableColumns()[0].Name = %q, want id", got[0].Name)
+	}
+	if got[1].Name != "name" {
+		t.Fatalf("GetTableColumns()[1].Name = %q, want name", got[1].Name)
+	}
+}
+
 func TestSQLiteCreateIndexesAndBuildIndexSQL(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
 	s, err := NewSQLiteDB(dbPath)

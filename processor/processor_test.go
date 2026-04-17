@@ -59,6 +59,8 @@ func (m *retryTarget) CreateIndexes(string, []config.IndexConfig) error { return
 
 func (m *retryTarget) Exec(string) error { return nil }
 
+func (m *retryTarget) GetTableColumns(string) ([]database.ColumnMetadata, error) { return nil, nil }
+
 func TestProcessorHelpers(t *testing.T) {
 	if got := trimSQL(" SELECT 1;; "); got != "SELECT 1" {
 		t.Fatalf("trimSQL() = %q, want %q", got, "SELECT 1")
@@ -328,6 +330,7 @@ type selectiveTarget struct {
 func (m *selectiveTarget) Close() error                                        { return nil }
 func (m *selectiveTarget) CreateTable(string, []database.ColumnMetadata) error { return nil }
 func (m *selectiveTarget) EnsureTable(string, []database.ColumnMetadata) error { return nil }
+func (m *selectiveTarget) GetTableColumns(string) ([]database.ColumnMetadata, error) { return nil, nil }
 func (m *selectiveTarget) GetTableRowCount(string) (int, error)                { return 0, nil }
 func (m *selectiveTarget) CreateIndexes(string, []config.IndexConfig) error    { return nil }
 func (m *selectiveTarget) Query(string) (*sql.Rows, error)                     { return nil, nil }
