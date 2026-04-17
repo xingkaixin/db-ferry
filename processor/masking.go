@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"db-ferry/config"
 	"db-ferry/database"
@@ -241,7 +240,7 @@ func parseFixedValue(value string, column database.ColumnMetadata) any {
 
 func hashValue(value any) string {
 	h := fnv.New64a()
-	_, _ = h.Write([]byte(fmt.Sprintf("%v", value)))
+	_, _ = fmt.Fprintf(h, "%v", value)
 	return fmt.Sprintf("%016x", h.Sum64())
 }
 
@@ -253,9 +252,4 @@ func maskValueLength(s string, keepPrefix, keepSuffix int) string {
 		return strings.Repeat("*", n)
 	}
 	return string(runes[:keepPrefix]) + strings.Repeat("*", n-keepPrefix-keepSuffix) + string(runes[n-keepSuffix:])
-}
-
-// runeLength returns the number of runes in a string.
-func runeLength(s string) int {
-	return utf8.RuneCountInString(s)
 }
