@@ -3,6 +3,10 @@
   "version": "0.0.0-dev",
   "description": "Prebuilt db-ferry CLI distributed through npm",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xingkaixin/db-ferry"
+  },
   "bin": {
     "db-ferry": "npm/bin/db-ferry.js"
   },

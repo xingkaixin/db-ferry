@@ -3,6 +3,10 @@
   "version": "0.0.0-dev",
   "description": "Prebuilt db-ferry binary for linux x64",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xingkaixin/db-ferry"
+  },
   "os": [
     "linux"
   ],
