@@ -16,6 +16,7 @@ import (
 	"db-ferry/database"
 	"db-ferry/diff"
 	"db-ferry/doctor"
+	mcpserver "db-ferry/mcp"
 	"db-ferry/processor"
 )
 
@@ -24,8 +25,10 @@ const (
 	configCommandName  = "config"
 	configInitCommand  = "init"
 	doctorCommandName  = "doctor"
-	diffCommandName    = "diff"
 	historyCommandName = "history"
+	diffCommandName    = "diff"
+	mcpCommandName     = "mcp"
+	mcpServeCommand    = "serve"
 )
 
 var configTemplateTarget = "task.toml"
@@ -117,6 +120,8 @@ func runCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
 		return runHistoryCommand(args[1:], tomlPath, stdout)
 	case diffCommandName:
 		return runDiffCommand(args[1:], tomlPath, stdout)
+	case mcpCommandName:
+		return runMCPCommand(args[1:], stdout)
 	default:
 		return 2, fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -270,6 +275,38 @@ func runDiffCommand(args []string, tomlPath string, stdout io.Writer) (int, erro
 
 	if err := diff.Run(cfg, opts, stdout); err != nil {
 		return 1, err
+	}
+	return 0, nil
+}
+
+func runMCPCommand(args []string, stdout io.Writer) (int, error) {
+	if len(args) == 0 {
+		return 2, fmt.Errorf("missing mcp subcommand")
+	}
+
+	switch args[0] {
+	case mcpServeCommand:
+		return runMCPServeCommand(args[1:], stdout)
+	default:
+		return 2, fmt.Errorf("unknown mcp subcommand: %s", args[0])
+	}
+}
+
+func runMCPServeCommand(args []string, stdout io.Writer) (int, error) {
+	flags := flag.NewFlagSet("mcp serve", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+
+	if err := flags.Parse(args); err != nil {
+		return 2, err
+	}
+
+	if len(flags.Args()) > 0 {
+		return 2, fmt.Errorf("mcp serve does not accept positional arguments")
+	}
+
+	srv := mcpserver.NewServer(version)
+	if err := srv.ServeStdio(); err != nil {
+		return 1, fmt.Errorf("mcp server error: %w", err)
 	}
 	return 0, nil
 }

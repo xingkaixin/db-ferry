@@ -278,6 +278,51 @@ func TestRunDoctorRejectsExtraArgs(t *testing.T) {
 	}
 }
 
+func TestRunMCPMissingSubcommand(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"mcp"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for missing mcp subcommand")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "missing mcp subcommand") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunMCPUnknownSubcommand(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"mcp", "unknown"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for unknown mcp subcommand")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "unknown mcp subcommand") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunMCPServeRejectsExtraArgs(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"mcp", "serve", "extra"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for extra args")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestInitConfigTemplateStatError(t *testing.T) {
 	dir := t.TempDir()
 	chdirForTest(t, dir)
