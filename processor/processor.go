@@ -395,6 +395,11 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) err
 		return err
 	}
 
+	masker := newMaskEngine(task.Masking, columnsMeta)
+	if masker != nil {
+		log.Printf("Applying %d masking rules for table %s", len(task.Masking), task.TableName)
+	}
+
 	var dlqw *dlqWriter
 	if task.DLQPath != "" {
 		dlqw, err = newDLQWriter(task.DLQPath, task.DLQFormat, columnsMeta)
@@ -469,6 +474,8 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) err
 		if err != nil {
 			return fmt.Errorf("failed to scan row: %w", err)
 		}
+
+		row = masker.apply(row, columnsMeta)
 
 		if resumeIndex >= 0 {
 			lastResumeValue = row[resumeIndex]

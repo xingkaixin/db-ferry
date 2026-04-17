@@ -1637,3 +1637,69 @@ func TestStateFileConcurrency(t *testing.T) {
 		t.Fatalf("unexpected resume value for dst_b: %q", got)
 	}
 }
+
+func TestProcessTaskWithMasking(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, phone TEXT, email TEXT, balance REAL)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, phone, email, balance) VALUES (1, '13800138000', 'alice@example.com', 9999.99)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, phone, email, balance FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Masking: []config.MaskingConfig{
+					{Column: "phone", Rule: config.MaskRulePhoneCN},
+					{Column: "email", Rule: config.MaskRuleEmail},
+					{Column: "balance", Rule: config.MaskRuleRandomNumeric, Range: []float64{0, 100}},
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var id int
+	var phone, email string
+	var balance float64
+	if err := targetDB.QueryRow(`SELECT id, phone, email, balance FROM "dst_users"`).Scan(&id, &phone, &email, &balance); err != nil {
+		t.Fatalf("query target row error = %v", err)
+	}
+	if id != 1 {
+		t.Fatalf("expected id 1, got %d", id)
+	}
+	if phone != "138****8000" {
+		t.Fatalf("expected masked phone, got %q", phone)
+	}
+	if email != "a***@example.com" {
+		t.Fatalf("expected masked email, got %q", email)
+	}
+	if balance < 0 || balance > 100 {
+		t.Fatalf("expected balance in [0,100], got %f", balance)
+	}
+}
