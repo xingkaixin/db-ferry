@@ -364,7 +364,7 @@ func trimSQL(sqlText string) string {
 }
 
 func writeReport(result *Result, columns []database.ColumnMetadata, format, output string, stdout io.Writer) error {
-	var w io.Writer = stdout
+	w := stdout
 	if output != "" {
 		f, err := os.Create(output)
 		if err != nil {
