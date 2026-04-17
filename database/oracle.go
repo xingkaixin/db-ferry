@@ -20,10 +20,16 @@ var (
 	_ TargetDB = (*OracleDB)(nil)
 )
 
-func NewOracleDB(connectionString string) (*OracleDB, error) {
+func NewOracleDB(connectionString string, maxOpen, maxIdle int) (*OracleDB, error) {
 	db, err := sql.Open("oracle", connectionString)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open oracle connection: %w", err)
+	}
+	if maxOpen > 0 {
+		db.SetMaxOpenConns(maxOpen)
+	}
+	if maxIdle > 0 {
+		db.SetMaxIdleConns(maxIdle)
 	}
 
 	if err = db.Ping(); err != nil {

@@ -306,6 +306,71 @@ func TestValidateDatabaseConfig(t *testing.T) {
 	}
 }
 
+func TestResolveReplicaConfig(t *testing.T) {
+	primary := DatabaseConfig{
+		Name:     "prod",
+		Type:     DatabaseTypeMySQL,
+		Host:     "master.internal",
+		Port:     "3306",
+		Database: "db",
+		User:     "u",
+		Password: "p",
+		Replicas: []ReplicaConfig{
+			{Host: "replica1.internal", Port: "3307", Priority: 1},
+		},
+	}
+
+	resolved := primary.ResolveReplicaConfig(primary.Replicas[0])
+	if resolved.Host != "replica1.internal" {
+		t.Fatalf("expected host replica1.internal, got %s", resolved.Host)
+	}
+	if resolved.Port != "3307" {
+		t.Fatalf("expected port 3307, got %s", resolved.Port)
+	}
+	if resolved.User != "u" {
+		t.Fatalf("expected user u, got %s", resolved.User)
+	}
+	if resolved.Password != "p" {
+		t.Fatalf("expected password p, got %s", resolved.Password)
+	}
+	if resolved.Database != "db" {
+		t.Fatalf("expected database db, got %s", resolved.Database)
+	}
+	if len(resolved.Replicas) != 0 {
+		t.Fatalf("expected replicas to be cleared, got %v", resolved.Replicas)
+	}
+}
+
+func TestValidateDatabaseConfigWithReplicas(t *testing.T) {
+	valid := DatabaseConfig{
+		Type:     DatabaseTypeMySQL,
+		Host:     "h",
+		User:     "u",
+		Password: "p",
+		Database: "d",
+		Replicas: []ReplicaConfig{
+			{Host: "r1", Priority: 1},
+		},
+	}
+	if err := validateDatabaseConfig(&valid); err != nil {
+		t.Fatalf("expected valid config with replicas, got %v", err)
+	}
+
+	invalid := DatabaseConfig{
+		Type:     DatabaseTypeMySQL,
+		Host:     "h",
+		User:     "u",
+		Password: "p",
+		Database: "d",
+		Replicas: []ReplicaConfig{
+			{Host: ""},
+		},
+	}
+	if err := validateDatabaseConfig(&invalid); err == nil || !strings.Contains(err.Error(), "replica 1: host is required") {
+		t.Fatalf("expected replica host required error, got %v", err)
+	}
+}
+
 func TestEnsureDatabaseSupportsSourceAndTarget(t *testing.T) {
 	okDB := DatabaseConfig{Name: "src", Type: DatabaseTypeMySQL}
 	if err := ensureDatabaseSupportsSource(&okDB); err != nil {

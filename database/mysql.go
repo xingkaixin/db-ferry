@@ -20,10 +20,16 @@ var (
 	_ TargetDB = (*MySQLDB)(nil)
 )
 
-func NewMySQLDB(connectionString string) (*MySQLDB, error) {
+func NewMySQLDB(connectionString string, maxOpen, maxIdle int) (*MySQLDB, error) {
 	db, err := sql.Open("mysql", connectionString)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open mysql connection: %w", err)
+	}
+	if maxOpen > 0 {
+		db.SetMaxOpenConns(maxOpen)
+	}
+	if maxIdle > 0 {
+		db.SetMaxIdleConns(maxIdle)
 	}
 
 	if err = db.Ping(); err != nil {
