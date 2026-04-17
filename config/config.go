@@ -64,6 +64,13 @@ var supportedMaskRules = map[string]struct{}{
 	MaskRuleHash:          {},
 }
 
+// ReplicaConfig describes a read-only replica connection.
+type ReplicaConfig struct {
+	Host     string `toml:"host"`
+	Port     string `toml:"port,omitempty"`
+	Priority int    `toml:"priority,omitempty"`
+}
+
 // DatabaseConfig describes a named database connection definition.
 type DatabaseConfig struct {
 	Name string `toml:"name"`
@@ -76,6 +83,11 @@ type DatabaseConfig struct {
 	User     string `toml:"user,omitempty"`
 	Password string `toml:"password,omitempty"`
 	Path     string `toml:"path,omitempty"`
+
+	Replicas        []ReplicaConfig `toml:"replicas,omitempty"`
+	PoolMaxOpen     int             `toml:"pool_max_open,omitempty"`
+	PoolMaxIdle     int             `toml:"pool_max_idle,omitempty"`
+	ReplicaFallback bool            `toml:"replica_fallback,omitempty"`
 }
 
 // IndexColumn represents a column definition for index creation with order information.
@@ -433,6 +445,20 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// ResolveReplicaConfig returns a full DatabaseConfig for a replica by inheriting
+// missing fields from the primary configuration.
+func (dbCfg DatabaseConfig) ResolveReplicaConfig(r ReplicaConfig) DatabaseConfig {
+	resolved := dbCfg
+	resolved.Replicas = nil
+	if r.Host != "" {
+		resolved.Host = r.Host
+	}
+	if r.Port != "" {
+		resolved.Port = r.Port
+	}
+	return resolved
+}
+
 func validateDatabaseConfig(db *DatabaseConfig) error {
 	if db.Type == "" {
 		return fmt.Errorf("type is required for database")
@@ -496,6 +522,12 @@ func validateDatabaseConfig(db *DatabaseConfig) error {
 		}
 	default:
 		return fmt.Errorf("unsupported database type '%s'", db.Type)
+	}
+
+	for i, r := range db.Replicas {
+		if r.Host == "" {
+			return fmt.Errorf("replica %d: host is required", i+1)
+		}
 	}
 
 	return nil

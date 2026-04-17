@@ -20,10 +20,16 @@ var (
 	_ TargetDB = (*PostgresDB)(nil)
 )
 
-func NewPostgresDB(connectionString string) (*PostgresDB, error) {
+func NewPostgresDB(connectionString string, maxOpen, maxIdle int) (*PostgresDB, error) {
 	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open postgresql connection: %w", err)
+	}
+	if maxOpen > 0 {
+		db.SetMaxOpenConns(maxOpen)
+	}
+	if maxIdle > 0 {
+		db.SetMaxIdleConns(maxIdle)
 	}
 
 	if err = db.Ping(); err != nil {

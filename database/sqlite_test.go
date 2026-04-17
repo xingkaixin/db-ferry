@@ -9,7 +9,7 @@ import (
 
 func TestSQLiteBasicFlow(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
-	s, err := NewSQLiteDB(dbPath)
+	s, err := NewSQLiteDB(dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}
@@ -51,7 +51,7 @@ func TestSQLiteBasicFlow(t *testing.T) {
 
 func TestSQLiteEnsureTableAndUpsert(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
-	s, err := NewSQLiteDB(dbPath)
+	s, err := NewSQLiteDB(dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}
@@ -86,7 +86,7 @@ func TestSQLiteEnsureTableAndUpsert(t *testing.T) {
 
 func TestSQLiteGetTableColumns(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
-	s, err := NewSQLiteDB(dbPath)
+	s, err := NewSQLiteDB(dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}
@@ -117,7 +117,7 @@ func TestSQLiteGetTableColumns(t *testing.T) {
 
 func TestSQLiteCreateIndexesAndBuildIndexSQL(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
-	s, err := NewSQLiteDB(dbPath)
+	s, err := NewSQLiteDB(dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}
@@ -153,7 +153,7 @@ func TestSQLiteCreateIndexesAndBuildIndexSQL(t *testing.T) {
 
 func TestSQLiteQueryAndCountErrors(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
-	s, err := NewSQLiteDB(dbPath)
+	s, err := NewSQLiteDB(dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}
@@ -172,7 +172,7 @@ func TestSQLiteQueryAndCountErrors(t *testing.T) {
 
 func TestSQLiteExec(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
-	s, err := NewSQLiteDB(dbPath)
+	s, err := NewSQLiteDB(dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}
@@ -185,7 +185,7 @@ func TestSQLiteExec(t *testing.T) {
 
 func TestSQLiteGetTablesError(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
-	s, err := NewSQLiteDB(dbPath)
+	s, err := NewSQLiteDB(dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}
@@ -201,7 +201,7 @@ func TestSQLiteGetTablesError(t *testing.T) {
 
 func TestSQLiteGetTables(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
-	s, err := NewSQLiteDB(dbPath)
+	s, err := NewSQLiteDB(dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}
@@ -232,7 +232,7 @@ func TestSQLiteGetTables(t *testing.T) {
 func TestSQLiteNewDBError(t *testing.T) {
 	// Use a directory path where SQLite cannot create a database file.
 	dir := t.TempDir()
-	_, err := NewSQLiteDB(dir)
+	_, err := NewSQLiteDB(dir, 0, 0)
 	if err == nil {
 		t.Fatalf("expected error when opening directory as sqlite db")
 	}
@@ -247,7 +247,7 @@ func TestSQLiteCloseNilDB(t *testing.T) {
 
 func TestSQLiteEdgeCases(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sqlite.db")
-	s, err := NewSQLiteDB(dbPath)
+	s, err := NewSQLiteDB(dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("NewSQLiteDB() error = %v", err)
 	}

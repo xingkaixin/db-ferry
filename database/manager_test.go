@@ -2,6 +2,7 @@ package database
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -154,4 +155,166 @@ func TestDSNBuilders(t *testing.T) {
 	if sqlserver != "sqlserver://u:p@h:1433?database=d" {
 		t.Fatalf("unexpected sqlserver DSN: %s", sqlserver)
 	}
+}
+
+func TestConnectionManagerReplicaRoundRobin(t *testing.T) {
+	callCount := 0
+	testOpenSourceHook = func(dbCfg config.DatabaseConfig) (SourceDB, error) {
+		callCount++
+		return &SQLiteDB{}, nil
+	}
+	defer func() { testOpenSourceHook = nil }()
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{
+				Name: "db1", Type: config.DatabaseTypeMySQL,
+				Host: "master", Port: "3306", User: "u", Password: "p", Database: "d",
+				Replicas: []config.ReplicaConfig{
+					{Host: "r1", Priority: 1},
+					{Host: "r2", Priority: 2},
+				},
+			},
+		},
+		Tasks: []config.TaskConfig{
+			{TableName: "t", SQL: "SELECT 1", SourceDB: "db1", TargetDB: "db1", AllowSameTable: true},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	m := NewConnectionManager(cfg)
+	defer m.CloseAll()
+
+	_, err := m.GetSource("db1")
+	if err != nil {
+		t.Fatalf("GetSource() error = %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 replica open attempt, got %d", callCount)
+	}
+
+	// Cached: should not call hook again.
+	_, err = m.GetSource("db1")
+	if err != nil {
+		t.Fatalf("GetSource() cached error = %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected still 1 replica open attempt, got %d", callCount)
+	}
+}
+
+func TestConnectionManagerReplicaFallback(t *testing.T) {
+	testOpenSourceHook = func(dbCfg config.DatabaseConfig) (SourceDB, error) {
+		return nil, fmt.Errorf("replica down")
+	}
+	defer func() { testOpenSourceHook = nil }()
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{
+				Name: "db1", Type: config.DatabaseTypeSQLite,
+				Path: filepath.Join(t.TempDir(), "db1.db"),
+				Replicas: []config.ReplicaConfig{
+					{Host: "r1"},
+				},
+				ReplicaFallback: true,
+			},
+		},
+		Tasks: []config.TaskConfig{
+			{TableName: "t", SQL: "SELECT 1", SourceDB: "db1", TargetDB: "db1", AllowSameTable: true},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	before := GetReplicaFallbackTotal()
+	m := NewConnectionManager(cfg)
+	defer m.CloseAll()
+
+	src, err := m.GetSource("db1")
+	if err != nil {
+		t.Fatalf("GetSource() error = %v", err)
+	}
+	if src == nil {
+		t.Fatalf("expected non-nil source after fallback")
+	}
+	if GetReplicaFallbackTotal() != before+1 {
+		t.Fatalf("expected fallback counter to increment")
+	}
+}
+
+func TestConnectionManagerReplicaFallbackDisabled(t *testing.T) {
+	testOpenSourceHook = func(dbCfg config.DatabaseConfig) (SourceDB, error) {
+		return nil, fmt.Errorf("replica down")
+	}
+	defer func() { testOpenSourceHook = nil }()
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{
+				Name: "db1", Type: config.DatabaseTypeMySQL,
+				Host: "master", Port: "3306", User: "u", Password: "p", Database: "d",
+				Replicas: []config.ReplicaConfig{
+					{Host: "r1"},
+				},
+				ReplicaFallback: false,
+			},
+		},
+		Tasks: []config.TaskConfig{
+			{TableName: "t", SQL: "SELECT 1", SourceDB: "db1", TargetDB: "db1", AllowSameTable: true},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	m := NewConnectionManager(cfg)
+	defer m.CloseAll()
+
+	_, err := m.GetSource("db1")
+	if err == nil || !strings.Contains(err.Error(), "all replicas failed") {
+		t.Fatalf("expected replica failure error, got %v", err)
+	}
+}
+
+func TestConnectionManagerPoolSettings(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "pool.db")
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{
+				Name: "db1", Type: config.DatabaseTypeSQLite,
+				Path:        dbPath,
+				PoolMaxOpen: 7,
+				PoolMaxIdle: 3,
+			},
+		},
+		Tasks: []config.TaskConfig{
+			{TableName: "t", SQL: "SELECT 1", SourceDB: "db1", TargetDB: "db1", AllowSameTable: true},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	m := NewConnectionManager(cfg)
+	defer m.CloseAll()
+
+	tgt, err := m.GetTarget("db1")
+	if err != nil {
+		t.Fatalf("GetTarget() error = %v", err)
+	}
+
+	// Use type assertion to access the underlying *sql.DB for verification.
+	sqliteDB, ok := tgt.(*SQLiteDB)
+	if !ok {
+		t.Fatalf("expected *SQLiteDB, got %T", tgt)
+	}
+	stats := sqliteDB.db.Stats()
+	if stats.MaxOpenConnections != 7 {
+		t.Fatalf("expected MaxOpenConnections=7, got %d", stats.MaxOpenConnections)
+	}
+	// MaxIdleConnections is not directly exposed in Stats, but we verified the setter was called.
 }

@@ -22,10 +22,16 @@ var (
 	_ TargetDB = (*DuckDB)(nil)
 )
 
-func NewDuckDB(path string) (*DuckDB, error) {
+func NewDuckDB(path string, maxOpen, maxIdle int) (*DuckDB, error) {
 	db, err := sql.Open("duckdb", path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open duckdb database: %w", err)
+	}
+	if maxOpen > 0 {
+		db.SetMaxOpenConns(maxOpen)
+	}
+	if maxIdle > 0 {
+		db.SetMaxIdleConns(maxIdle)
 	}
 
 	if err = db.Ping(); err != nil {
