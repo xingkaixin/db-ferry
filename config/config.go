@@ -129,22 +129,32 @@ type MaskingConfig struct {
 	Value  string    `toml:"value,omitempty"`
 }
 
+// AdaptiveBatchConfig configures dynamic batch-size tuning for a task.
+type AdaptiveBatchConfig struct {
+	Enabled         bool `toml:"enabled"`
+	MinSize         int  `toml:"min_size"`
+	MaxSize         int  `toml:"max_size"`
+	TargetLatencyMs int  `toml:"target_latency_ms"`
+	MemoryLimitMB   int  `toml:"memory_limit_mb"`
+}
+
 // TaskConfig defines a single migration job.
 type TaskConfig struct {
-	TableName          string   `toml:"table_name"`
-	SQL                string   `toml:"sql"`
-	SourceDB           string   `toml:"source_db"`
-	TargetDB           string   `toml:"target_db"`
-	Ignore             bool     `toml:"ignore"`
-	Mode               string   `toml:"mode"`
-	BatchSize          int      `toml:"batch_size"`
-	MaxRetries         int      `toml:"max_retries"`
-	Validate           string   `toml:"validate"`
-	ValidateSampleSize int      `toml:"validate_sample_size"`
-	MergeKeys          []string `toml:"merge_keys"`
-	ResumeKey          string   `toml:"resume_key"`
-	ResumeFrom         string   `toml:"resume_from"`
-	StateFile          string   `toml:"state_file"`
+	TableName          string              `toml:"table_name"`
+	SQL                string              `toml:"sql"`
+	SourceDB           string              `toml:"source_db"`
+	TargetDB           string              `toml:"target_db"`
+	Ignore             bool                `toml:"ignore"`
+	Mode               string              `toml:"mode"`
+	BatchSize          int                 `toml:"batch_size"`
+	MaxRetries         int                 `toml:"max_retries"`
+	Validate           string              `toml:"validate"`
+	ValidateSampleSize int                 `toml:"validate_sample_size"`
+	MergeKeys          []string            `toml:"merge_keys"`
+	ResumeKey          string              `toml:"resume_key"`
+	ResumeFrom         string              `toml:"resume_from"`
+	StateFile          string              `toml:"state_file"`
+	AdaptiveBatch      AdaptiveBatchConfig `toml:"adaptive_batch"`
 	// AllowSameTable 明确允许同库执行并覆盖目标表（存在数据丢失风险）。
 	AllowSameTable bool `toml:"allow_same_table"`
 	// SkipCreateTable 跳过目标表的 drop/create 操作。
@@ -315,6 +325,21 @@ func (c *Config) Validate() error {
 		}
 		if task.MaxRetries < 0 {
 			return fmt.Errorf("task %d: max_retries must be >= 0", i+1)
+		}
+
+		if task.AdaptiveBatch.Enabled {
+			if task.AdaptiveBatch.MinSize <= 0 {
+				return fmt.Errorf("task %d: adaptive_batch.min_size must be > 0 when enabled", i+1)
+			}
+			if task.AdaptiveBatch.MaxSize < task.AdaptiveBatch.MinSize {
+				return fmt.Errorf("task %d: adaptive_batch.max_size must be >= min_size", i+1)
+			}
+			if task.AdaptiveBatch.TargetLatencyMs <= 0 {
+				return fmt.Errorf("task %d: adaptive_batch.target_latency_ms must be > 0 when enabled", i+1)
+			}
+			if task.AdaptiveBatch.MemoryLimitMB <= 0 {
+				return fmt.Errorf("task %d: adaptive_batch.memory_limit_mb must be > 0 when enabled", i+1)
+			}
 		}
 
 		task.DLQFormat = strings.ToLower(strings.TrimSpace(task.DLQFormat))

@@ -420,6 +420,46 @@ func TestValidateTaskFieldErrors(t *testing.T) {
 		}
 	})
 
+	t.Run("adaptive batch min_size must be > 0 when enabled", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].AdaptiveBatch = AdaptiveBatchConfig{Enabled: true, MinSize: 0, MaxSize: 100, TargetLatencyMs: 100, MemoryLimitMB: 10}
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "adaptive_batch.min_size must be > 0") {
+			t.Fatalf("expected adaptive batch min_size error, got %v", err)
+		}
+	})
+
+	t.Run("adaptive batch max_size must be >= min_size", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].AdaptiveBatch = AdaptiveBatchConfig{Enabled: true, MinSize: 200, MaxSize: 100, TargetLatencyMs: 100, MemoryLimitMB: 10}
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "adaptive_batch.max_size must be >= min_size") {
+			t.Fatalf("expected adaptive batch max_size error, got %v", err)
+		}
+	})
+
+	t.Run("adaptive batch target_latency_ms must be > 0", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].AdaptiveBatch = AdaptiveBatchConfig{Enabled: true, MinSize: 100, MaxSize: 1000, TargetLatencyMs: 0, MemoryLimitMB: 10}
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "adaptive_batch.target_latency_ms must be > 0") {
+			t.Fatalf("expected adaptive batch target_latency_ms error, got %v", err)
+		}
+	})
+
+	t.Run("adaptive batch memory_limit_mb must be > 0", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].AdaptiveBatch = AdaptiveBatchConfig{Enabled: true, MinSize: 100, MaxSize: 1000, TargetLatencyMs: 100, MemoryLimitMB: 0}
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "adaptive_batch.memory_limit_mb must be > 0") {
+			t.Fatalf("expected adaptive batch memory_limit_mb error, got %v", err)
+		}
+	})
+
+	t.Run("adaptive batch valid config passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].AdaptiveBatch = AdaptiveBatchConfig{Enabled: true, MinSize: 100, MaxSize: 1000, TargetLatencyMs: 100, MemoryLimitMB: 10}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected adaptive batch config to pass, got %v", err)
+		}
+	})
+
 	t.Run("invalid dlq format", func(t *testing.T) {
 		cfg := baseConfig(t)
 		cfg.Tasks[0].DLQFormat = "xml"
