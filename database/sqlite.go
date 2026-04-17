@@ -175,7 +175,7 @@ func (s *SQLiteDB) InsertData(tableName string, columns []ColumnMetadata, values
 	placeholders := make([]string, len(columns))
 	columnNames := make([]string, len(columns))
 	for i, col := range columns {
-		placeholders[i] = "?"
+		placeholders[i] = buildSQLitePlaceholder(i, col.Transform)
 		columnNames[i] = col.Name
 	}
 
@@ -223,7 +223,7 @@ func (s *SQLiteDB) UpsertData(tableName string, columns []ColumnMetadata, values
 	columnNames := make([]string, len(columns))
 	updateAssignments := make([]string, 0, len(columns))
 	for i, col := range columns {
-		placeholders[i] = "?"
+		placeholders[i] = buildSQLitePlaceholder(i, col.Transform)
 		columnNames[i] = col.Name
 		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
 			updateAssignments = append(updateAssignments, fmt.Sprintf(`"%s"=excluded."%s"`, col.Name, col.Name))
@@ -341,6 +341,13 @@ func (s *SQLiteDB) buildIndexSQL(tableName string, index config.IndexConfig) (st
 	}
 
 	return sql, nil
+}
+
+func buildSQLitePlaceholder(_ int, transform string) string {
+	if transform != "" {
+		return strings.ReplaceAll(transform, "?", "?")
+	}
+	return "?"
 }
 
 func (s *SQLiteDB) mapToSQLiteType(column ColumnMetadata) string {

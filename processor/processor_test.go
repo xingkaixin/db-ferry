@@ -933,6 +933,149 @@ func TestProcessTaskMissingResumeColumnFailsAtQuery(t *testing.T) {
 	}
 }
 
+func TestApplyColumnMapping(t *testing.T) {
+	sourceCols := []database.ColumnMetadata{
+		{Name: "id", DatabaseType: "INT"},
+		{Name: "name", DatabaseType: "TEXT"},
+		{Name: "email", DatabaseType: "TEXT"},
+	}
+
+	t.Run("empty mapping returns source columns and sequential indices", func(t *testing.T) {
+		cols, indices, err := applyColumnMapping(sourceCols, nil)
+		if err != nil {
+			t.Fatalf("applyColumnMapping() error = %v", err)
+		}
+		if len(cols) != 3 || len(indices) != 3 {
+			t.Fatalf("expected 3 cols/indices, got %d/%d", len(cols), len(indices))
+		}
+		if indices[0] != 0 || indices[1] != 1 || indices[2] != 2 {
+			t.Fatalf("unexpected indices: %v", indices)
+		}
+	})
+
+	t.Run("mapping remaps names and order", func(t *testing.T) {
+		mappings := []config.ColumnMapping{
+			{Source: "email", Target: "mail"},
+			{Source: "id", Target: "user_id"},
+		}
+		cols, indices, err := applyColumnMapping(sourceCols, mappings)
+		if err != nil {
+			t.Fatalf("applyColumnMapping() error = %v", err)
+		}
+		if len(cols) != 2 {
+			t.Fatalf("expected 2 cols, got %d", len(cols))
+		}
+		if cols[0].Name != "mail" || cols[1].Name != "user_id" {
+			t.Fatalf("unexpected target names: %v", []string{cols[0].Name, cols[1].Name})
+		}
+		if indices[0] != 2 || indices[1] != 0 {
+			t.Fatalf("unexpected indices: %v", indices)
+		}
+	})
+
+	t.Run("transform is copied to metadata", func(t *testing.T) {
+		mappings := []config.ColumnMapping{
+			{Source: "name", Target: "user_name", Transform: "UPPER(?)"},
+		}
+		cols, _, err := applyColumnMapping(sourceCols, mappings)
+		if err != nil {
+			t.Fatalf("applyColumnMapping() error = %v", err)
+		}
+		if cols[0].Transform != "UPPER(?)" {
+			t.Fatalf("expected transform UPPER(?), got %q", cols[0].Transform)
+		}
+	})
+
+	t.Run("missing source column errors", func(t *testing.T) {
+		mappings := []config.ColumnMapping{{Source: "missing", Target: "x"}}
+		_, _, err := applyColumnMapping(sourceCols, mappings)
+		if err == nil || !strings.Contains(err.Error(), "not found in query result") {
+			t.Fatalf("expected missing source error, got %v", err)
+		}
+	})
+}
+
+func TestRemapRow(t *testing.T) {
+	t.Run("sequential indices return same slice", func(t *testing.T) {
+		row := []any{1, "a", true}
+		got := remapRow(row, []int{0, 1, 2})
+		if len(got) != 3 || got[0] != 1 || got[1] != "a" || got[2] != true {
+			t.Fatalf("unexpected remapped row: %v", got)
+		}
+	})
+
+	t.Run("reordered indices remap correctly", func(t *testing.T) {
+		row := []any{1, "a", true}
+		got := remapRow(row, []int{2, 0})
+		if len(got) != 2 || got[0] != true || got[1] != 1 {
+			t.Fatalf("unexpected remapped row: %v", got)
+		}
+	})
+}
+
+func TestProcessTaskWithColumnMappingAndTransform(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'alice'), (2, 'bob')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Columns: []config.ColumnMapping{
+					{Source: "name", Target: "user_name"},
+					{Source: "id", Target: "user_id"},
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("target row count = %d, want 2", count)
+	}
+
+	var name string
+	var uid int
+	if err := targetDB.QueryRow(`SELECT user_name, user_id FROM "dst_users" WHERE user_id = 1`).Scan(&name, &uid); err != nil {
+		t.Fatalf("query mapped columns error = %v", err)
+	}
+	if name != "alice" || uid != 1 {
+		t.Fatalf("unexpected mapped data: name=%q, id=%d", name, uid)
+	}
+}
+
 func TestProcessAllTasksSkipsIgnored(t *testing.T) {
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.db")

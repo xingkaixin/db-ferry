@@ -75,6 +75,28 @@ func TestOracleInsertUpsertAndCount(t *testing.T) {
 		t.Fatalf("UpsertData() error = %v", err)
 	}
 
+	transformCols := []ColumnMetadata{
+		{Name: "id", DatabaseType: "INT", Transform: "? + 1"},
+		{Name: "name", DatabaseType: "VARCHAR", Transform: "CONCAT(?, '!')"},
+	}
+	insertTransformSQL := `INSERT INTO "USERS" ("ID", "NAME") VALUES (:1 + 1, CONCAT(:2, '!'))`
+	mock.ExpectBegin()
+	transformPrep := mock.ExpectPrepare(regexp.QuoteMeta(insertTransformSQL))
+	transformPrep.ExpectExec().WithArgs(1, "a").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	if err := o.InsertData("users", transformCols, [][]any{{1, "a"}}); err != nil {
+		t.Fatalf("InsertData() with transform error = %v", err)
+	}
+
+	upsertTransformSQL := `MERGE INTO "USERS" t USING (SELECT :1 + 1 "ID", CONCAT(:2, '!') "NAME" FROM dual) s ON (t."ID" = s."ID") WHEN MATCHED THEN UPDATE SET t."NAME" = s."NAME" WHEN NOT MATCHED THEN INSERT ("ID", "NAME") VALUES (s."ID", s."NAME")`
+	mock.ExpectBegin()
+	upsertTransformPrep := mock.ExpectPrepare(regexp.QuoteMeta(upsertTransformSQL))
+	upsertTransformPrep.ExpectExec().WithArgs(1, "a").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	if err := o.UpsertData("users", transformCols, [][]any{{1, "a"}}, []string{"id"}); err != nil {
+		t.Fatalf("UpsertData() with transform error = %v", err)
+	}
+
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM (SELECT * FROM users) count_query`)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 	cnt, err := o.GetRowCount("SELECT * FROM users")

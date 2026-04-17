@@ -66,6 +66,28 @@ func TestSQLServerInsertUpsertAndCount(t *testing.T) {
 		t.Fatalf("UpsertData() error = %v", err)
 	}
 
+	transformCols := []ColumnMetadata{
+		{Name: "id", DatabaseType: "INT", Transform: "? + 1"},
+		{Name: "name", DatabaseType: "VARCHAR", Transform: "CONCAT(?, '!')"},
+	}
+	insertTransformSQL := `INSERT INTO [users] ([id], [name]) VALUES (@p1 + 1, CONCAT(@p2, '!'))`
+	mock.ExpectBegin()
+	transformPrep := mock.ExpectPrepare(regexp.QuoteMeta(insertTransformSQL))
+	transformPrep.ExpectExec().WithArgs(1, "a").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	if err := s.InsertData("users", transformCols, [][]any{{1, "a"}}); err != nil {
+		t.Fatalf("InsertData() with transform error = %v", err)
+	}
+
+	upsertTransformSQL := `MERGE INTO [users] AS target USING (VALUES (@p1 + 1, CONCAT(@p2, '!'))) AS source ([id], [name]) ON target.[id]=source.[id] WHEN MATCHED THEN UPDATE SET target.[name]=source.[name] WHEN NOT MATCHED THEN INSERT ([id], [name]) VALUES (source.[id], source.[name]);`
+	mock.ExpectBegin()
+	upsertTransformPrep := mock.ExpectPrepare(regexp.QuoteMeta(upsertTransformSQL))
+	upsertTransformPrep.ExpectExec().WithArgs(1, "a").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	if err := s.UpsertData("users", transformCols, [][]any{{1, "a"}}, []string{"id"}); err != nil {
+		t.Fatalf("UpsertData() with transform error = %v", err)
+	}
+
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM (SELECT * FROM users) AS count_query`)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 	cnt, err := s.GetRowCount("SELECT * FROM users")

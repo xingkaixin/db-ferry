@@ -9,6 +9,7 @@ import (
 // ColumnMetadata captures column information extracted from a query result set.
 type ColumnMetadata struct {
 	Name                string
+	Transform           string
 	DatabaseType        string
 	Length              int64
 	LengthValid         bool

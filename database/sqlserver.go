@@ -171,9 +171,10 @@ func (s *SQLServerDB) InsertData(tableName string, columns []ColumnMetadata, val
 	}
 	defer tx.Rollback()
 
-	placeholders := buildSQLServerPlaceholders(len(columns))
+	placeholders := make([]string, len(columns))
 	columnNames := make([]string, len(columns))
 	for i, col := range columns {
+		placeholders[i] = buildSQLServerPlaceholder(i, col.Transform)
 		columnNames[i] = s.quoteIdentifier(col.Name)
 	}
 
@@ -214,13 +215,14 @@ func (s *SQLServerDB) UpsertData(tableName string, columns []ColumnMetadata, val
 		keySet[strings.ToLower(key)] = struct{}{}
 	}
 
-	placeholders := buildSQLServerPlaceholders(len(columns))
+	placeholders := make([]string, len(columns))
 	columnNames := make([]string, len(columns))
 	sourceColumnNames := make([]string, len(columns))
 	updateAssignments := make([]string, 0, len(columns))
 	sourceRefs := make([]string, len(columns))
 	for i, col := range columns {
 		quoted := s.quoteIdentifier(col.Name)
+		placeholders[i] = buildSQLServerPlaceholder(i, col.Transform)
 		columnNames[i] = quoted
 		sourceColumnNames[i] = quoted
 		sourceRefs[i] = fmt.Sprintf("source.%s", quoted)
@@ -400,10 +402,18 @@ func (s *SQLServerDB) objectNameLiteral(name string) string {
 	return strings.ReplaceAll(quoted, "'", "''")
 }
 
+func buildSQLServerPlaceholder(index int, transform string) string {
+	placeholder := fmt.Sprintf("@p%d", index+1)
+	if transform != "" {
+		return strings.ReplaceAll(transform, "?", placeholder)
+	}
+	return placeholder
+}
+
 func buildSQLServerPlaceholders(count int) []string {
 	placeholders := make([]string, count)
 	for i := 0; i < count; i++ {
-		placeholders[i] = fmt.Sprintf("@p%d", i+1)
+		placeholders[i] = buildSQLServerPlaceholder(i, "")
 	}
 	return placeholders
 }
