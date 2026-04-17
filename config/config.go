@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -37,6 +38,14 @@ const (
 const (
 	DLQFormatJSONL = "jsonl"
 	DLQFormatCSV   = "csv"
+)
+
+// Supported SSL modes.
+const (
+	SSLModeDisable    = "disable"
+	SSLModeRequire    = "require"
+	SSLModeVerifyCA   = "verify-ca"
+	SSLModeVerifyFull = "verify-full"
 )
 
 // Supported masking rules.
@@ -88,6 +97,15 @@ type DatabaseConfig struct {
 	PoolMaxOpen     int             `toml:"pool_max_open,omitempty"`
 	PoolMaxIdle     int             `toml:"pool_max_idle,omitempty"`
 	ReplicaFallback bool            `toml:"replica_fallback,omitempty"`
+
+	// TLS/SSL configuration
+	SSLMode     string `toml:"ssl_mode,omitempty"`
+	SSLCert     string `toml:"ssl_cert,omitempty"`
+	SSLKey      string `toml:"ssl_key,omitempty"`
+	SSLRootCert string `toml:"ssl_root_cert,omitempty"`
+
+	// Encryption for file-based databases (e.g., SQLCipher)
+	EncryptionKey string `toml:"encryption_key,omitempty"`
 }
 
 // IndexColumn represents a column definition for index creation with order information.
@@ -551,6 +569,44 @@ func validateDatabaseConfig(db *DatabaseConfig) error {
 		if r.Host == "" {
 			return fmt.Errorf("replica %d: host is required", i+1)
 		}
+	}
+
+	if err := validateTLSConfig(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateTLSConfig(db *DatabaseConfig) error {
+	db.SSLMode = strings.ToLower(strings.TrimSpace(db.SSLMode))
+	if db.SSLMode == "" {
+		db.SSLMode = SSLModeDisable
+	}
+	switch db.SSLMode {
+	case SSLModeDisable, SSLModeRequire, SSLModeVerifyCA, SSLModeVerifyFull:
+	default:
+		return fmt.Errorf("unsupported ssl_mode '%s' (must be %q, %q, %q, or %q)", db.SSLMode, SSLModeDisable, SSLModeRequire, SSLModeVerifyCA, SSLModeVerifyFull)
+	}
+
+	checkFile := func(path, name string) error {
+		if path == "" {
+			return nil
+		}
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("%s file not found: %w", name, err)
+		}
+		return nil
+	}
+
+	if err := checkFile(db.SSLCert, "ssl_cert"); err != nil {
+		return err
+	}
+	if err := checkFile(db.SSLKey, "ssl_key"); err != nil {
+		return err
+	}
+	if err := checkFile(db.SSLRootCert, "ssl_root_cert"); err != nil {
+		return err
 	}
 
 	return nil

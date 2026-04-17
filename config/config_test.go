@@ -371,6 +371,46 @@ func TestValidateDatabaseConfigWithReplicas(t *testing.T) {
 	}
 }
 
+func TestValidateTLSConfig(t *testing.T) {
+	t.Run("invalid ssl_mode rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Databases[0].SSLMode = "invalid"
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "unsupported ssl_mode") {
+			t.Fatalf("expected unsupported ssl_mode error, got %v", err)
+		}
+	})
+
+	t.Run("missing certificate file fails", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Databases[0].SSLMode = SSLModeRequire
+		cfg.Databases[0].SSLCert = "/nonexistent/cert.pem"
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "ssl_cert file not found") {
+			t.Fatalf("expected ssl_cert file not found error, got %v", err)
+		}
+	})
+
+	t.Run("valid tls config passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Databases[0].SSLMode = SSLModeRequire
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected valid TLS config to pass, got %v", err)
+		}
+	})
+
+	t.Run("ssl_mode defaults to disable", func(t *testing.T) {
+		cfg := baseConfig(t)
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		db, _ := cfg.GetDatabase("src")
+		if db.SSLMode != SSLModeDisable {
+			t.Fatalf("expected default ssl_mode disable, got %s", db.SSLMode)
+		}
+	})
+}
+
 func TestEnsureDatabaseSupportsSourceAndTarget(t *testing.T) {
 	okDB := DatabaseConfig{Name: "src", Type: DatabaseTypeMySQL}
 	if err := ensureDatabaseSupportsSource(&okDB); err != nil {

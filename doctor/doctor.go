@@ -109,7 +109,20 @@ func (d *Doctor) runChecks() []CheckResult {
 		return results
 	}
 
-	// 3. Database connections
+	// 3. TLS configuration
+	for _, dbCfg := range cfg.Databases {
+		if dbCfg.SSLMode == config.SSLModeDisable || dbCfg.SSLMode == "" {
+			continue
+		}
+		err := checkTLS(dbCfg)
+		results = append(results, CheckResult{
+			Name:    fmt.Sprintf("TLS configuration: %s", dbCfg.Name),
+			Status:  statusFromErr(err),
+			Message: errMsg(err),
+		})
+	}
+
+	// 4. Database connections
 	manager := database.NewConnectionManager(cfg)
 	defer manager.CloseAll()
 
@@ -145,7 +158,7 @@ func (d *Doctor) runChecks() []CheckResult {
 			continue
 		}
 
-		// 4. Source permission / SQL syntax (combined execution)
+		// 5. Source permission / SQL syntax (combined execution)
 		sourceOK := connected[task.SourceDB]
 		var sourceErr error
 		if sourceOK {
@@ -163,7 +176,7 @@ func (d *Doctor) runChecks() []CheckResult {
 			Message: errMsg(sourceErr),
 		})
 
-		// 5. Column existence
+		// 6. Column existence
 		if sourceOK && sourceErr == nil {
 			err := checkColumns(manager, task)
 			results = append(results, CheckResult{
@@ -179,7 +192,7 @@ func (d *Doctor) runChecks() []CheckResult {
 			})
 		}
 
-		// 6. Target permission
+		// 7. Target permission
 		if connected[task.TargetDB] && !targetPermissionChecked[task.TargetDB] {
 			targetPermissionChecked[task.TargetDB] = true
 			err := checkTargetPermissions(manager, task, cfg)
@@ -200,7 +213,7 @@ func (d *Doctor) runChecks() []CheckResult {
 			})
 		}
 
-		// 7. Same-database migration
+		// 8. Same-database migration
 		if task.SourceDB == task.TargetDB {
 			results = append(results, CheckResult{
 				Name:   fmt.Sprintf("Same-database migration: %s", task.TableName),
@@ -210,7 +223,7 @@ func (d *Doctor) runChecks() []CheckResult {
 			})
 		}
 
-		// 8. Disk space for file-based DBs
+		// 9. Disk space for file-based DBs
 		targetDBCfg, _ := cfg.GetDatabase(task.TargetDB)
 		if connected[task.TargetDB] && (targetDBCfg.Type == config.DatabaseTypeSQLite || targetDBCfg.Type == config.DatabaseTypeDuckDB) {
 			if !diskSpaceChecked[task.TargetDB] {
@@ -382,6 +395,16 @@ func checkTargetPermissions(manager *database.ConnectionManager, task config.Tas
 	}
 
 	_ = targetDB.Exec(dropTableSQL(targetDBCfg.Type, tempTable))
+	return nil
+}
+
+func checkTLS(dbCfg config.DatabaseConfig) error {
+	if err := database.ValidateTLSConfig(dbCfg); err != nil {
+		return err
+	}
+	if err := database.TestTLSHandshake(dbCfg); err != nil {
+		return err
+	}
 	return nil
 }
 
