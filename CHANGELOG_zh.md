@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0] - 2026-04-17
+- 新增 DAG 任务调度，支持无依赖任务的并行执行
+- 新增死信队列（DLQ），捕获并持久化多次重试后仍失败的批次数据
+- 新增任务级 `pre_sql`/`post_sql` 钩子，支持在任务执行前后执行自定义 SQL
+- 新增交互式配置向导（`db-ferry config init`），逐步引导选择引擎、填写连接信息、选择迁移表
+- 新增 SQLite 作为源数据库引擎
+- 新增 SQL Server 作为源数据库引擎
+- 新增行级校验能力：`checksum` 与 `sample` 两种校验模式，与现有的 `row_count` 行数校验互补
+- 新增项目落地页（暗色主题、国际化、Cloudflare Web Analytics、AI Skills 集成）
+- 修复 processor 在 rebase 过程中引入的回归问题
+- 修复 Windows 构建下 `MapToDuckDBType` 的可见性问题
+- 修复 dry-run 在开启 `skip_create_table` 时遗漏索引 DDL 的问题
+
 ## [0.6.0] - 2026-03-11
 - 新增 npm 二进制分发骨架：主包 `db-ferry` + 平台包 `db-ferry-{os}-{arch}`，支持 `npm install -g db-ferry` 与 `npx db-ferry`
 - 构建工作流改为按平台产出独立二进制，并在 tag 发布时自动发布 npm 包

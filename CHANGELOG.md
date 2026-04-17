@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0] - 2026-04-17
+- Added DAG-based scheduling for parallel execution of independent tasks
+- Added dead-letter queue (DLQ) for failed batch inserts, capturing rows that fail after all retry attempts
+- Added task-level `pre_sql`/`post_sql` hooks to run custom SQL before and after a task executes
+- Added interactive configuration wizard (`db-ferry config init`) with step-by-step prompts for engine, connection, and table setup
+- Added SQLite as a source database engine
+- Added SQL Server as a source database engine
+- Added row-level validation: `checksum` and `sample` validation modes alongside the existing `row_count` validator
+- Added a project landing page (dark theme, i18n, Cloudflare Web Analytics, AI Skills integration)
+- Fixed processor regressions introduced during rebase operations
+- Fixed `MapToDuckDBType` visibility on Windows builds
+- Fixed dry-run output to include index DDL when `skip_create_table` is enabled
+
 ## [0.6.0] - 2026-03-11
 - Added npm binary distribution scaffolding: a main `db-ferry` package plus platform packages named `db-ferry-{os}-{arch}`, supporting both `npm install -g db-ferry` and `npx db-ferry`
 - Updated the build workflow to produce per-platform binaries and publish npm packages automatically on tag releases

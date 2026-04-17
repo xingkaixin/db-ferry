@@ -80,13 +80,15 @@
 | mode | string | 否 | `"replace"` | 写入模式: replace/append/merge/upsert |
 | batch_size | int | 否 | 1000 | 每批插入行数，0 表示无限制 |
 | max_retries | int | 否 | 0 | 批量插入失败重试次数 |
-| validate | string | 否 | `"none"` | 迁移后校验: none/row_count |
+| validate | string | 否 | `"none"` | 迁移后校验: none/row_count/checksum/sample |
 | merge_keys | []string | 条件必填 | — | merge/upsert 的匹配键（mode=merge 时必填） |
 | resume_key | string | 否 | — | 增量续传的字段名 |
 | resume_from | string | 否 | — | 增量起点 SQL 字面量（不含该值） |
 | state_file | string | 否 | — | 断点状态文件路径（JSON 格式） |
 | allow_same_table | bool | 否 | false | 允许 source_db == target_db |
 | skip_create_table | bool | 否 | false | 跳过目标表 DROP/CREATE |
+| pre_sql | string | 否 | — | 任务执行前在目标库执行的自定义 SQL |
+| post_sql | string | 否 | — | 任务执行后在目标库执行的自定义 SQL |
 | dlq_path | string | 否 | — | 死信队列文件路径，用于隔离插入失败的行 |
 | dlq_format | string | 否 | `"jsonl"` | 死信队列格式: jsonl/csv |
 
@@ -127,7 +129,7 @@ columns 格式支持排序指定：
 | resume_key 需搭配 state_file 或 resume_from | 有 resume_key 就必须有其中之一 |
 | batch_size >= 0 | 不能为负数 |
 | max_retries >= 0 | 不能为负数 |
-| 验证模式只能是 none 或 row_count | validate 字段值有限制 |
+| 验证模式只能是 none/row_count/checksum/sample | validate 字段值有限制 |
 | dlq_format 只能是 jsonl 或 csv | 默认为 jsonl |
 | 索引 name 全局唯一 | 跨表也不能重复 |
 | 索引 columns 不能空 | 至少一列 |

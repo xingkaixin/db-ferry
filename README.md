@@ -11,7 +11,11 @@
 - Automatic table DDL generation based on source column metadata
 - Batch inserts with transactional guarantees and efficient memory usage
 - Incremental/resumable migrations via resume key and state file
-- Task-level write modes (append/replace/merge), batch size, retries, and row-count validation
+- Task-level write modes (append/replace/merge), batch size, retries, and row-level validation (row_count / checksum / sample)
+- Dead-letter queue (DLQ) for persisting failed rows after all retry attempts
+- DAG-based scheduling for parallel execution of independent tasks
+- Task-level `pre_sql` / `post_sql` hooks for running custom SQL before and after execution
+- Interactive configuration wizard (`db-ferry config init`) with step-by-step prompts
 - Progress bars for each task, including row counts when available
 
  ## Installation
@@ -128,13 +132,15 @@
 - `mode`: `replace` (default), `append`, or `merge` (`upsert` is accepted)
 - `batch_size`: number of rows per insert batch (default: 1000)
 - `max_retries`: retry count for failed batch inserts (default: 0)
-- `validate`: `row_count` to compare inserted rows vs target table count (skipped for merge mode)
+- `validate`: `row_count` (compare inserted rows vs target table count), `checksum` (hash-based row comparison), or `sample` (random sampling validation); skipped for merge mode
 - `merge_keys`: columns used to match rows for merge/upsert (requires unique constraint on target)
 - `resume_key`: column used for incremental/resume filtering
  - `resume_from`: SQL literal for the resume filter (exclusive)
  - `state_file`: JSON file to persist the last resume value per task
  - `allow_same_table`: allow migrations where `source_db` equals `target_db` (acknowledges table drop risk)
  - `skip_create_table`: skip dropping/creating the target table (use when the table already exists)
+ - `pre_sql`: custom SQL to execute against the target database before the task begins
+ - `post_sql`: custom SQL to execute against the target database after the task completes
  - `dlq_path`: dead-letter queue file path; failed rows are written here instead of failing the entire task
  - `dlq_format`: DLQ output format, `jsonl` (default) or `csv`
  - `[[tasks.indexes]]`: optional index creation statements applied after data load (partial indexes via `where` are supported on SQLite targets)
@@ -142,7 +148,7 @@
  ## Usage
 
  ```bash
- # Generate task.toml from the built-in sample in the current directory
+ # Generate task.toml interactively (wizard) or from the built-in sample
  db-ferry config init
 
  # Run with default task.toml
@@ -160,7 +166,7 @@
 
  ### Command line options
 
- - `config init`: Create `task.toml` in the current directory from the built-in sample; fails if the file already exists
+ - `config init`: Interactive configuration wizard that creates `task.toml` in the current directory; walks through engine selection, connection details, and table choices. Falls back to the built-in sample if non-interactive. Fails if the file already exists
  - `-config`: Path to the TOML configuration file (default: `task.toml`)
  - `-v`: Enable verbose logging with file/line prefixes
  - `-version`: Print build version and exit
