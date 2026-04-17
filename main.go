@@ -8,11 +8,13 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"db-ferry/config"
 	"db-ferry/database"
+	"db-ferry/diff"
 	"db-ferry/doctor"
 	"db-ferry/processor"
 )
@@ -22,6 +24,7 @@ const (
 	configCommandName  = "config"
 	configInitCommand  = "init"
 	doctorCommandName  = "doctor"
+	diffCommandName    = "diff"
 	historyCommandName = "history"
 )
 
@@ -112,6 +115,8 @@ func runCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
 		return runDoctorCommand(args[1:], tomlPath, stdout)
 	case historyCommandName:
 		return runHistoryCommand(args[1:], tomlPath, stdout)
+	case diffCommandName:
+		return runDiffCommand(args[1:], tomlPath, stdout)
 	default:
 		return 2, fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -155,7 +160,6 @@ func runHistoryCommand(args []string, tomlPath string, stdout io.Writer) (int, e
 		return 1, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Collect unique target database aliases from non-ignored tasks.
 	targetAliases := make(map[string]struct{})
 	for _, task := range cfg.Tasks {
 		if !task.Ignore {
@@ -184,7 +188,6 @@ func runHistoryCommand(args []string, tomlPath string, stdout io.Writer) (int, e
 		recorder := database.NewHistoryRecorder(dbCfg.Type, cfg.History.Table())
 		records, err := recorder.List(targetDB, *limit)
 		if err != nil {
-			// Table may not exist yet; skip silently.
 			continue
 		}
 		allRecords = append(allRecords, records...)
@@ -217,6 +220,57 @@ func runHistoryCommand(args []string, tomlPath string, stdout io.Writer) (int, e
 			started, rec.TaskName, rec.Mode, rec.RowsProcessed, rec.RowsFailed, result, rec.SourceDB, rec.TargetDB)
 	}
 	_ = w.Flush()
+	return 0, nil
+}
+
+func runDiffCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
+	flags := flag.NewFlagSet("diff", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+
+	taskName := flags.String("task", "", "Task table_name to diff (required)")
+	output := flags.String("output", "", "Output file path (default: stdout)")
+	format := flags.String("format", "json", "Output format: json, csv, html")
+	where := flags.String("where", "", "Optional WHERE clause applied to both sides")
+	limit := flags.Int("limit", 0, "Max rows to compare on each side (0 = unlimited)")
+	keys := flags.String("keys", "", "Comma-separated diff keys (overrides merge_keys)")
+
+	if err := flags.Parse(args); err != nil {
+		return 2, err
+	}
+
+	if len(flags.Args()) > 0 {
+		return 2, fmt.Errorf("diff does not accept positional arguments")
+	}
+
+	if *taskName == "" {
+		return 2, fmt.Errorf("-task is required")
+	}
+
+	cfg, err := config.LoadConfig(tomlPath)
+	if err != nil {
+		return 1, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	var keyList []string
+	if *keys != "" {
+		keyList = strings.Split(*keys, ",")
+		for i := range keyList {
+			keyList[i] = strings.TrimSpace(keyList[i])
+		}
+	}
+
+	opts := diff.Options{
+		TaskName: *taskName,
+		Output:   *output,
+		Format:   *format,
+		Where:    *where,
+		Limit:    *limit,
+		Keys:     keyList,
+	}
+
+	if err := diff.Run(cfg, opts, stdout); err != nil {
+		return 1, err
+	}
 	return 0, nil
 }
 

@@ -85,7 +85,7 @@ func validateChecksum(sourceDB, targetDB queryer, sourceDBType, targetDBType str
 		return fmt.Errorf("checksum validation failed computing source checksum: %w", err)
 	}
 
-	targetWrappedSQL := fmt.Sprintf("SELECT * FROM %s", quoteTableName(task.TableName, targetDBType))
+	targetWrappedSQL := fmt.Sprintf("SELECT * FROM %s", QuoteTableName(task.TableName, targetDBType))
 	targetChecksum, err := computeChecksum(targetDB, targetDBType, columns, targetWrappedSQL)
 	if err != nil {
 		return fmt.Errorf("checksum validation failed computing target checksum: %w", err)
@@ -239,7 +239,7 @@ func validateSample(sourceDB, targetDB queryer, sourceDBType, targetDBType strin
 		}
 		// Normalize []byte to string for textual columns to match processor behavior
 		for i, v := range values {
-			if b, ok := v.([]byte); ok && isTextualColumn(columns[i]) {
+			if b, ok := v.([]byte); ok && IsTextualColumn(columns[i]) {
 				values[i] = string(b)
 			}
 		}
@@ -258,7 +258,7 @@ func validateSample(sourceDB, targetDB queryer, sourceDBType, targetDBType strin
 
 		var diffCols []string
 		for i := range columns {
-			if !compareValues(values[i], targetRow[i]) {
+			if !CompareValues(values[i], targetRow[i]) {
 				diffCols = append(diffCols, columns[i].Name)
 			}
 		}
@@ -319,7 +319,7 @@ func findTargetRow(targetDB queryer, dbType, tableName string, columns []ColumnM
 	}
 	// Normalize textual bytes to string
 	for i, v := range row {
-		if b, ok := v.([]byte); ok && isTextualColumn(columns[i]) {
+		if b, ok := v.([]byte); ok && IsTextualColumn(columns[i]) {
 			row[i] = string(b)
 		}
 	}
@@ -327,7 +327,7 @@ func findTargetRow(targetDB queryer, dbType, tableName string, columns []ColumnM
 }
 
 func buildMatchSQL(dbType, tableName string, columns []ColumnMetadata, values []any) string {
-	quotedTable := quoteTableName(tableName, dbType)
+	quotedTable := QuoteTableName(tableName, dbType)
 	var conditions []string
 	for i, col := range columns {
 		quotedCol := QuoteIdentifier(dbType, col.Name)
@@ -374,7 +374,7 @@ func quoteSQLString(value string) string {
 	return "'" + escaped + "'"
 }
 
-func compareValues(a, b any) bool {
+func CompareValues(a, b any) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -425,12 +425,12 @@ func formatRowPreview(values []any, columns []ColumnMetadata) string {
 	return "{" + strings.Join(parts, ", ") + "}"
 }
 
-func quoteTableName(tableName, dbType string) string {
+func QuoteTableName(tableName, dbType string) string {
 	return QuoteIdentifier(dbType, tableName)
 }
 
-// isTextualColumn mirrors processor.isTextualColumn.
-func isTextualColumn(column ColumnMetadata) bool {
+// IsTextualColumn mirrors processor.isTextualColumn.
+func IsTextualColumn(column ColumnMetadata) bool {
 	typeName := strings.ToUpper(column.DatabaseType)
 	if typeName == "" {
 		typeName = strings.ToUpper(column.GoType)
