@@ -191,7 +191,7 @@ jobs:
 
       - name: Publish platform packages
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ""
         run: |
           node scripts/publish-npm-package.mjs npm/db-ferry-linux-x64
           node scripts/publish-npm-package.mjs npm/db-ferry-linux-arm64
@@ -201,5 +201,5 @@ jobs:
 
       - name: Publish main package
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ""
         run: node scripts/publish-npm-package.mjs .

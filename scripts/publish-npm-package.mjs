@@ -27,7 +27,7 @@ try {
   if (publishTarget !== ".") {
     args.push(publishTarget);
   }
-  args.push("--access", "public");
+  args.push("--access", "public", "--provenance");
 
   const child = spawn("npm", args, { stdio: "inherit" });
   const exitCode = await new Promise((resolve, reject) => {
