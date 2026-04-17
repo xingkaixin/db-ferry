@@ -28,7 +28,7 @@ type Processor struct {
 	historyMu        sync.Mutex
 	version          string
 	sem              chan struct{}
-}
+		}
 
 var sleepFn = time.Sleep
 
@@ -38,7 +38,7 @@ type dlqWriter struct {
 	file      *os.File
 	csvWriter *csv.Writer
 	mu        sync.Mutex
-}
+		}
 
 func newDLQWriter(path, format string, columns []database.ColumnMetadata) (*dlqWriter, error) {
 	dir := filepath.Dir(path)
@@ -81,7 +81,7 @@ func newDLQWriter(path, format string, columns []database.ColumnMetadata) (*dlqW
 	}
 
 	return w, nil
-}
+		}
 
 func (w *dlqWriter) write(row []any, errMsg, taskKey, tableName string) error {
 	w.mu.Lock()
@@ -123,7 +123,7 @@ func (w *dlqWriter) write(row []any, errMsg, taskKey, tableName string) error {
 		return err
 	}
 	return nil
-}
+		}
 
 func (w *dlqWriter) close() error {
 	if w == nil {
@@ -133,11 +133,11 @@ func (w *dlqWriter) close() error {
 		w.csvWriter.Flush()
 	}
 	return w.file.Close()
-}
+		}
 
 func NewProcessor(manager *database.ConnectionManager, cfg *config.Config) *Processor {
 	return NewProcessorWithVersion(manager, cfg, "dev")
-}
+		}
 
 // NewProcessorWithVersion creates a processor with an explicit version string.
 func NewProcessorWithVersion(manager *database.ConnectionManager, cfg *config.Config, version string) *Processor {
@@ -153,7 +153,7 @@ func NewProcessorWithVersion(manager *database.ConnectionManager, cfg *config.Co
 		version:          version,
 		sem:              make(chan struct{}, maxConcurrent),
 	}
-}
+		}
 
 func (p *Processor) ProcessAllTasks() error {
 	tasks, _, deps, children, inDegree := p.buildTaskGraph()
@@ -224,7 +224,7 @@ func (p *Processor) ProcessAllTasks() error {
 	}
 
 	return firstErr
-}
+		}
 
 type taskScheduler struct {
 	p             *Processor
@@ -239,14 +239,14 @@ type taskScheduler struct {
 	resultsMu     sync.Mutex
 	remainingDeps []int
 	depMu         sync.Mutex
-}
+		}
 
 func (s *taskScheduler) setResult(idx int, err error) {
 	s.resultsMu.Lock()
 	s.results[idx] = err
 	close(s.resultReady[idx])
 	s.resultsMu.Unlock()
-}
+		}
 
 func (s *taskScheduler) waitResult(depIdx int) error {
 	<-s.resultReady[depIdx]
@@ -254,7 +254,7 @@ func (s *taskScheduler) waitResult(depIdx int) error {
 	err := s.results[depIdx]
 	s.resultsMu.Unlock()
 	return err
-}
+		}
 
 func (s *taskScheduler) runTask(idx int) {
 	defer func() {
@@ -312,7 +312,7 @@ func (s *taskScheduler) runTask(idx int) {
 		log.Printf("Successfully completed task: %s", task.TableName)
 	}
 	s.setResult(idx, err)
-}
+		}
 
 func (s *taskScheduler) onTaskComplete(idx int) {
 	s.depMu.Lock()
@@ -326,7 +326,7 @@ func (s *taskScheduler) onTaskComplete(idx int) {
 		}
 	}
 	s.depMu.Unlock()
-}
+		}
 
 func (p *Processor) buildTaskGraph() (tasks []config.TaskConfig, taskIndex map[string][]int, deps map[int][]int, children map[int][]int, inDegree []int) {
 	taskIndex = make(map[string][]int)
@@ -357,11 +357,11 @@ func (p *Processor) buildTaskGraph() (tasks []config.TaskConfig, taskIndex map[s
 	}
 
 	return
-}
+		}
 
 func (p *Processor) processTask(task config.TaskConfig) error {
 	return p.processTaskInternal(task, false)
-}
+		}
 
 func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (err error) {
 	if task.Shard.Enabled {
@@ -666,7 +666,7 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		log.Printf("Successfully processed %d rows for table %s", processedRows, task.TableName)
 	}
 	return nil
-}
+		}
 
 
 func (p *Processor) getHistoryRecorder(targetDBAlias string) *database.HistoryRecorder {
@@ -688,7 +688,7 @@ func (p *Processor) getHistoryRecorder(targetDBAlias string) *database.HistoryRe
 	r := database.NewHistoryRecorder(dbCfg.Type, p.config.History.Table())
 	p.historyRecorders[targetDBAlias] = r
 	return r
-}
+		}
 func (p *Processor) migrateData(task config.TaskConfig, sourceDB database.SourceDB, targetDB database.TargetDB,
 	columnsMeta []database.ColumnMetadata, mergeKeys []string, dlqw *dlqWriter,
 	querySQL, countSQL string, silent bool) (processedRows int, totalDLQ int, err error) {
@@ -788,7 +788,7 @@ func (p *Processor) migrateData(task config.TaskConfig, sourceDB database.Source
 	}
 
 	return processedRows, totalDLQ, nil
-}
+		}
 
 func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) error {
 	log.Printf("Executing sharded query for table %s with %d shards", task.TableName, task.Shard.Shards)
@@ -976,7 +976,7 @@ func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) erro
 		log.Printf("Successfully processed %d rows for table %s", totalProcessed, task.TableName)
 	}
 	return nil
-}
+		}
 
 func (p *Processor) processTaskInternalWithSQL(task config.TaskConfig, silent bool, querySQL, countSQL string) error {
 	log.Printf("Executing query for table %s", task.TableName)
@@ -1101,7 +1101,7 @@ func (p *Processor) processTaskInternalWithSQL(task config.TaskConfig, silent bo
 		log.Printf("Successfully processed %d rows for table %s", processedRows, task.TableName)
 	}
 	return nil
-}
+		}
 
 func splitRange(minVal, maxVal any, shards int) ([][2]any, error) {
 	if shards <= 1 {
@@ -1180,7 +1180,7 @@ func splitRange(minVal, maxVal any, shards int) ([][2]any, error) {
 	default:
 		return nil, fmt.Errorf("unsupported resume_key type for sharding: %T", minVal)
 	}
-}
+		}
 
 func buildShardTaskSQL(baseSQL, resumeKey, resumeLiteral string, lower, upper any, isLast bool) (string, string) {
 	normalized := trimSQL(baseSQL)
@@ -1203,7 +1203,7 @@ func buildShardTaskSQL(baseSQL, resumeKey, resumeLiteral string, lower, upper an
 
 	dataSQL := fmt.Sprintf("%s ORDER BY %s", wrapped, resumeKey)
 	return dataSQL, wrapped
-}
+		}
 
 func (p *Processor) resolveResumeLiteral(task config.TaskConfig) (string, error) {
 	if task.ResumeKey == "" {
@@ -1223,7 +1223,7 @@ func (p *Processor) resolveResumeLiteral(task config.TaskConfig) (string, error)
 	}
 
 	return task.ResumeFrom, nil
-}
+		}
 
 func (p *Processor) updateResumeState(task config.TaskConfig, value any) error {
 	if task.ResumeKey == "" || task.StateFile == "" {
@@ -1248,7 +1248,7 @@ func (p *Processor) updateResumeState(task config.TaskConfig, value any) error {
 	}
 
 	return nil
-}
+		}
 
 func (p *Processor) insertBatchWithRetry(targetDB database.TargetDB, task config.TaskConfig, columns []database.ColumnMetadata, batch [][]any, mergeKeys []string, dlqw *dlqWriter) (int, error) {
 	var lastErr error
@@ -1296,7 +1296,7 @@ func (p *Processor) insertBatchWithRetry(targetDB database.TargetDB, task config
 		log.Printf("Wrote %d/%d rows to DLQ for table %s", dlqCount, len(batch), task.TableName)
 	}
 	return dlqCount, nil
-}
+		}
 
 func execHookSQLs(targetDB database.TargetDB, sqls []string) error {
 	for _, sqlText := range sqls {
@@ -1305,7 +1305,7 @@ func execHookSQLs(targetDB database.TargetDB, sqls []string) error {
 		}
 	}
 	return nil
-}
+		}
 
 func buildTaskSQL(baseSQL, resumeKey, resumeLiteral string) (string, string) {
 	normalized := trimSQL(baseSQL)
@@ -1320,7 +1320,7 @@ func buildTaskSQL(baseSQL, resumeKey, resumeLiteral string) (string, string) {
 
 	dataSQL := fmt.Sprintf("%s ORDER BY %s", wrapped, resumeKey)
 	return dataSQL, wrapped
-}
+		}
 
 func trimSQL(sqlText string) string {
 	trimmed := strings.TrimSpace(sqlText)
@@ -1328,7 +1328,7 @@ func trimSQL(sqlText string) string {
 		trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, ";"))
 	}
 	return trimmed
-}
+		}
 
 func formatResumeLiteral(value any) (string, error) {
 	switch v := value.(type) {
@@ -1370,12 +1370,12 @@ func formatResumeLiteral(value any) (string, error) {
 	default:
 		return quoteSQLString(fmt.Sprint(value)), nil
 	}
-}
+		}
 
 func quoteSQLString(value string) string {
 	escaped := strings.ReplaceAll(value, "'", "''")
 	return "'" + escaped + "'"
-}
+		}
 
 func findColumnIndex(columns []database.ColumnMetadata, name string) int {
 	for i, col := range columns {
@@ -1384,7 +1384,7 @@ func findColumnIndex(columns []database.ColumnMetadata, name string) int {
 		}
 	}
 	return -1
-}
+		}
 
 func resolveMergeKeys(columns []database.ColumnMetadata, mergeKeys []string) ([]string, error) {
 	if len(mergeKeys) == 0 {
@@ -1407,7 +1407,7 @@ func resolveMergeKeys(columns []database.ColumnMetadata, mergeKeys []string) ([]
 	}
 
 	return resolved, nil
-}
+		}
 
 func applyColumnMapping(sourceCols []database.ColumnMetadata, mappings []config.ColumnMapping) ([]database.ColumnMetadata, []int, error) {
 	if len(mappings) == 0 {
@@ -1446,7 +1446,7 @@ func applyColumnMapping(sourceCols []database.ColumnMetadata, mappings []config.
 	}
 
 	return resultCols, indices, nil
-}
+		}
 
 func remapRow(row []any, indices []int) []any {
 	if len(indices) == len(row) {
@@ -1467,7 +1467,7 @@ func remapRow(row []any, indices []int) []any {
 		result[i] = row[idx]
 	}
 	return result
-}
+		}
 
 func (p *Processor) extractColumnMetadata(rows *sql.Rows) ([]database.ColumnMetadata, error) {
 	columnTypes, err := rows.ColumnTypes()
@@ -1508,7 +1508,7 @@ func (p *Processor) extractColumnMetadata(rows *sql.Rows) ([]database.ColumnMeta
 	}
 
 	return metadata, nil
-}
+		}
 
 func (p *Processor) scanRow(rows *sql.Rows, columns []database.ColumnMetadata) ([]any, error) {
 	columnCount := len(columns)
@@ -1540,7 +1540,7 @@ func (p *Processor) scanRow(rows *sql.Rows, columns []database.ColumnMetadata) (
 	}
 
 	return values, nil
-}
+		}
 
 func isTextualColumn(column database.ColumnMetadata) bool {
 	typeName := strings.ToUpper(column.DatabaseType)
@@ -1554,11 +1554,11 @@ func isTextualColumn(column database.ColumnMetadata) bool {
 	default:
 		return false
 	}
-}
+		}
 
 func (p *Processor) Close() error {
 	return p.manager.CloseAll()
-}
+		}
 
 func (p *Processor) PlanAllTasks(w io.Writer) error {
 	totalTasks := 0
@@ -1580,7 +1580,7 @@ func (p *Processor) PlanAllTasks(w io.Writer) error {
 	}
 
 	return nil
-}
+		}
 
 func (p *Processor) planTask(w io.Writer, taskIndex, totalTasks, overallIndex int, task config.TaskConfig) error {
 	sourceDB, err := p.manager.GetSource(task.SourceDB)
@@ -1678,7 +1678,7 @@ func (p *Processor) planTask(w io.Writer, taskIndex, totalTasks, overallIndex in
 	}
 
 	return nil
-}
+		}
 
 func formatNumber(n int) string {
 	if n < 1000 {
@@ -1692,4 +1692,4 @@ func formatNumber(n int) string {
 	}
 	parts = append([]string{s}, parts...)
 	return strings.Join(parts, ",")
-}
+		}
