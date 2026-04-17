@@ -609,6 +609,247 @@ func TestInitConfigTemplateWriteError(t *testing.T) {
 	}
 }
 
+func TestRunHistoryCommand(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "db.sqlite")
+	cfgPath := filepath.Join(dir, "task.toml")
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open db error = %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create table error = %v", err)
+	}
+
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + dbPath + `"`,
+		"",
+		"[[databases]]",
+		`name = "dst"`,
+		`type = "sqlite"`,
+		`path = "` + filepath.Join(dir, "target.db") + `"`,
+		"",
+		"[[tasks]]",
+		`table_name = "users_copy"`,
+		`sql = "SELECT id FROM users"`,
+		`source_db = "src"`,
+		`target_db = "dst"`,
+		`mode = "replace"`,
+		"",
+		"[history]",
+		`enabled = true`,
+		`table_name = "db_ferry_migrations"`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	// Run migration first so history is recorded.
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, runErr := run([]string{"-config", cfgPath}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run migration error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run migration code = %d, want 0", code)
+	}
+
+	out.Reset()
+	errOut.Reset()
+	code, runErr = run([]string{"-config", cfgPath, "history"}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run history error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run history code = %d, want 0", code)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "users_copy") {
+		t.Fatalf("expected history output to contain task name, got:\n%s", got)
+	}
+	if !strings.Contains(got, "replace") {
+		t.Fatalf("expected history output to contain mode, got:\n%s", got)
+	}
+	if !strings.Contains(got, "src") {
+		t.Fatalf("expected history output to contain source_db, got:\n%s", got)
+	}
+	if !strings.Contains(got, "dst") {
+		t.Fatalf("expected history output to contain target_db, got:\n%s", got)
+	}
+}
+
+func TestRunHistoryCommandNoTargets(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "task.toml")
+
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + filepath.Join(dir, "src.db") + `"`,
+		"",
+		"[[tasks]]",
+		`table_name = "users"`,
+		`sql = "SELECT 1"`,
+		`source_db = "src"`,
+		`target_db = "src"`,
+		`allow_same_table = true`,
+		`ignore = true`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, runErr := run([]string{"-config", cfgPath, "history"}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run history error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run history code = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "No target databases found.") {
+		t.Fatalf("expected no targets message, got:\n%s", out.String())
+	}
+}
+
+func TestRunHistoryCommandNoHistory(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "db.sqlite")
+	cfgPath := filepath.Join(dir, "task.toml")
+
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + dbPath + `"`,
+		"",
+		"[[databases]]",
+		`name = "dst"`,
+		`type = "sqlite"`,
+		`path = "` + filepath.Join(dir, "target.db") + `"`,
+		"",
+		"[[tasks]]",
+		`table_name = "users"`,
+		`sql = "SELECT 1"`,
+		`source_db = "src"`,
+		`target_db = "dst"`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, runErr := run([]string{"-config", cfgPath, "history"}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run history error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run history code = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "No migration history found.") {
+		t.Fatalf("expected no history message, got:\n%s", out.String())
+	}
+}
+
+func TestRunHistoryRejectsExtraArgs(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"history", "extra"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for extra args")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "unknown history argument") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunHistoryLimitFlag(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "db.sqlite")
+	cfgPath := filepath.Join(dir, "task.toml")
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open db error = %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create table error = %v", err)
+	}
+
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + dbPath + `"`,
+		"",
+		"[[databases]]",
+		`name = "dst"`,
+		`type = "sqlite"`,
+		`path = "` + filepath.Join(dir, "target.db") + `"`,
+		"",
+		"[[tasks]]",
+		`table_name = "users_copy"`,
+		`sql = "SELECT id FROM users"`,
+		`source_db = "src"`,
+		`target_db = "dst"`,
+		`mode = "replace"`,
+		"",
+		"[history]",
+		`enabled = true`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	_, _ = run([]string{"-config", cfgPath}, &out, &errOut)
+
+	out.Reset()
+	code, runErr := run([]string{"-config", cfgPath, "history", "-n", "1"}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run history error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run history code = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "users_copy") {
+		t.Fatalf("expected history output, got:\n%s", out.String())
+	}
+}
+
 func chdirForTest(t *testing.T, dir string) {
 	t.Helper()
 

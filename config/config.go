@@ -162,11 +162,26 @@ type TaskConfig struct {
 	DependsOn []string        `toml:"depends_on"`
 }
 
+// HistoryConfig controls migration audit logging.
+type HistoryConfig struct {
+	Enabled   bool   `toml:"enabled"`
+	TableName string `toml:"table_name"`
+}
+
+// Table returns the configured history table name or the default.
+func (h *HistoryConfig) Table() string {
+	if h.TableName == "" {
+		return "db_ferry_migrations"
+	}
+	return h.TableName
+}
+
 // Config is the top-level configuration structure decoded from task.toml.
 type Config struct {
 	Databases          []DatabaseConfig `toml:"databases"`
 	Tasks              []TaskConfig     `toml:"tasks"`
 	MaxConcurrentTasks int              `toml:"max_concurrent_tasks"`
+	History            HistoryConfig    `toml:"history"`
 
 	databaseMap map[string]DatabaseConfig
 }
