@@ -357,6 +357,8 @@ func (m *failingBatchTarget) InsertData(_ string, _ []database.ColumnMetadata, v
 	return nil
 }
 
+func (m *failingBatchTarget) Exec(string) error { return nil }
+
 func TestInsertBatchWithRetryDLQ(t *testing.T) {
 	origSleep := sleepFn
 	sleepFn = func(time.Duration) {}
