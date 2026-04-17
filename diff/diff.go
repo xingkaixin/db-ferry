@@ -47,10 +47,10 @@ type Summary struct {
 
 // Result is the complete diff output.
 type Result struct {
-	SourceOnly []Row          `json:"source_only"`
-	TargetOnly []Row          `json:"target_only"`
-	Mismatch   []MismatchRow  `json:"mismatch"`
-	Summary    Summary        `json:"summary"`
+	SourceOnly []Row         `json:"source_only"`
+	TargetOnly []Row         `json:"target_only"`
+	Mismatch   []MismatchRow `json:"mismatch"`
+	Summary    Summary       `json:"summary"`
 }
 
 // Run executes the diff command for a single task.
