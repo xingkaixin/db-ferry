@@ -175,9 +175,9 @@ func TestCompareValues(t *testing.T) {
 		{1, 2, false},
 	}
 	for _, tc := range cases {
-		got := compareValues(tc.a, tc.b)
+		got := CompareValues(tc.a, tc.b)
 		if got != tc.want {
-			t.Errorf("compareValues(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			t.Errorf("CompareValues(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
 		}
 	}
 }
@@ -207,8 +207,8 @@ func TestFormatRowPreview(t *testing.T) {
 }
 
 func TestQuoteTableName(t *testing.T) {
-	if got := quoteTableName("users", config.DatabaseTypeMySQL); got != "`users`" {
-		t.Errorf("quoteTableName() = %s", got)
+	if got := QuoteTableName("users", config.DatabaseTypeMySQL); got != "`users`" {
+		t.Errorf("QuoteTableName() = %s", got)
 	}
 }
 
@@ -224,13 +224,13 @@ func TestIsTextualColumn(t *testing.T) {
 		{"INT", false},
 	}
 	for _, tc := range cases {
-		got := isTextualColumn(ColumnMetadata{DatabaseType: tc.typeName})
+		got := IsTextualColumn(ColumnMetadata{DatabaseType: tc.typeName})
 		if got != tc.want {
-			t.Errorf("isTextualColumn(%s) = %v, want %v", tc.typeName, got, tc.want)
+			t.Errorf("IsTextualColumn(%s) = %v, want %v", tc.typeName, got, tc.want)
 		}
 	}
 	// fallback to GoType
-	if !isTextualColumn(ColumnMetadata{DatabaseType: "", GoType: "string"}) {
+	if !IsTextualColumn(ColumnMetadata{DatabaseType: "", GoType: "string"}) {
 		t.Error("expected GoType fallback to match string")
 	}
 }
