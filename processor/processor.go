@@ -258,14 +258,8 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 		log.Printf("Successfully executed all pre_sql hooks for table %s", task.TableName)
 	}
 
-	validateMode := task.Validate
-	if validateMode == config.TaskValidateRowCount && task.Mode == config.TaskModeMerge {
-		log.Printf("Row count validation skipped for merge mode on table %s", task.TableName)
-		validateMode = config.TaskValidateNone
-	}
-
 	targetCountBefore := 0
-	if validateMode == config.TaskValidateRowCount || validateMode == config.TaskValidateChecksum || validateMode == config.TaskValidateSample {
+	if task.Validate == config.TaskValidateRowCount || task.Validate == config.TaskValidateChecksum || task.Validate == config.TaskValidateSample {
 		count, err := targetDB.GetTableRowCount(task.TableName)
 		if err != nil {
 			return fmt.Errorf("failed to get target row count before insert: %w", err)
@@ -376,7 +370,6 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 	}
 
 	validationTask := task
-	validationTask.Validate = validateMode
 	reportedProcessedRows := processedRows - totalDLQ
 	if reportedProcessedRows < 0 {
 		reportedProcessedRows = 0
