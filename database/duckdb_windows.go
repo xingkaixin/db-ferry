@@ -50,6 +50,10 @@ func (d *DuckDB) UpsertData(tableName string, columns []ColumnMetadata, values [
 	return fmt.Errorf("duckdb is not supported on windows builds")
 }
 
+func (d *DuckDB) GetTables() ([]string, error) {
+	return nil, fmt.Errorf("duckdb is not supported on windows builds")
+}
+
 func (d *DuckDB) GetTableRowCount(tableName string) (int, error) {
 	return 0, fmt.Errorf("duckdb is not supported on windows builds")
 }
