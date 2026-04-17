@@ -172,7 +172,7 @@ func (m *MySQLDB) InsertData(tableName string, columns []ColumnMetadata, values 
 	placeholders := make([]string, len(columns))
 	columnNames := make([]string, len(columns))
 	for i, col := range columns {
-		placeholders[i] = "?"
+		placeholders[i] = buildMySQLPlaceholder(i, col.Transform)
 		columnNames[i] = m.quoteIdentifier(col.Name)
 	}
 
@@ -217,7 +217,7 @@ func (m *MySQLDB) UpsertData(tableName string, columns []ColumnMetadata, values 
 	columnNames := make([]string, len(columns))
 	updateAssignments := make([]string, 0, len(columns))
 	for i, col := range columns {
-		placeholders[i] = "?"
+		placeholders[i] = buildMySQLPlaceholder(i, col.Transform)
 		columnNames[i] = m.quoteIdentifier(col.Name)
 		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
 			updateAssignments = append(updateAssignments, fmt.Sprintf("%s=VALUES(%s)", m.quoteIdentifier(col.Name), m.quoteIdentifier(col.Name)))
@@ -371,6 +371,13 @@ func MapToMySQLType(column ColumnMetadata) string {
 	default:
 		return "TEXT"
 	}
+}
+
+func buildMySQLPlaceholder(_ int, transform string) string {
+	if transform != "" {
+		return strings.ReplaceAll(transform, "?", "?")
+	}
+	return "?"
 }
 
 func (m *MySQLDB) quoteIdentifier(name string) string {

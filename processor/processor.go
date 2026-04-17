@@ -410,17 +410,22 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 	}
 	defer rows.Close()
 
-	columnsMeta, err := p.extractColumnMetadata(rows)
+	sourceColumnsMeta, err := p.extractColumnMetadata(rows)
 	if err != nil {
 		return fmt.Errorf("failed to extract column metadata: %w", err)
 	}
 
 	resumeIndex := -1
 	if task.ResumeKey != "" {
-		resumeIndex = findColumnIndex(columnsMeta, task.ResumeKey)
+		resumeIndex = findColumnIndex(sourceColumnsMeta, task.ResumeKey)
 		if resumeIndex < 0 {
 			return fmt.Errorf("resume_key '%s' not found in query columns for table %s", task.ResumeKey, task.TableName)
 		}
+	}
+
+	columnsMeta, colIndices, err := applyColumnMapping(sourceColumnsMeta, task.Columns)
+	if err != nil {
+		return fmt.Errorf("failed to apply column mapping for table %s: %w", task.TableName, err)
 	}
 
 	mergeKeys, err := resolveMergeKeys(columnsMeta, task.MergeKeys)
@@ -529,7 +534,7 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 	}
 
 	for rows.Next() {
-		row, err := p.scanRow(rows, columnsMeta)
+		row, err := p.scanRow(rows, sourceColumnsMeta)
 		if err != nil {
 			return fmt.Errorf("failed to scan row: %w", err)
 		}
@@ -540,7 +545,7 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 			lastResumeValue = row[resumeIndex]
 		}
 
-		batch = append(batch, row)
+		batch = append(batch, remapRow(row, colIndices))
 		processedRows++
 
 		if progress != nil {
@@ -870,6 +875,66 @@ func resolveMergeKeys(columns []database.ColumnMetadata, mergeKeys []string) ([]
 	return resolved, nil
 }
 
+func applyColumnMapping(sourceCols []database.ColumnMetadata, mappings []config.ColumnMapping) ([]database.ColumnMetadata, []int, error) {
+	if len(mappings) == 0 {
+		indices := make([]int, len(sourceCols))
+		for i := range sourceCols {
+			indices[i] = i
+		}
+		return sourceCols, indices, nil
+	}
+
+	sourceIndex := make(map[string]int, len(sourceCols))
+	for i, col := range sourceCols {
+		sourceIndex[strings.ToLower(col.Name)] = i
+	}
+
+	resultCols := make([]database.ColumnMetadata, len(mappings))
+	indices := make([]int, len(mappings))
+	seen := make(map[string]struct{})
+
+	for i, m := range mappings {
+		idx, ok := sourceIndex[strings.ToLower(m.Source)]
+		if !ok {
+			return nil, nil, fmt.Errorf("column mapping source '%s' not found in query result", m.Source)
+		}
+		lowerTarget := strings.ToLower(m.Target)
+		if _, exists := seen[lowerTarget]; exists {
+			return nil, nil, fmt.Errorf("duplicate target column '%s' in column mapping", m.Target)
+		}
+		seen[lowerTarget] = struct{}{}
+
+		col := sourceCols[idx]
+		col.Name = m.Target
+		col.Transform = m.Transform
+		resultCols[i] = col
+		indices[i] = idx
+	}
+
+	return resultCols, indices, nil
+}
+
+func remapRow(row []any, indices []int) []any {
+	if len(indices) == len(row) {
+		sequential := true
+		for i, idx := range indices {
+			if idx != i {
+				sequential = false
+				break
+			}
+		}
+		if sequential {
+			return row
+		}
+	}
+
+	result := make([]any, len(indices))
+	for i, idx := range indices {
+		result[i] = row[idx]
+	}
+	return result
+}
+
 func (p *Processor) extractColumnMetadata(rows *sql.Rows) ([]database.ColumnMetadata, error) {
 	columnTypes, err := rows.ColumnTypes()
 	if err != nil {
@@ -1007,16 +1072,21 @@ func (p *Processor) planTask(w io.Writer, taskIndex, totalTasks, overallIndex in
 	}
 	defer rows.Close()
 
-	columnsMeta, err := p.extractColumnMetadata(rows)
+	sourceColumnsMeta, err := p.extractColumnMetadata(rows)
 	if err != nil {
 		return fmt.Errorf("failed to extract column metadata: %w", err)
 	}
 
 	if task.ResumeKey != "" {
-		resumeIndex := findColumnIndex(columnsMeta, task.ResumeKey)
+		resumeIndex := findColumnIndex(sourceColumnsMeta, task.ResumeKey)
 		if resumeIndex < 0 {
 			return fmt.Errorf("resume_key '%s' not found in query columns for table %s", task.ResumeKey, task.TableName)
 		}
+	}
+
+	columnsMeta, _, err := applyColumnMapping(sourceColumnsMeta, task.Columns)
+	if err != nil {
+		return fmt.Errorf("failed to apply column mapping for table %s: %w", task.TableName, err)
 	}
 
 	if _, err := resolveMergeKeys(columnsMeta, task.MergeKeys); err != nil {

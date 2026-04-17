@@ -171,7 +171,7 @@ func (d *DuckDB) InsertData(tableName string, columns []ColumnMetadata, values [
 	placeholders := make([]string, len(columns))
 	columnNames := make([]string, len(columns))
 	for i, col := range columns {
-		placeholders[i] = "?"
+		placeholders[i] = buildDuckDBPlaceholder(i, col.Transform)
 		columnNames[i] = d.quoteIdentifier(col.Name)
 	}
 
@@ -216,7 +216,7 @@ func (d *DuckDB) UpsertData(tableName string, columns []ColumnMetadata, values [
 	columnNames := make([]string, len(columns))
 	updateAssignments := make([]string, 0, len(columns))
 	for i, col := range columns {
-		placeholders[i] = "?"
+		placeholders[i] = buildDuckDBPlaceholder(i, col.Transform)
 		columnNames[i] = d.quoteIdentifier(col.Name)
 		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
 			quoted := d.quoteIdentifier(col.Name)
@@ -327,6 +327,13 @@ func (d *DuckDB) createIndex(tableName string, index config.IndexConfig) error {
 
 func (d *DuckDB) mapToDuckDBType(column ColumnMetadata) string {
 	return MapToDuckDBType(column)
+}
+
+func buildDuckDBPlaceholder(_ int, transform string) string {
+	if transform != "" {
+		return strings.ReplaceAll(transform, "?", "?")
+	}
+	return "?"
 }
 
 func (d *DuckDB) quoteIdentifier(name string) string {

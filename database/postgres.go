@@ -169,9 +169,10 @@ func (p *PostgresDB) InsertData(tableName string, columns []ColumnMetadata, valu
 	}
 	defer tx.Rollback()
 
-	placeholders := buildPostgresPlaceholders(len(columns))
+	placeholders := make([]string, len(columns))
 	columnNames := make([]string, len(columns))
 	for i, col := range columns {
+		placeholders[i] = buildPostgresPlaceholder(i, col.Transform)
 		columnNames[i] = p.quoteIdentifier(col.Name)
 	}
 
@@ -212,10 +213,11 @@ func (p *PostgresDB) UpsertData(tableName string, columns []ColumnMetadata, valu
 		keySet[strings.ToLower(key)] = struct{}{}
 	}
 
-	placeholders := buildPostgresPlaceholders(len(columns))
+	placeholders := make([]string, len(columns))
 	columnNames := make([]string, len(columns))
 	updateAssignments := make([]string, 0, len(columns))
 	for i, col := range columns {
+		placeholders[i] = buildPostgresPlaceholder(i, col.Transform)
 		columnNames[i] = p.quoteIdentifier(col.Name)
 		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
 			quoted := p.quoteIdentifier(col.Name)
@@ -381,10 +383,18 @@ func (p *PostgresDB) quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
+func buildPostgresPlaceholder(index int, transform string) string {
+	placeholder := fmt.Sprintf("$%d", index+1)
+	if transform != "" {
+		return strings.ReplaceAll(transform, "?", placeholder)
+	}
+	return placeholder
+}
+
 func buildPostgresPlaceholders(count int) []string {
 	placeholders := make([]string, count)
 	for i := 0; i < count; i++ {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		placeholders[i] = buildPostgresPlaceholder(i, "")
 	}
 	return placeholders
 }

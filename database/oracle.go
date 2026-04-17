@@ -171,7 +171,7 @@ func (o *OracleDB) InsertData(tableName string, columns []ColumnMetadata, values
 	placeholders := make([]string, len(columns))
 	columnNames := make([]string, len(columns))
 	for i, col := range columns {
-		placeholders[i] = fmt.Sprintf(":%d", i+1)
+		placeholders[i] = buildOraclePlaceholder(i, col.Transform)
 		columnNames[i] = o.ident(col.Name)
 	}
 
@@ -219,7 +219,7 @@ func (o *OracleDB) UpsertData(tableName string, columns []ColumnMetadata, values
 	for i, col := range columns {
 		ident := o.ident(col.Name)
 		columnNames[i] = ident
-		selectColumns[i] = fmt.Sprintf(":%d %s", i+1, ident)
+		selectColumns[i] = fmt.Sprintf("%s %s", buildOraclePlaceholder(i, col.Transform), ident)
 		sourceColumns[i] = "s." + ident
 		if _, isKey := keySet[strings.ToLower(col.Name)]; !isKey {
 			updateAssignments = append(updateAssignments, fmt.Sprintf("t.%s = s.%s", ident, ident))
@@ -330,6 +330,14 @@ func (o *OracleDB) createIndex(tableName string, index config.IndexConfig) error
 	}
 
 	return nil
+}
+
+func buildOraclePlaceholder(index int, transform string) string {
+	placeholder := fmt.Sprintf(":%d", index+1)
+	if transform != "" {
+		return strings.ReplaceAll(transform, "?", placeholder)
+	}
+	return placeholder
 }
 
 func (o *OracleDB) mapToOracleType(column ColumnMetadata) string {

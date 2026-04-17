@@ -47,6 +47,21 @@ func TestSQLiteBasicFlow(t *testing.T) {
 	if tableCnt != 2 {
 		t.Fatalf("GetTableRowCount() = %d, want 2", tableCnt)
 	}
+
+	transformCols := []ColumnMetadata{
+		{Name: "id", DatabaseType: "INTEGER", Transform: "? + 1"},
+		{Name: "name", DatabaseType: "VARCHAR", Transform: "UPPER(?)"},
+	}
+	if err := s.InsertData("users", transformCols, [][]any{{1, "alice"}}); err != nil {
+		t.Fatalf("InsertData() with transform error = %v", err)
+	}
+	var upperName string
+	if err := s.db.QueryRow(`SELECT name FROM "users" WHERE id = 2 AND name = 'ALICE'`).Scan(&upperName); err != nil {
+		t.Fatalf("query transform result error = %v", err)
+	}
+	if upperName != "ALICE" {
+		t.Fatalf("expected UPPER transform result ALICE, got %q", upperName)
+	}
 }
 
 func TestSQLiteEnsureTableAndUpsert(t *testing.T) {

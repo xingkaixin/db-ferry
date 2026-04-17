@@ -150,6 +150,13 @@ type AdaptiveBatchConfig struct {
 	MemoryLimitMB   int  `toml:"memory_limit_mb"`
 }
 
+// ColumnMapping defines a source-to-target column mapping with an optional transform.
+type ColumnMapping struct {
+	Source    string `toml:"source"`
+	Target    string `toml:"target"`
+	Transform string `toml:"transform"`
+}
+
 // TaskConfig defines a single migration job.
 type TaskConfig struct {
 	TableName          string              `toml:"table_name"`
@@ -167,6 +174,7 @@ type TaskConfig struct {
 	ResumeFrom         string              `toml:"resume_from"`
 	StateFile          string              `toml:"state_file"`
 	AdaptiveBatch      AdaptiveBatchConfig `toml:"adaptive_batch"`
+	Columns            []ColumnMapping     `toml:"columns,omitempty"`
 	// AllowSameTable 明确允许同库执行并覆盖目标表（存在数据丢失风险）。
 	AllowSameTable bool `toml:"allow_same_table"`
 	// SkipCreateTable 跳过目标表的 drop/create 操作。
@@ -370,6 +378,21 @@ func (c *Config) Validate() error {
 		}
 		if task.ResumeKey != "" && task.StateFile == "" && task.ResumeFrom == "" {
 			return fmt.Errorf("task %d: resume_key requires resume_from or state_file", i+1)
+		}
+
+		seenTarget := make(map[string]struct{})
+		for j, col := range task.Columns {
+			if strings.TrimSpace(col.Source) == "" {
+				return fmt.Errorf("task %d, column %d: source is required", i+1, j+1)
+			}
+			if strings.TrimSpace(col.Target) == "" {
+				return fmt.Errorf("task %d, column %d: target is required", i+1, j+1)
+			}
+			lowerTarget := strings.ToLower(strings.TrimSpace(col.Target))
+			if _, exists := seenTarget[lowerTarget]; exists {
+				return fmt.Errorf("task %d, column %d: duplicate target column '%s'", i+1, j+1, col.Target)
+			}
+			seenTarget[lowerTarget] = struct{}{}
 		}
 
 		if err := ensureDatabaseSupportsSource(&sourceDB); err != nil {

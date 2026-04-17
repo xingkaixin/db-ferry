@@ -589,6 +589,52 @@ func TestValidateDatabaseDefinitionErrors(t *testing.T) {
 	})
 }
 
+func TestValidateColumnMapping(t *testing.T) {
+	t.Run("empty source rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Columns = []ColumnMapping{{Source: "", Target: "id"}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "source is required") {
+			t.Fatalf("expected source is required error, got %v", err)
+		}
+	})
+
+	t.Run("empty target rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Columns = []ColumnMapping{{Source: "id", Target: "  "}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "target is required") {
+			t.Fatalf("expected target is required error, got %v", err)
+		}
+	})
+
+	t.Run("duplicate target rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Columns = []ColumnMapping{
+			{Source: "id", Target: "pk"},
+			{Source: "name", Target: "pk"},
+		}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "duplicate target column") {
+			t.Fatalf("expected duplicate target column error, got %v", err)
+		}
+	})
+
+	t.Run("valid column mapping passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Columns = []ColumnMapping{
+			{Source: "id", Target: "user_id", Transform: "UPPER(?)"},
+			{Source: "name", Target: "user_name"},
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if len(cfg.Tasks[0].Columns) != 2 {
+			t.Fatalf("expected 2 columns, got %d", len(cfg.Tasks[0].Columns))
+		}
+	})
+}
+
 func TestValidateDependsOn(t *testing.T) {
 	t.Run("depends_on references missing table", func(t *testing.T) {
 		cfg := baseConfig(t)

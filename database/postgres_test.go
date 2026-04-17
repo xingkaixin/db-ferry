@@ -63,6 +63,28 @@ func TestPostgresInsertUpsertAndCount(t *testing.T) {
 		t.Fatalf("UpsertData() error = %v", err)
 	}
 
+	transformCols := []ColumnMetadata{
+		{Name: "id", DatabaseType: "INT", Transform: "id + ?"},
+		{Name: "name", DatabaseType: "VARCHAR", Transform: "CONCAT(?, '!')"},
+	}
+	insertTransformSQL := `INSERT INTO "users" ("id", "name") VALUES (id + $1, CONCAT($2, '!'))`
+	mock.ExpectBegin()
+	transformPrep := mock.ExpectPrepare(regexp.QuoteMeta(insertTransformSQL))
+	transformPrep.ExpectExec().WithArgs(1, "a").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	if err := p.InsertData("users", transformCols, [][]any{{1, "a"}}); err != nil {
+		t.Fatalf("InsertData() with transform error = %v", err)
+	}
+
+	upsertTransformSQL := `INSERT INTO "users" ("id", "name") VALUES (id + $1, CONCAT($2, '!')) ON CONFLICT("id") DO UPDATE SET "name"=EXCLUDED."name"`
+	mock.ExpectBegin()
+	upsertTransformPrep := mock.ExpectPrepare(regexp.QuoteMeta(upsertTransformSQL))
+	upsertTransformPrep.ExpectExec().WithArgs(1, "a").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	if err := p.UpsertData("users", transformCols, [][]any{{1, "a"}}, []string{"id"}); err != nil {
+		t.Fatalf("UpsertData() with transform error = %v", err)
+	}
+
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM (SELECT * FROM users) AS count_query`)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 	cnt, err := p.GetRowCount("SELECT * FROM users")
