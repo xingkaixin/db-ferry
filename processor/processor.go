@@ -502,6 +502,13 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
+	var adaptive *adaptiveBatchController
+	if task.AdaptiveBatch.Enabled {
+		adaptive = newAdaptiveBatchController(task.AdaptiveBatch, batchSize)
+		batchSize = adaptive.currentSize
+		log.Printf("Adaptive batch enabled for %s: starting at %d", task.TableName, batchSize)
+	}
+
 	var batch [][]any
 	processedRows := 0
 	totalDLQ := 0
@@ -545,7 +552,9 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		}
 
 		if len(batch) >= batchSize {
+			start := time.Now()
 			dlqCount, err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys, dlqw)
+			latency := time.Since(start)
 			if err != nil {
 				return fmt.Errorf("failed to insert batch: %w", err)
 			}
@@ -553,18 +562,36 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 			if err := p.updateResumeState(task, lastResumeValue); err != nil {
 				return err
 			}
+			if adaptive != nil {
+				memMB := estimateBatchMemoryMB(batch)
+				adaptive.record(latency, memMB)
+				batchSize = adaptive.nextBatchSize(nil)
+				if adaptive.shouldAdjust() {
+					log.Printf("%s for %s", adaptive.debugInfo(), task.TableName)
+				}
+			}
 			batch = batch[:0]
 		}
 	}
 
 	if len(batch) > 0 {
+		start := time.Now()
 		dlqCount, err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys, dlqw)
+		latency := time.Since(start)
 		if err != nil {
 			return fmt.Errorf("failed to insert final batch: %w", err)
 		}
 		totalDLQ += dlqCount
 		if err := p.updateResumeState(task, lastResumeValue); err != nil {
 			return err
+		}
+		if adaptive != nil {
+			memMB := estimateBatchMemoryMB(batch)
+			adaptive.record(latency, memMB)
+			batchSize = adaptive.nextBatchSize(nil)
+			if adaptive.shouldAdjust() {
+				log.Printf("%s for %s", adaptive.debugInfo(), task.TableName)
+			}
 		}
 	}
 
@@ -1029,7 +1056,14 @@ func (p *Processor) planTask(w io.Writer, taskIndex, totalTasks, overallIndex in
 	} else {
 		fmt.Fprintln(w, "  Rows:    (unknown)")
 	}
-	fmt.Fprintf(w, "  Batch:   %d\n", batchSize)
+	if task.AdaptiveBatch.Enabled {
+		adaptive := newAdaptiveBatchController(task.AdaptiveBatch, batchSize)
+		fmt.Fprintf(w, "  Batch:   adaptive (min=%d, max=%d, start=%d)
+", adaptive.minSize, adaptive.maxSize, adaptive.currentSize)
+	} else {
+		fmt.Fprintf(w, "  Batch:   %d
+", batchSize)
+	}
 	if task.SchemaEvolution && (task.Mode == config.TaskModeAppend || task.Mode == config.TaskModeMerge) {
 		fmt.Fprintln(w, "  Schema:  evolution enabled (missing columns will be added via ALTER TABLE)")
 	}
