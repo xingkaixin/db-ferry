@@ -564,3 +564,76 @@ func TestValidateDependsOn(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateMaskingRules(t *testing.T) {
+	t.Run("valid masking passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Masking = []MaskingConfig{
+			{Column: "phone", Rule: MaskRulePhoneCN},
+			{Column: "email", Rule: MaskRuleEmail},
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if cfg.Tasks[0].Masking[0].Rule != MaskRulePhoneCN {
+			t.Fatalf("expected normalized rule, got %s", cfg.Tasks[0].Masking[0].Rule)
+		}
+	})
+
+	t.Run("missing column rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Masking = []MaskingConfig{{Column: "", Rule: MaskRulePhoneCN}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "column is required") {
+			t.Fatalf("expected column required error, got %v", err)
+		}
+	})
+
+	t.Run("missing rule rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Masking = []MaskingConfig{{Column: "phone", Rule: ""}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "rule is required") {
+			t.Fatalf("expected rule required error, got %v", err)
+		}
+	})
+
+	t.Run("unsupported rule rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Masking = []MaskingConfig{{Column: "phone", Rule: "unsupported"}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "unsupported rule") {
+			t.Fatalf("expected unsupported rule error, got %v", err)
+		}
+	})
+
+	t.Run("duplicate masking column rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Masking = []MaskingConfig{
+			{Column: "phone", Rule: MaskRulePhoneCN},
+			{Column: "phone", Rule: MaskRuleHash},
+		}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "duplicate masking column") {
+			t.Fatalf("expected duplicate masking column error, got %v", err)
+		}
+	})
+
+	t.Run("random_numeric requires range", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Masking = []MaskingConfig{{Column: "score", Rule: MaskRuleRandomNumeric}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "requires exactly 2 range values") {
+			t.Fatalf("expected range error, got %v", err)
+		}
+	})
+
+	t.Run("fixed_value requires value", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Masking = []MaskingConfig{{Column: "status", Rule: MaskRuleFixedValue}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "requires value") {
+			t.Fatalf("expected value error, got %v", err)
+		}
+	})
+}

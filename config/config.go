@@ -39,6 +39,31 @@ const (
 	DLQFormatCSV   = "csv"
 )
 
+// Supported masking rules.
+const (
+	MaskRulePhoneCN       = "phone_cn"
+	MaskRulePhoneUS       = "phone_us"
+	MaskRuleEmail         = "email"
+	MaskRuleIDCardCN      = "id_card_cn"
+	MaskRuleNameCN        = "name_cn"
+	MaskRuleRandomNumeric = "random_numeric"
+	MaskRuleRandomDate    = "random_date"
+	MaskRuleFixedValue    = "fixed_value"
+	MaskRuleHash          = "hash"
+)
+
+var supportedMaskRules = map[string]struct{}{
+	MaskRulePhoneCN:       {},
+	MaskRulePhoneUS:       {},
+	MaskRuleEmail:         {},
+	MaskRuleIDCardCN:      {},
+	MaskRuleNameCN:        {},
+	MaskRuleRandomNumeric: {},
+	MaskRuleRandomDate:    {},
+	MaskRuleFixedValue:    {},
+	MaskRuleHash:          {},
+}
+
 // DatabaseConfig describes a named database connection definition.
 type DatabaseConfig struct {
 	Name string `toml:"name"`
@@ -96,6 +121,14 @@ func (ic *IndexConfig) ParseColumns() error {
 	return nil
 }
 
+// MaskingConfig defines a column masking rule for a task.
+type MaskingConfig struct {
+	Column string    `toml:"column"`
+	Rule   string    `toml:"rule"`
+	Range  []float64 `toml:"range,omitempty"`
+	Value  string    `toml:"value,omitempty"`
+}
+
 // TaskConfig defines a single migration job.
 type TaskConfig struct {
 	TableName          string   `toml:"table_name"`
@@ -119,11 +152,12 @@ type TaskConfig struct {
 	// DLQPath 死信队列文件路径，用于保存插入失败的行。
 	DLQPath string `toml:"dlq_path,omitempty"`
 	// DLQFormat 死信队列文件格式，支持 jsonl 和 csv，默认为 jsonl。
-	DLQFormat string        `toml:"dlq_format,omitempty"`
-	Indexes   []IndexConfig `toml:"indexes,omitempty"`
-	PreSQL    []string      `toml:"pre_sql,omitempty"`
-	PostSQL   []string      `toml:"post_sql,omitempty"`
-	DependsOn []string      `toml:"depends_on"`
+	DLQFormat string          `toml:"dlq_format,omitempty"`
+	Indexes   []IndexConfig   `toml:"indexes,omitempty"`
+	Masking   []MaskingConfig `toml:"masking,omitempty"`
+	PreSQL    []string        `toml:"pre_sql,omitempty"`
+	PostSQL   []string        `toml:"post_sql,omitempty"`
+	DependsOn []string        `toml:"depends_on"`
 }
 
 // Config is the top-level configuration structure decoded from task.toml.
@@ -314,6 +348,33 @@ func (c *Config) Validate() error {
 			if targetDB.Type != DatabaseTypeSQLite && index.Where != "" {
 				return fmt.Errorf("task %d, index %d: partial indexes (where clause) are only supported for SQLite targets", i+1, j+1)
 			}
+		}
+
+		seenMaskCols := make(map[string]struct{}, len(task.Masking))
+		for j, m := range task.Masking {
+			if m.Column == "" {
+				return fmt.Errorf("task %d, masking %d: column is required", i+1, j+1)
+			}
+			colLower := strings.ToLower(m.Column)
+			if _, exists := seenMaskCols[colLower]; exists {
+				return fmt.Errorf("task %d, masking %d: duplicate masking column '%s'", i+1, j+1, m.Column)
+			}
+			seenMaskCols[colLower] = struct{}{}
+
+			m.Rule = strings.ToLower(strings.TrimSpace(m.Rule))
+			if m.Rule == "" {
+				return fmt.Errorf("task %d, masking %d: rule is required for column '%s'", i+1, j+1, m.Column)
+			}
+			if _, ok := supportedMaskRules[m.Rule]; !ok {
+				return fmt.Errorf("task %d, masking %d: unsupported rule '%s' for column '%s'", i+1, j+1, m.Rule, m.Column)
+			}
+			if m.Rule == MaskRuleRandomNumeric && len(m.Range) != 2 {
+				return fmt.Errorf("task %d, masking %d: rule '%s' requires exactly 2 range values [min, max]", i+1, j+1, m.Rule)
+			}
+			if m.Rule == MaskRuleFixedValue && m.Value == "" {
+				return fmt.Errorf("task %d, masking %d: rule '%s' requires value", i+1, j+1, m.Rule)
+			}
+			task.Masking[j] = m
 		}
 
 		c.Tasks[i] = task
