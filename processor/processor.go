@@ -588,7 +588,7 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		if adaptive != nil {
 			memMB := estimateBatchMemoryMB(batch)
 			adaptive.record(latency, memMB)
-			batchSize = adaptive.nextBatchSize(nil)
+			_ = adaptive.nextBatchSize(nil)
 			if adaptive.shouldAdjust() {
 				log.Printf("%s for %s", adaptive.debugInfo(), task.TableName)
 			}
@@ -1058,11 +1058,9 @@ func (p *Processor) planTask(w io.Writer, taskIndex, totalTasks, overallIndex in
 	}
 	if task.AdaptiveBatch.Enabled {
 		adaptive := newAdaptiveBatchController(task.AdaptiveBatch, batchSize)
-		fmt.Fprintf(w, "  Batch:   adaptive (min=%d, max=%d, start=%d)
-", adaptive.minSize, adaptive.maxSize, adaptive.currentSize)
+		fmt.Fprintf(w, "  Batch:   adaptive (min=%d, max=%d, start=%d)\n", adaptive.minSize, adaptive.maxSize, adaptive.currentSize)
 	} else {
-		fmt.Fprintf(w, "  Batch:   %d
-", batchSize)
+		fmt.Fprintf(w, "  Batch:   %d\n", batchSize)
 	}
 	if task.SchemaEvolution && (task.Mode == config.TaskModeAppend || task.Mode == config.TaskModeMerge) {
 		fmt.Fprintln(w, "  Schema:  evolution enabled (missing columns will be added via ALTER TABLE)")
