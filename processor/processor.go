@@ -20,13 +20,13 @@ import (
 )
 
 type Processor struct {
-	manager           *database.ConnectionManager
-	config            *config.Config
-	stateFiles        map[string]*stateFile
-	stateMu           sync.Mutex
-	historyRecorders  map[string]*database.HistoryRecorder
-	historyMu         sync.Mutex
-	version           string
+	manager          *database.ConnectionManager
+	config           *config.Config
+	stateFiles       map[string]*stateFile
+	stateMu          sync.Mutex
+	historyRecorders map[string]*database.HistoryRecorder
+	historyMu        sync.Mutex
+	version          string
 }
 
 var sleepFn = time.Sleep
