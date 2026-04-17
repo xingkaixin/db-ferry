@@ -1907,3 +1907,208 @@ func TestProcessTaskWithMasking(t *testing.T) {
 		t.Fatalf("expected balance in [0,100], got %f", balance)
 	}
 }
+func TestSplitRange(t *testing.T) {
+	t.Run("int64 even split", func(t *testing.T) {
+		ranges, err := splitRange(int64(0), int64(99), 4)
+		if err != nil {
+			t.Fatalf("splitRange() error = %v", err)
+		}
+		if len(ranges) != 4 {
+			t.Fatalf("expected 4 ranges, got %d", len(ranges))
+		}
+		if ranges[0][0] != int64(0) || ranges[0][1] != int64(24) {
+			t.Fatalf("unexpected first range: %v", ranges[0])
+		}
+		if ranges[3][0] != int64(72) || ranges[3][1] != int64(99) {
+			t.Fatalf("unexpected last range: %v", ranges[3])
+		}
+	})
+
+	t.Run("int64 min equals max", func(t *testing.T) {
+		ranges, err := splitRange(int64(5), int64(5), 4)
+		if err != nil {
+			t.Fatalf("splitRange() error = %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0][0] != int64(5) || ranges[0][1] != int64(5) {
+			t.Fatalf("unexpected range: %v", ranges[0])
+		}
+	})
+
+	t.Run("float64 split", func(t *testing.T) {
+		ranges, err := splitRange(0.0, 10.0, 2)
+		if err != nil {
+			t.Fatalf("splitRange() error = %v", err)
+		}
+		if len(ranges) != 2 {
+			t.Fatalf("expected 2 ranges, got %d", len(ranges))
+		}
+		if ranges[1][0] != 5.0 || ranges[1][1] != 10.0 {
+			t.Fatalf("unexpected last range: %v", ranges[1])
+		}
+	})
+
+	t.Run("time split", func(t *testing.T) {
+		minT := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		maxT := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+		ranges, err := splitRange(minT, maxT, 2)
+		if err != nil {
+			t.Fatalf("splitRange() error = %v", err)
+		}
+		if len(ranges) != 2 {
+			t.Fatalf("expected 2 ranges, got %d", len(ranges))
+		}
+		if !ranges[0][0].(time.Time).Equal(minT) {
+			t.Fatalf("unexpected first range start: %v", ranges[0][0])
+		}
+		if !ranges[1][1].(time.Time).Equal(maxT) {
+			t.Fatalf("unexpected last range end: %v", ranges[1][1])
+		}
+	})
+
+	t.Run("string rejected", func(t *testing.T) {
+		_, err := splitRange("a", "z", 4)
+		if err == nil || !strings.Contains(err.Error(), "unsupported resume_key type") {
+			t.Fatalf("expected unsupported type error, got %v", err)
+		}
+	})
+}
+
+func TestBuildShardTaskSQL(t *testing.T) {
+	t.Run("without resume literal", func(t *testing.T) {
+		dataSQL, countSQL := buildShardTaskSQL("SELECT * FROM t", "id", "", int64(0), int64(10), false)
+		if !strings.Contains(dataSQL, "WHERE id >= 0 AND id < 10") {
+			t.Fatalf("unexpected dataSQL: %s", dataSQL)
+		}
+		if strings.Contains(countSQL, "ORDER BY") {
+			t.Fatalf("countSQL should not contain ORDER BY: %s", countSQL)
+		}
+	})
+
+	t.Run("with resume literal last shard", func(t *testing.T) {
+		dataSQL, countSQL := buildShardTaskSQL("SELECT * FROM t", "id", "5", int64(10), int64(20), true)
+		if !strings.Contains(dataSQL, "WHERE id > 5 AND id >= 10 AND id <= 20") {
+			t.Fatalf("unexpected dataSQL: %s", dataSQL)
+		}
+		if !strings.Contains(dataSQL, "ORDER BY id") {
+			t.Fatalf("expected ORDER BY in dataSQL: %s", dataSQL)
+		}
+		if strings.Contains(countSQL, "ORDER BY") {
+			t.Fatalf("countSQL should not contain ORDER BY: %s", countSQL)
+		}
+	})
+}
+
+func TestProcessShardedTask(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_events (id INTEGER PRIMARY KEY, name TEXT)`)
+	for i := 1; i <= 100; i++ {
+		setupSQLiteExec(t, sourcePath, fmt.Sprintf(`INSERT INTO src_events(id, name) VALUES (%d, 'event_%d')`, i, i))
+	}
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:  "dst_events",
+				SQL:        "SELECT id, name FROM src_events",
+				SourceDB:   "src",
+				TargetDB:   "dst",
+				Mode:       config.TaskModeAppend,
+				Validate:   config.TaskValidateRowCount,
+				ResumeKey:  "id",
+				ResumeFrom: "0",
+				Shard:      config.ShardConfig{Enabled: true, Shards: 4},
+			},
+		},
+		MaxConcurrentTasks: 4,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_events"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 100 {
+		t.Fatalf("target row count = %d, want 100", count)
+	}
+
+	var minID, maxID int
+	if err := targetDB.QueryRow(`SELECT MIN(id), MAX(id) FROM "dst_events"`).Scan(&minID, &maxID); err != nil {
+		t.Fatalf("query min/max error = %v", err)
+	}
+	if minID != 1 || maxID != 100 {
+		t.Fatalf("unexpected min/max: %d, %d", minID, maxID)
+	}
+}
+
+func TestProcessShardedTaskWithDryRun(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_events (id INTEGER PRIMARY KEY, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_events(id, name) VALUES (1, 'a'), (2, 'b')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: filepath.Join(dir, "target.db")},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:  "dst_events",
+				SQL:        "SELECT id, name FROM src_events",
+				SourceDB:   "src",
+				TargetDB:   "dst",
+				Mode:       config.TaskModeAppend,
+				ResumeKey:  "id",
+				ResumeFrom: "0",
+				Shard:      config.ShardConfig{Enabled: true, Shards: 2},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	var buf bytes.Buffer
+	if err := p.PlanAllTasks(&buf); err != nil {
+		t.Fatalf("PlanAllTasks() error = %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Shards:  2") {
+		t.Fatalf("expected shard count in plan output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Rows:    ~2") {
+		t.Fatalf("expected row count in plan output, got:\n%s", out)
+	}
+}

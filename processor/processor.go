@@ -27,6 +27,7 @@ type Processor struct {
 	historyRecorders map[string]*database.HistoryRecorder
 	historyMu        sync.Mutex
 	version          string
+	sem              chan struct{}
 }
 
 var sleepFn = time.Sleep
@@ -140,12 +141,17 @@ func NewProcessor(manager *database.ConnectionManager, cfg *config.Config) *Proc
 
 // NewProcessorWithVersion creates a processor with an explicit version string.
 func NewProcessorWithVersion(manager *database.ConnectionManager, cfg *config.Config, version string) *Processor {
+	maxConcurrent := cfg.MaxConcurrentTasks
+	if maxConcurrent <= 0 {
+		maxConcurrent = 3
+	}
 	return &Processor{
 		manager:          manager,
 		config:           cfg,
 		stateFiles:       make(map[string]*stateFile),
 		historyRecorders: make(map[string]*database.HistoryRecorder),
 		version:          version,
+		sem:              make(chan struct{}, maxConcurrent),
 	}
 }
 
@@ -159,13 +165,8 @@ func (p *Processor) ProcessAllTasks() error {
 		defer taskProgress.Finish()
 	}
 
-	maxConcurrent := p.config.MaxConcurrentTasks
-	if maxConcurrent <= 0 {
-		maxConcurrent = 3
-	}
-
 	// Fast path: single task or explicitly serial.
-	if totalTasks <= 1 || maxConcurrent == 1 {
+	if totalTasks <= 1 || cap(p.sem) == 1 {
 		for _, task := range p.config.Tasks {
 			if task.Ignore {
 				log.Printf("Skipping ignored task: %s", task.TableName)
@@ -191,7 +192,6 @@ func (p *Processor) ProcessAllTasks() error {
 		tasks:         tasks,
 		deps:          deps,
 		children:      children,
-		sem:           make(chan struct{}, maxConcurrent),
 		ctx:           ctx,
 		cancel:        cancel,
 		results:       make([]error, totalTasks),
@@ -231,7 +231,6 @@ type taskScheduler struct {
 	tasks         []config.TaskConfig
 	deps          map[int][]int
 	children      map[int][]int
-	sem           chan struct{}
 	ctx           context.Context
 	cancel        context.CancelFunc
 	wg            sync.WaitGroup
@@ -281,21 +280,36 @@ func (s *taskScheduler) runTask(idx int) {
 		}
 	}
 
+	task := s.tasks[idx]
+	if task.Shard.Enabled {
+		// 分片任务：内部子任务各自获取 semaphore，避免父任务占坑
+		log.Printf("Processing sharded task: %s", task.TableName)
+		err := s.p.processTaskInternal(task, true)
+		if err != nil {
+			log.Printf("Task %s failed: %v", task.TableName, err)
+			s.cancel()
+		} else {
+			log.Printf("Successfully completed task: %s", task.TableName)
+		}
+		s.setResult(idx, err)
+		return
+	}
+
 	select {
 	case <-s.ctx.Done():
 		s.setResult(idx, fmt.Errorf("cancelled due to upstream failure"))
 		return
-	case s.sem <- struct{}{}:
+	case s.p.sem <- struct{}{}:
 	}
-	defer func() { <-s.sem }()
+	defer func() { <-s.p.sem }()
 
-	log.Printf("Processing task: %s", s.tasks[idx].TableName)
-	err := s.p.processTaskInternal(s.tasks[idx], true)
+	log.Printf("Processing task: %s", task.TableName)
+	err := s.p.processTaskInternal(task, true)
 	if err != nil {
-		log.Printf("Task %s failed: %v", s.tasks[idx].TableName, err)
+		log.Printf("Task %s failed: %v", task.TableName, err)
 		s.cancel()
 	} else {
-		log.Printf("Successfully completed task: %s", s.tasks[idx].TableName)
+		log.Printf("Successfully completed task: %s", task.TableName)
 	}
 	s.setResult(idx, err)
 }
@@ -350,6 +364,9 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 }
 
 func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (err error) {
+	if task.Shard.Enabled {
+		return p.processShardedTask(task, silent)
+	}
 	log.Printf("Executing query for table %s", task.TableName)
 
 	sourceDB, err := p.manager.GetSource(task.SourceDB)
@@ -483,6 +500,7 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		}
 		targetCountBefore = count
 	}
+
 
 	var totalRows int
 	if count, err := sourceDB.GetRowCount(countSQL); err != nil {
@@ -650,6 +668,7 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 	return nil
 }
 
+
 func (p *Processor) getHistoryRecorder(targetDBAlias string) *database.HistoryRecorder {
 	p.historyMu.Lock()
 	defer p.historyMu.Unlock()
@@ -669,6 +688,521 @@ func (p *Processor) getHistoryRecorder(targetDBAlias string) *database.HistoryRe
 	r := database.NewHistoryRecorder(dbCfg.Type, p.config.History.Table())
 	p.historyRecorders[targetDBAlias] = r
 	return r
+}
+func (p *Processor) migrateData(task config.TaskConfig, sourceDB database.SourceDB, targetDB database.TargetDB,
+	columnsMeta []database.ColumnMetadata, mergeKeys []string, dlqw *dlqWriter,
+	querySQL, countSQL string, silent bool) (processedRows int, totalDLQ int, err error) {
+
+	rows, err := sourceDB.Query(querySQL)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	resumeIndex := -1
+	if task.ResumeKey != "" {
+		resumeIndex = findColumnIndex(columnsMeta, task.ResumeKey)
+	}
+
+	var totalRows int
+	if count, err := sourceDB.GetRowCount(countSQL); err != nil {
+		log.Printf("Warning: Could not get row count for progress tracking: %v", err)
+		totalRows = -1
+	} else {
+		totalRows = count
+		log.Printf("Found %d rows to process for table %s", totalRows, task.TableName)
+	}
+
+	var progress *utils.ProgressManager
+	if !silent {
+		if totalRows > 0 {
+			progress = utils.NewProgressManager(int64(totalRows), fmt.Sprintf("Processing %s", task.TableName))
+		} else {
+			progress = utils.NewProgressManager(-1, fmt.Sprintf("Processing %s (unknown row count)", task.TableName))
+		}
+		defer progress.Finish()
+	}
+
+	batchSize := task.BatchSize
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+	var batch [][]any
+	var lastResumeValue any
+
+	for rows.Next() {
+		row, err := p.scanRow(rows, columnsMeta)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		if resumeIndex >= 0 {
+			lastResumeValue = row[resumeIndex]
+		}
+
+		batch = append(batch, row)
+		processedRows++
+
+		if progress != nil {
+			if totalRows > 0 {
+				progress.SetCurrent(int64(processedRows))
+			} else {
+				progress.Increment()
+			}
+		}
+
+		if len(batch) >= batchSize {
+			dlqCount, err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys, dlqw)
+			if err != nil {
+				return 0, 0, fmt.Errorf("failed to insert batch: %w", err)
+			}
+			totalDLQ += dlqCount
+			if err := p.updateResumeState(task, lastResumeValue); err != nil {
+				return 0, 0, err
+			}
+			batch = batch[:0]
+		}
+	}
+
+	if len(batch) > 0 {
+		dlqCount, err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys, dlqw)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to insert final batch: %w", err)
+		}
+		totalDLQ += dlqCount
+		if err := p.updateResumeState(task, lastResumeValue); err != nil {
+			return 0, 0, err
+		}
+	}
+
+	if progress != nil && totalRows > 0 {
+		progress.SetCurrent(int64(processedRows))
+		if processedRows < totalRows {
+			log.Printf("Warning: processed %d rows but expected %d for table %s", processedRows, totalRows, task.TableName)
+		}
+		progress.SetCurrent(int64(totalRows))
+	}
+
+	if err := rows.Err(); err != nil {
+		return 0, 0, fmt.Errorf("error during row iteration: %w", err)
+	}
+
+	return processedRows, totalDLQ, nil
+}
+
+func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) error {
+	log.Printf("Executing sharded query for table %s with %d shards", task.TableName, task.Shard.Shards)
+
+	sourceDB, err := p.manager.GetSource(task.SourceDB)
+	if err != nil {
+		return err
+	}
+
+	targetDB, err := p.manager.GetTarget(task.TargetDB)
+	if err != nil {
+		return err
+	}
+
+	resumeLiteral := task.ResumeFrom
+
+	baseQuerySQL, baseCountSQL := buildTaskSQL(task.SQL, task.ResumeKey, resumeLiteral)
+	if task.ResumeKey != "" {
+		if resumeLiteral != "" {
+			log.Printf("Resume enabled for %s: %s > %s", task.TableName, task.ResumeKey, resumeLiteral)
+		} else {
+			log.Printf("Resume enabled for %s with key %s", task.TableName, task.ResumeKey)
+		}
+	}
+
+	rangeSQL := fmt.Sprintf("SELECT MIN(%s), MAX(%s) FROM (%s) __range_src", task.ResumeKey, task.ResumeKey, baseCountSQL)
+	rows, err := sourceDB.Query(rangeSQL)
+	if err != nil {
+		return fmt.Errorf("failed to execute range query: %w", err)
+	}
+	var minVal, maxVal any
+	if rows.Next() {
+		err = rows.Scan(&minVal, &maxVal)
+	}
+	rows.Close()
+	if err != nil {
+		return fmt.Errorf("failed to scan range values: %w", err)
+	}
+
+	if minVal == nil || maxVal == nil {
+		log.Printf("Table %s is empty, falling back to non-sharded processing", task.TableName)
+		return p.processTaskInternalWithSQL(task, silent, baseQuerySQL, baseCountSQL)
+	}
+
+	metaRows, err := sourceDB.Query(baseQuerySQL)
+	if err != nil {
+		return fmt.Errorf("failed to execute metadata query: %w", err)
+	}
+	columnsMeta, err := p.extractColumnMetadata(metaRows)
+	metaRows.Close()
+	if err != nil {
+		return fmt.Errorf("failed to extract column metadata: %w", err)
+	}
+
+	if task.ResumeKey != "" {
+		resumeIndex := findColumnIndex(columnsMeta, task.ResumeKey)
+		if resumeIndex < 0 {
+			return fmt.Errorf("resume_key '%s' not found in query columns for table %s", task.ResumeKey, task.TableName)
+		}
+	}
+
+	mergeKeys, err := resolveMergeKeys(columnsMeta, task.MergeKeys)
+	if err != nil {
+		return err
+	}
+
+	var dlqw *dlqWriter
+	if task.DLQPath != "" {
+		dlqw, err = newDLQWriter(task.DLQPath, task.DLQFormat, columnsMeta)
+		if err != nil {
+			return fmt.Errorf("failed to initialize DLQ writer: %w", err)
+		}
+		defer dlqw.close()
+	}
+
+	if task.SkipCreateTable {
+		log.Printf("Skipping table creation for %s", task.TableName)
+	} else {
+		switch task.Mode {
+		case config.TaskModeAppend, config.TaskModeMerge:
+			if err := targetDB.EnsureTable(task.TableName, columnsMeta); err != nil {
+				return fmt.Errorf("failed to ensure target table: %w", err)
+			}
+		default:
+			if err := targetDB.CreateTable(task.TableName, columnsMeta); err != nil {
+				return fmt.Errorf("failed to prepare target table: %w", err)
+			}
+		}
+	}
+
+	if len(task.PreSQL) > 0 {
+		log.Printf("Executing %d pre_sql hooks for table %s", len(task.PreSQL), task.TableName)
+		if err := execHookSQLs(targetDB, task.PreSQL); err != nil {
+			return fmt.Errorf("pre_sql hook failed for table %s: %w", task.TableName, err)
+		}
+		log.Printf("Successfully executed all pre_sql hooks for table %s", task.TableName)
+	}
+
+	targetCountBefore := 0
+	if task.Validate == config.TaskValidateRowCount || task.Validate == config.TaskValidateChecksum || task.Validate == config.TaskValidateSample {
+		count, err := targetDB.GetTableRowCount(task.TableName)
+		if err != nil {
+			return fmt.Errorf("failed to get target row count before insert: %w", err)
+		}
+		targetCountBefore = count
+	}
+
+	ranges, err := splitRange(minVal, maxVal, task.Shard.Shards)
+	if err != nil {
+		return fmt.Errorf("failed to split range for table %s: %w", task.TableName, err)
+	}
+	log.Printf("Split %s into %d shards for processing", task.TableName, len(ranges))
+
+	var wg sync.WaitGroup
+	errs := make([]error, len(ranges))
+	var mu sync.Mutex
+	totalProcessed := 0
+	totalDLQ := 0
+
+	for i, r := range ranges {
+		wg.Add(1)
+		go func(idx int, lower, upper any) {
+			defer wg.Done()
+
+			p.sem <- struct{}{}
+			defer func() { <-p.sem }()
+
+			shardQuerySQL, shardCountSQL := buildShardTaskSQL(task.SQL, task.ResumeKey, resumeLiteral, lower, upper, idx == len(ranges)-1)
+			processed, dlqCount, err := p.migrateData(task, sourceDB, targetDB, columnsMeta, mergeKeys, dlqw, shardQuerySQL, shardCountSQL, silent)
+
+			mu.Lock()
+			if err != nil {
+				errs[idx] = err
+			}
+			totalProcessed += processed
+			totalDLQ += dlqCount
+			mu.Unlock()
+		}(i, r[0], r[1])
+	}
+
+	wg.Wait()
+
+	for _, e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+
+	if len(task.Indexes) > 0 {
+		log.Printf("Creating %d indexes for table %s", len(task.Indexes), task.TableName)
+		if err := targetDB.CreateIndexes(task.TableName, task.Indexes); err != nil {
+			return fmt.Errorf("failed to create indexes for table %s: %w", task.TableName, err)
+		}
+		log.Printf("Successfully created all indexes for table %s", task.TableName)
+	}
+
+	if len(task.PostSQL) > 0 {
+		log.Printf("Executing %d post_sql hooks for table %s", len(task.PostSQL), task.TableName)
+		if err := execHookSQLs(targetDB, task.PostSQL); err != nil {
+			return fmt.Errorf("post_sql hook failed for table %s: %w", task.TableName, err)
+		}
+		log.Printf("Successfully executed all post_sql hooks for table %s", task.TableName)
+	}
+
+	sourceDBCfg, ok := p.config.GetDatabase(task.SourceDB)
+	if !ok {
+		return fmt.Errorf("source_db '%s' is not defined", task.SourceDB)
+	}
+	targetDBCfg, ok := p.config.GetDatabase(task.TargetDB)
+	if !ok {
+		return fmt.Errorf("target_db '%s' is not defined", task.TargetDB)
+	}
+	validationTask := task
+	reportedProcessedRows := totalProcessed - totalDLQ
+	if reportedProcessedRows < 0 {
+		reportedProcessedRows = 0
+	}
+	if err := database.ValidateTask(sourceDB, targetDB, sourceDBCfg.Type, targetDBCfg.Type, validationTask, columnsMeta, baseCountSQL, reportedProcessedRows, targetCountBefore); err != nil {
+		return err
+	}
+
+	if task.DLQPath != "" {
+		log.Printf("Processed %d rows, %d rows written to DLQ for table %s", totalProcessed, totalDLQ, task.TableName)
+	} else {
+		log.Printf("Successfully processed %d rows for table %s", totalProcessed, task.TableName)
+	}
+	return nil
+}
+
+func (p *Processor) processTaskInternalWithSQL(task config.TaskConfig, silent bool, querySQL, countSQL string) error {
+	log.Printf("Executing query for table %s", task.TableName)
+
+	sourceDB, err := p.manager.GetSource(task.SourceDB)
+	if err != nil {
+		return err
+	}
+
+	targetDB, err := p.manager.GetTarget(task.TargetDB)
+	if err != nil {
+		return err
+	}
+
+	sourceDBCfg, ok := p.config.GetDatabase(task.SourceDB)
+	if !ok {
+		return fmt.Errorf("source_db '%s' is not defined", task.SourceDB)
+	}
+
+	rows, err := sourceDB.Query(querySQL)
+	if err != nil {
+		return fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	columnsMeta, err := p.extractColumnMetadata(rows)
+	if err != nil {
+		return fmt.Errorf("failed to extract column metadata: %w", err)
+	}
+
+	if task.ResumeKey != "" {
+		resumeIndex := findColumnIndex(columnsMeta, task.ResumeKey)
+		if resumeIndex < 0 {
+			return fmt.Errorf("resume_key '%s' not found in query columns for table %s", task.ResumeKey, task.TableName)
+		}
+	}
+
+	mergeKeys, err := resolveMergeKeys(columnsMeta, task.MergeKeys)
+	if err != nil {
+		return err
+	}
+
+	var dlqw *dlqWriter
+	if task.DLQPath != "" {
+		dlqw, err = newDLQWriter(task.DLQPath, task.DLQFormat, columnsMeta)
+		if err != nil {
+			return fmt.Errorf("failed to initialize DLQ writer: %w", err)
+		}
+		defer dlqw.close()
+	}
+
+	if task.SkipCreateTable {
+		log.Printf("Skipping table creation for %s", task.TableName)
+	} else {
+		switch task.Mode {
+		case config.TaskModeAppend, config.TaskModeMerge:
+			if err := targetDB.EnsureTable(task.TableName, columnsMeta); err != nil {
+				return fmt.Errorf("failed to ensure target table: %w", err)
+			}
+		default:
+			if err := targetDB.CreateTable(task.TableName, columnsMeta); err != nil {
+				return fmt.Errorf("failed to prepare target table: %w", err)
+			}
+		}
+	}
+
+	if len(task.PreSQL) > 0 {
+		log.Printf("Executing %d pre_sql hooks for table %s", len(task.PreSQL), task.TableName)
+		if err := execHookSQLs(targetDB, task.PreSQL); err != nil {
+			return fmt.Errorf("pre_sql hook failed for table %s: %w", task.TableName, err)
+		}
+		log.Printf("Successfully executed all pre_sql hooks for table %s", task.TableName)
+	}
+
+	targetCountBefore := 0
+	if task.Validate == config.TaskValidateRowCount || task.Validate == config.TaskValidateChecksum || task.Validate == config.TaskValidateSample {
+		count, err := targetDB.GetTableRowCount(task.TableName)
+		if err != nil {
+			return fmt.Errorf("failed to get target row count before insert: %w", err)
+		}
+		targetCountBefore = count
+	}
+
+	processedRows, totalDLQ, err := p.migrateData(task, sourceDB, targetDB, columnsMeta, mergeKeys, dlqw, querySQL, countSQL, silent)
+	if err != nil {
+		return err
+	}
+
+	if len(task.Indexes) > 0 {
+		log.Printf("Creating %d indexes for table %s", len(task.Indexes), task.TableName)
+		if err := targetDB.CreateIndexes(task.TableName, task.Indexes); err != nil {
+			return fmt.Errorf("failed to create indexes for table %s: %w", task.TableName, err)
+		}
+		log.Printf("Successfully created all indexes for table %s", task.TableName)
+	}
+
+	if len(task.PostSQL) > 0 {
+		log.Printf("Executing %d post_sql hooks for table %s", len(task.PostSQL), task.TableName)
+		if err := execHookSQLs(targetDB, task.PostSQL); err != nil {
+			return fmt.Errorf("post_sql hook failed for table %s: %w", task.TableName, err)
+		}
+		log.Printf("Successfully executed all post_sql hooks for table %s", task.TableName)
+	}
+
+	targetDBCfg, ok := p.config.GetDatabase(task.TargetDB)
+	if !ok {
+		return fmt.Errorf("target_db '%s' is not defined", task.TargetDB)
+	}
+
+	validationTask := task
+	reportedProcessedRows := processedRows - totalDLQ
+	if reportedProcessedRows < 0 {
+		reportedProcessedRows = 0
+	}
+	if err := database.ValidateTask(sourceDB, targetDB, sourceDBCfg.Type, targetDBCfg.Type, validationTask, columnsMeta, countSQL, reportedProcessedRows, targetCountBefore); err != nil {
+		return err
+	}
+
+	if task.DLQPath != "" {
+		log.Printf("Processed %d rows, %d rows written to DLQ for table %s", processedRows, totalDLQ, task.TableName)
+	} else {
+		log.Printf("Successfully processed %d rows for table %s", processedRows, task.TableName)
+	}
+	return nil
+}
+
+func splitRange(minVal, maxVal any, shards int) ([][2]any, error) {
+	if shards <= 1 {
+		return nil, fmt.Errorf("shards must be > 1")
+	}
+
+	switch minV := minVal.(type) {
+	case int64:
+		maxV, ok := maxVal.(int64)
+		if !ok {
+			return nil, fmt.Errorf("max value type %T does not match min value type %T", maxVal, minVal)
+		}
+		if minV == maxV {
+			return [][2]any{{minV, maxV}}, nil
+		}
+		totalRange := maxV - minV
+		step := totalRange / int64(shards)
+		if step == 0 {
+			step = 1
+		}
+		ranges := make([][2]any, 0, shards)
+		for i := 0; i < shards; i++ {
+			lower := minV + int64(i)*step
+			upper := minV + int64(i+1)*step
+			if i == shards-1 {
+				upper = maxV
+			}
+			if lower > maxV {
+				break
+			}
+			if upper > maxV {
+				upper = maxV
+			}
+			ranges = append(ranges, [2]any{lower, upper})
+		}
+		return ranges, nil
+	case float64:
+		maxV, ok := maxVal.(float64)
+		if !ok {
+			return nil, fmt.Errorf("max value type %T does not match min value type %T", maxVal, minVal)
+		}
+		if minV == maxV {
+			return [][2]any{{minV, maxV}}, nil
+		}
+		step := (maxV - minV) / float64(shards)
+		ranges := make([][2]any, 0, shards)
+		for i := 0; i < shards; i++ {
+			lower := minV + float64(i)*step
+			upper := minV + float64(i+1)*step
+			if i == shards-1 {
+				upper = maxV
+			}
+			ranges = append(ranges, [2]any{lower, upper})
+		}
+		return ranges, nil
+	case time.Time:
+		maxV, ok := maxVal.(time.Time)
+		if !ok {
+			return nil, fmt.Errorf("max value type %T does not match min value type %T", maxVal, minVal)
+		}
+		if minV.Equal(maxV) {
+			return [][2]any{{minV, maxV}}, nil
+		}
+		duration := maxV.Sub(minV)
+		step := duration / time.Duration(shards)
+		ranges := make([][2]any, 0, shards)
+		for i := 0; i < shards; i++ {
+			lower := minV.Add(step * time.Duration(i))
+			upper := minV.Add(step * time.Duration(i + 1))
+			if i == shards-1 {
+				upper = maxV
+			}
+			ranges = append(ranges, [2]any{lower, upper})
+		}
+		return ranges, nil
+	default:
+		return nil, fmt.Errorf("unsupported resume_key type for sharding: %T", minVal)
+	}
+}
+
+func buildShardTaskSQL(baseSQL, resumeKey, resumeLiteral string, lower, upper any, isLast bool) (string, string) {
+	normalized := trimSQL(baseSQL)
+	lowerLit, _ := formatResumeLiteral(lower)
+	upperLit, _ := formatResumeLiteral(upper)
+
+	op := "<"
+	if isLast {
+		op = "<="
+	}
+
+	wrapped := fmt.Sprintf("SELECT * FROM (%s) src", normalized)
+	cond := fmt.Sprintf("%s >= %s AND %s %s %s", resumeKey, lowerLit, resumeKey, op, upperLit)
+
+	if resumeLiteral != "" {
+		wrapped = fmt.Sprintf("%s WHERE %s > %s AND %s", wrapped, resumeKey, resumeLiteral, cond)
+	} else {
+		wrapped = fmt.Sprintf("%s WHERE %s", wrapped, cond)
+	}
+
+	dataSQL := fmt.Sprintf("%s ORDER BY %s", wrapped, resumeKey)
+	return dataSQL, wrapped
 }
 
 func (p *Processor) resolveResumeLiteral(task config.TaskConfig) (string, error) {
@@ -1125,6 +1659,9 @@ func (p *Processor) planTask(w io.Writer, taskIndex, totalTasks, overallIndex in
 		fmt.Fprintf(w, "  Rows:    ~%s\n", formatNumber(rowCount))
 	} else {
 		fmt.Fprintln(w, "  Rows:    (unknown)")
+	}
+	if task.Shard.Enabled {
+		fmt.Fprintf(w, "  Shards:  %d\n", task.Shard.Shards)
 	}
 	if task.AdaptiveBatch.Enabled {
 		adaptive := newAdaptiveBatchController(task.AdaptiveBatch, batchSize)

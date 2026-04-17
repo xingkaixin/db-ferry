@@ -129,6 +129,61 @@ func TestValidateRejectsInvalidTaskConstraints(t *testing.T) {
 			t.Fatalf("expected resume_key requires source error, got %v", err)
 		}
 	})
+
+	t.Run("shard requires resume_key", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Shard = ShardConfig{Enabled: true, Shards: 4}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "shard requires resume_key") {
+			t.Fatalf("expected shard requires resume_key error, got %v", err)
+		}
+	})
+
+	t.Run("shard requires shards > 1", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].ResumeKey = "id"
+		cfg.Tasks[0].ResumeFrom = "0"
+		cfg.Tasks[0].Shard = ShardConfig{Enabled: true, Shards: 1}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "shard.shards must be > 1") {
+			t.Fatalf("expected shard.shards error, got %v", err)
+		}
+	})
+
+	t.Run("shard rejected in replace mode", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeReplace
+		cfg.Tasks[0].ResumeKey = "id"
+		cfg.Tasks[0].ResumeFrom = "0"
+		cfg.Tasks[0].Shard = ShardConfig{Enabled: true, Shards: 4}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "shard is not supported in replace mode") {
+			t.Fatalf("expected shard replace mode error, got %v", err)
+		}
+	})
+
+	t.Run("shard rejected with state_file", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeAppend
+		cfg.Tasks[0].ResumeKey = "id"
+		cfg.Tasks[0].StateFile = "state.json"
+		cfg.Tasks[0].Shard = ShardConfig{Enabled: true, Shards: 4}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "state_file is not supported with shard") {
+			t.Fatalf("expected shard state_file error, got %v", err)
+		}
+	})
+
+	t.Run("shard valid in append mode", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeAppend
+		cfg.Tasks[0].ResumeKey = "id"
+		cfg.Tasks[0].ResumeFrom = "0"
+		cfg.Tasks[0].Shard = ShardConfig{Enabled: true, Shards: 4}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected shard append mode to pass, got %v", err)
+		}
+	})
 }
 
 func TestValidateIndexRules(t *testing.T) {

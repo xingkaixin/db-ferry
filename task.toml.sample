@@ -169,3 +169,9 @@ table_name = "db_ferry_migrations"
 # - replicas define read-only replicas for source queries; priority determines selection order
 # - replica_fallback = true allows falling back to the master host when all replicas are unreachable
 # - history.enabled writes migration audit records to the target database table (auto-created if missing)
+# - shard.enabled splits a single large table into parallel range shards based on resume_key
+#   shard requires resume_key and resume_from; it is only supported in append/merge mode
+#   Example:
+#     [tasks.shard]
+#     enabled = true
+#     shards = 8
