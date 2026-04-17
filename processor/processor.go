@@ -1170,7 +1170,7 @@ func splitRange(minVal, maxVal any, shards int) ([][2]any, error) {
 		ranges := make([][2]any, 0, shards)
 		for i := 0; i < shards; i++ {
 			lower := minV.Add(step * time.Duration(i))
-			upper := minV.Add(step * time.Duration(i + 1))
+			upper := minV.Add(step * time.Duration(i+1))
 			if i == shards-1 {
 				upper = maxV
 			}
