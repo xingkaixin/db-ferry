@@ -154,4 +154,3 @@ func buildTLSConfig(dbCfg config.DatabaseConfig) (*tls.Config, error) {
 
 	return tlsConfig, nil
 }
-
