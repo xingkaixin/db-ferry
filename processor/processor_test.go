@@ -2198,10 +2198,10 @@ func TestGetHistoryRecorder(t *testing.T) {
 		Tasks: []config.TaskConfig{
 			{
 				TableName: "dst",
-				SQL:        "SELECT id FROM src",
-				SourceDB:   "src",
-				TargetDB:   "dst",
-				Mode:       config.TaskModeAppend,
+				SQL:       "SELECT id FROM src",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeAppend,
 			},
 		},
 		History: config.HistoryConfig{Enabled: true, TableName: "test_history"},
@@ -2243,11 +2243,11 @@ func TestProcessTaskWithHistory(t *testing.T) {
 		Tasks: []config.TaskConfig{
 			{
 				TableName: "dst",
-				SQL:        "SELECT id FROM src",
-				SourceDB:   "src",
-				TargetDB:   "dst",
-				Mode:       config.TaskModeAppend,
-				Validate:   config.TaskValidateRowCount,
+				SQL:       "SELECT id FROM src",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeAppend,
+				Validate:  config.TaskValidateRowCount,
 			},
 		},
 		History: config.HistoryConfig{Enabled: true, TableName: "test_history"},
