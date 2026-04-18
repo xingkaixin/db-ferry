@@ -2383,3 +2383,113 @@ func TestProcessTaskWithSkipCreateTable(t *testing.T) {
 		t.Fatalf("target row count = %d, want 1", count)
 	}
 }
+
+func TestProcessShardedTaskEmptyTable(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_empty (id INTEGER PRIMARY KEY, name TEXT)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:  "dst_empty",
+				SQL:        "SELECT id, name FROM src_empty",
+				SourceDB:   "src",
+				TargetDB:   "dst",
+				Mode:       config.TaskModeAppend,
+				ResumeKey:  "id",
+				ResumeFrom: "0",
+				Shard:      config.ShardConfig{Enabled: true, Shards: 4},
+			},
+		},
+		MaxConcurrentTasks: 4,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM "dst_empty"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("target row count = %d, want 0", count)
+	}
+}
+
+func TestProcessShardedTaskWithResumeFrom(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_events (id INTEGER PRIMARY KEY, name TEXT)`)
+	for i := 1; i <= 100; i++ {
+		setupSQLiteExec(t, sourcePath, fmt.Sprintf(`INSERT INTO src_events(id, name) VALUES (%d, 'event_%d')`, i, i))
+	}
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:  "dst_events",
+				SQL:        "SELECT id, name FROM src_events",
+				SourceDB:   "src",
+				TargetDB:   "dst",
+				Mode:       config.TaskModeAppend,
+				Validate:   config.TaskValidateRowCount,
+				ResumeKey:  "id",
+				ResumeFrom: "25",
+				Shard:      config.ShardConfig{Enabled: true, Shards: 4},
+			},
+		},
+		MaxConcurrentTasks: 4,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM "dst_events"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 75 {
+		t.Fatalf("target row count = %d, want 75", count)
+	}
+}
