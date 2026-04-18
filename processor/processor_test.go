@@ -2112,3 +2112,274 @@ func TestProcessShardedTaskWithDryRun(t *testing.T) {
 		t.Fatalf("expected row count in plan output, got:\n%s", out)
 	}
 }
+func TestSplitRangeEdgeCases(t *testing.T) {
+	t.Run("shards lte 1 error", func(t *testing.T) {
+		_, err := splitRange(int64(0), int64(10), 1)
+		if err == nil || !strings.Contains(err.Error(), "shards must be > 1") {
+			t.Fatalf("expected shards error, got %v", err)
+		}
+	})
+
+	t.Run("int64 step zero totalRange lt shards", func(t *testing.T) {
+		ranges, err := splitRange(int64(0), int64(3), 10)
+		if err != nil {
+			t.Fatalf("splitRange() error = %v", err)
+		}
+		if len(ranges) == 0 {
+			t.Fatalf("expected some ranges, got none")
+		}
+		if ranges[len(ranges)-1][1] != int64(3) {
+			t.Fatalf("expected last upper to be 3, got %v", ranges[len(ranges)-1][1])
+		}
+	})
+
+	t.Run("float64 min equals max", func(t *testing.T) {
+		ranges, err := splitRange(5.0, 5.0, 4)
+		if err != nil {
+			t.Fatalf("splitRange() error = %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0][0] != 5.0 || ranges[0][1] != 5.0 {
+			t.Fatalf("unexpected range: %v", ranges[0])
+		}
+	})
+
+	t.Run("time min equals max", func(t *testing.T) {
+		minT := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		ranges, err := splitRange(minT, minT, 4)
+		if err != nil {
+			t.Fatalf("splitRange() error = %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if !ranges[0][0].(time.Time).Equal(minT) {
+			t.Fatalf("unexpected range: %v", ranges[0])
+		}
+	})
+
+	t.Run("int64 type mismatch", func(t *testing.T) {
+		_, err := splitRange(int64(0), 10.0, 4)
+		if err == nil || !strings.Contains(err.Error(), "does not match") {
+			t.Fatalf("expected type mismatch error, got %v", err)
+		}
+	})
+
+	t.Run("float64 type mismatch", func(t *testing.T) {
+		_, err := splitRange(0.0, int64(10), 4)
+		if err == nil || !strings.Contains(err.Error(), "does not match") {
+			t.Fatalf("expected type mismatch error, got %v", err)
+		}
+	})
+
+	t.Run("time type mismatch", func(t *testing.T) {
+		_, err := splitRange(time.Now(), int64(10), 4)
+		if err == nil || !strings.Contains(err.Error(), "does not match") {
+			t.Fatalf("expected type mismatch error, got %v", err)
+		}
+	})
+}
+
+func TestGetHistoryRecorder(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src (id INTEGER PRIMARY KEY)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src(id) VALUES (1)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst",
+				SQL:        "SELECT id FROM src",
+				SourceDB:   "src",
+				TargetDB:   "dst",
+				Mode:       config.TaskModeAppend,
+			},
+		},
+		History: config.HistoryConfig{Enabled: true, TableName: "test_history"},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	// First call creates the recorder.
+	r1 := p.getHistoryRecorder("dst")
+	if r1 == nil {
+		t.Fatal("expected recorder, got nil")
+	}
+
+	// Second call returns cached recorder.
+	r2 := p.getHistoryRecorder("dst")
+	if r2 != r1 {
+		t.Fatal("expected same recorder instance")
+	}
+}
+
+func TestProcessTaskWithHistory(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src (id INTEGER PRIMARY KEY)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src(id) VALUES (1), (2), (3)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst",
+				SQL:        "SELECT id FROM src",
+				SourceDB:   "src",
+				TargetDB:   "dst",
+				Mode:       config.TaskModeAppend,
+				Validate:   config.TaskValidateRowCount,
+			},
+		},
+		History: config.HistoryConfig{Enabled: true, TableName: "test_history"},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM "dst"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("target row count = %d, want 3", count)
+	}
+}
+
+func TestSaveStateFileEmptyPath(t *testing.T) {
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: filepath.Join(t.TempDir(), "src.db")},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: filepath.Join(t.TempDir(), "dst.db")},
+		},
+		Tasks: []config.TaskConfig{
+			{TableName: "t", SQL: "SELECT 1", SourceDB: "src", TargetDB: "dst"},
+		},
+	}
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	defer p.Close()
+
+	state := &stateFile{Tasks: map[string]string{"k": "v"}}
+	if err := p.saveStateFile("", state); err != nil {
+		t.Fatalf("saveStateFile(\"\") error = %v", err)
+	}
+	if err := p.saveStateFile("/tmp/state.json", nil); err != nil {
+		t.Fatalf("saveStateFile(..., nil) error = %v", err)
+	}
+}
+
+func TestDLQWriterCloseNil(t *testing.T) {
+	var w *dlqWriter
+	if err := w.close(); err != nil {
+		t.Fatalf("close on nil dlqWriter should return nil, got %v", err)
+	}
+}
+
+func TestGetHistoryRecorderMissingConfig(t *testing.T) {
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: filepath.Join(t.TempDir(), "src.db")},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: filepath.Join(t.TempDir(), "dst.db")},
+		},
+		Tasks: []config.TaskConfig{
+			{TableName: "t", SQL: "SELECT 1", SourceDB: "src", TargetDB: "dst"},
+		},
+		History: config.HistoryConfig{Enabled: true},
+	}
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	defer p.Close()
+
+	recorder := p.getHistoryRecorder("nonexistent_db")
+	if recorder == nil {
+		t.Fatalf("expected fallback recorder, got nil")
+	}
+}
+
+func TestProcessTaskWithSkipCreateTable(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src (id INTEGER PRIMARY KEY)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src(id) VALUES (1)`)
+
+	// Pre-create target table.
+	setupSQLiteSource(t, targetPath, `CREATE TABLE dst (id INTEGER PRIMARY KEY)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:       "dst",
+				SQL:             "SELECT id FROM src",
+				SourceDB:        "src",
+				TargetDB:        "dst",
+				Mode:            config.TaskModeAppend,
+				SkipCreateTable: true,
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM "dst"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("target row count = %d, want 1", count)
+	}
+}

@@ -250,6 +250,37 @@ func TestMaskEmailComplexLocal(t *testing.T) {
 	}
 }
 
+func TestToString(t *testing.T) {
+	cases := []struct {
+		input any
+		want  string
+	}{
+		{"hello", "hello"},
+		{[]byte("world"), "world"},
+		{42, "42"},
+		{3.14, "3.14"},
+		{true, "true"},
+	}
+	for _, tc := range cases {
+		got := toString(tc.input)
+		if got != tc.want {
+			t.Fatalf("toString(%v) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestMaskValueUnsupportedRule(t *testing.T) {
+	columns := []database.ColumnMetadata{{Name: "token"}}
+	masks := []config.MaskingConfig{{Column: "token", Rule: "unsupported_rule"}}
+	engine := newMaskEngine(masks, columns)
+
+	row := []any{"secret"}
+	result := engine.apply(row, columns)
+	if result[0] != "secret" {
+		t.Fatalf("expected unsupported rule to passthrough, got %v", result[0])
+	}
+}
+
 func TestMaskValueLength(t *testing.T) {
 	cases := []struct {
 		input      string
