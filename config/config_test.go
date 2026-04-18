@@ -811,6 +811,22 @@ func TestValidateDependsOn(t *testing.T) {
 	})
 }
 
+func TestHistoryTable(t *testing.T) {
+	t.Run("default table name", func(t *testing.T) {
+		h := HistoryConfig{Enabled: true}
+		if got := h.Table(); got != "db_ferry_migrations" {
+			t.Fatalf("expected default table name, got %q", got)
+		}
+	})
+
+	t.Run("custom table name", func(t *testing.T) {
+		h := HistoryConfig{Enabled: true, TableName: "custom_history"}
+		if got := h.Table(); got != "custom_history" {
+			t.Fatalf("expected custom table name, got %q", got)
+		}
+	})
+}
+
 func TestValidateMaskingRules(t *testing.T) {
 	t.Run("valid masking passes", func(t *testing.T) {
 		cfg := baseConfig(t)
