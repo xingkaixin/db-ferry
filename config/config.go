@@ -405,7 +405,6 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("task %d: resume_key requires resume_from or state_file", i+1)
 		}
 
-
 		if task.Shard.Enabled {
 			if task.ResumeKey == "" {
 				return fmt.Errorf("task %d: shard requires resume_key", i+1)
