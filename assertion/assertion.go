@@ -17,9 +17,9 @@ type queryer interface {
 
 // Result captures the outcome of a single assertion check.
 type Result struct {
-	Rule          Rule
+	Rule           Rule
 	ViolationCount int64
-	Err           error
+	Err            error
 }
 
 // Passed returns true if the assertion passed (no violations and no error).

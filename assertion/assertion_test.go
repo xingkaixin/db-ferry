@@ -115,7 +115,11 @@ func TestDescription(t *testing.T) {
 		expected string
 	}{
 		{config.AssertionConfig{Column: "order_id", Rule: config.AssertionRuleNotNull}, "column 'order_id' must not be null"},
-		{func() config.AssertionConfig { min := 0.0; max := 100.0; return config.AssertionConfig{Column: "amount", Rule: config.AssertionRuleRange, Min: &min, Max: &max} }(), "column 'amount' must be in range (min=0, max=100)"},
+		{func() config.AssertionConfig {
+			min := 0.0
+			max := 100.0
+			return config.AssertionConfig{Column: "amount", Rule: config.AssertionRuleRange, Min: &min, Max: &max}
+		}(), "column 'amount' must be in range (min=0, max=100)"},
 		{config.AssertionConfig{Column: "status", Rule: config.AssertionRuleInSet, Values: []string{"a", "b"}}, "column 'status' must be in set [a b]"},
 		{config.AssertionConfig{Columns: []string{"a", "b"}, Rule: config.AssertionRuleUnique}, "columns [a b] must be unique"},
 		{config.AssertionConfig{Column: "email", Rule: config.AssertionRuleRegex, Pattern: `.*`}, "column 'email' must match pattern '.*'"},
