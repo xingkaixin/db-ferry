@@ -256,7 +256,9 @@ type TaskConfig struct {
 	SkipCreateTable bool `toml:"skip_create_table"`
 	// SchemaEvolution 在 append/merge 模式下自动为目标表添加源端新增列。
 	SchemaEvolution bool `toml:"schema_evolution"`
-	// DLQPath 死信队列文件路径，用于保存插入失败的行。
+	// DLQPath 死信队列输出路径，用于保存插入失败的行。
+	// 支持本地文件路径（如 ./dlq/failed.jsonl）、S3（s3://bucket/path）和 GCS（gs://bucket/path）。
+	// 可使用 {{.Date}} 模板按日期分片，如 s3://bucket/dlq/{{.Date}}/failed.jsonl。
 	DLQPath string `toml:"dlq_path,omitempty"`
 	// DLQFormat 死信队列文件格式，支持 jsonl 和 csv，默认为 jsonl。
 	DLQFormat  string            `toml:"dlq_format,omitempty"`

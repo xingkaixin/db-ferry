@@ -76,6 +76,9 @@ validate = "row_count"
 resume_key = "employee_id"
 state_file = "./state/db-ferry.json"
 # dlq_path = "./dlq/employees_failed.jsonl"
+# dlq_path = "s3://my-bucket/db-ferry-dlq/employees_failed.jsonl"
+# dlq_path = "gs://my-bucket/db-ferry-dlq/employees_failed.jsonl"
+# dlq_path = "s3://my-bucket/db-ferry-dlq/{{.Date}}/employees_failed.jsonl"
 # dlq_format = "jsonl"
 
 [[tasks.indexes]]
@@ -163,6 +166,9 @@ table_name = "db_ferry_migrations"
 # - Set skip_create_table = true to keep existing target tables and avoid drop/create
 # - schema_evolution = true enables automatic ALTER TABLE ADD COLUMN in append/merge mode when source adds new columns
 # - dlq_path isolates insert failures instead of failing the entire task; dlq_format supports jsonl (default) and csv
+#   dlq_path supports local paths, S3 (s3://bucket/path), and GCS (gs://bucket/path)
+#   Use {{.Date}} template for date-based sharding, e.g. s3://bucket/dlq/{{.Date}}/failed.jsonl
+#   S3 uses default AWS credential chain (env vars → IAM Role); GCS uses GOOGLE_APPLICATION_CREDENTIALS or Workload Identity
 # - depends_on declares task dependencies using table_name, enabling DAG-based scheduling
 # - max_concurrent_tasks controls global parallelism (default 3 when unset or <= 0)
 # - pool_max_open / pool_max_idle configure the underlying sql.DB connection pool
