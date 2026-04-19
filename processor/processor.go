@@ -3,13 +3,9 @@ package processor
 import (
 	"context"
 	"database/sql"
-	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -34,109 +30,6 @@ type Processor struct {
 }
 
 var sleepFn = time.Sleep
-
-type dlqWriter struct {
-	path      string
-	format    string
-	file      *os.File
-	csvWriter *csv.Writer
-	mu        sync.Mutex
-}
-
-func newDLQWriter(path, format string, columns []database.ColumnMetadata) (*dlqWriter, error) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create DLQ directory %s: %w", dir, err)
-	}
-
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open DLQ file %s: %w", path, err)
-	}
-
-	w := &dlqWriter{
-		path:   path,
-		format: format,
-		file:   file,
-	}
-
-	if format == config.DLQFormatCSV {
-		stat, err := file.Stat()
-		if err != nil {
-			_ = file.Close()
-			return nil, fmt.Errorf("failed to stat DLQ file: %w", err)
-		}
-		w.csvWriter = csv.NewWriter(file)
-		if stat.Size() == 0 {
-			headers := make([]string, len(columns)+3)
-			for i, col := range columns {
-				headers[i] = col.Name
-			}
-			headers[len(columns)] = "_dlq_error"
-			headers[len(columns)+1] = "_dlq_table_name"
-			headers[len(columns)+2] = "_dlq_timestamp"
-			if err := w.csvWriter.Write(headers); err != nil {
-				_ = file.Close()
-				return nil, fmt.Errorf("failed to write CSV header: %w", err)
-			}
-			w.csvWriter.Flush()
-		}
-	}
-
-	return w, nil
-}
-
-func (w *dlqWriter) write(row []any, errMsg, taskKey, tableName string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	timestamp := time.Now().Format(time.RFC3339)
-
-	if w.format == config.DLQFormatCSV {
-		record := make([]string, len(row)+3)
-		for i, v := range row {
-			if v == nil {
-				record[i] = ""
-			} else {
-				record[i] = fmt.Sprint(v)
-			}
-		}
-		record[len(row)] = errMsg
-		record[len(row)+1] = tableName
-		record[len(row)+2] = timestamp
-		if err := w.csvWriter.Write(record); err != nil {
-			return err
-		}
-		w.csvWriter.Flush()
-		return w.csvWriter.Error()
-	}
-
-	entry := map[string]any{
-		"row":        row,
-		"error":      errMsg,
-		"task_name":  taskKey,
-		"table_name": tableName,
-		"timestamp":  timestamp,
-	}
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return err
-	}
-	if _, err := w.file.Write(append(data, '\n')); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (w *dlqWriter) close() error {
-	if w == nil {
-		return nil
-	}
-	if w.csvWriter != nil {
-		w.csvWriter.Flush()
-	}
-	return w.file.Close()
-}
 
 func NewProcessor(manager *database.ConnectionManager, cfg *config.Config) *Processor {
 	return NewProcessorWithVersion(manager, cfg, "dev")
