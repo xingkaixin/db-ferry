@@ -545,6 +545,61 @@ func TestProcessTaskWithDLQ(t *testing.T) {
 	}
 }
 
+func TestProcessTaskWithAssertions(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'a'), (2, 'b')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:       "dst_users",
+				SQL:             "SELECT id, name FROM src_users",
+				SourceDB:        "src",
+				TargetDB:        "dst",
+				Mode:            config.TaskModeReplace,
+				BatchSize:       2,
+				SkipCreateTable: false,
+				Assertions: []config.AssertionConfig{
+					{Column: "name", Rule: config.AssertionRuleNotNull, OnFail: config.AssertionActionWarn},
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("target row count = %d, want 2", count)
+	}
+}
+
 func TestProcessTaskReplaceAndStateFile(t *testing.T) {
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.db")
@@ -2492,4 +2547,104 @@ func TestProcessShardedTaskWithResumeFrom(t *testing.T) {
 	if count != 75 {
 		t.Fatalf("target row count = %d, want 75", count)
 	}
+}
+
+func TestResolvePostAssertions(t *testing.T) {
+	t.Run("no mappings returns copy", func(t *testing.T) {
+		assertions := []config.AssertionConfig{
+			{Column: "id", Rule: config.AssertionRuleNotNull},
+			{Columns: []string{"a", "b"}, Rule: config.AssertionRuleUnique},
+		}
+		result := resolvePostAssertions(assertions, nil)
+		if len(result) != 2 {
+			t.Fatalf("expected 2 assertions, got %d", len(result))
+		}
+		if result[0].Column != "id" {
+			t.Errorf("expected column id, got %s", result[0].Column)
+		}
+	})
+
+	t.Run("maps single column", func(t *testing.T) {
+		assertions := []config.AssertionConfig{
+			{Column: "src_id", Rule: config.AssertionRuleNotNull},
+		}
+		mappings := []config.ColumnMapping{{Source: "src_id", Target: "dst_id"}}
+		result := resolvePostAssertions(assertions, mappings)
+		if result[0].Column != "dst_id" {
+			t.Errorf("expected mapped column dst_id, got %s", result[0].Column)
+		}
+	})
+
+	t.Run("maps unique columns", func(t *testing.T) {
+		assertions := []config.AssertionConfig{
+			{Columns: []string{"src_a", "src_b"}, Rule: config.AssertionRuleUnique},
+		}
+		mappings := []config.ColumnMapping{
+			{Source: "src_a", Target: "dst_a"},
+			{Source: "src_b", Target: "dst_b"},
+		}
+		result := resolvePostAssertions(assertions, mappings)
+		if result[0].Columns[0] != "dst_a" || result[0].Columns[1] != "dst_b" {
+			t.Errorf("expected mapped columns, got %v", result[0].Columns)
+		}
+	})
+
+	t.Run("partial mapping leaves unmapped columns unchanged", func(t *testing.T) {
+		assertions := []config.AssertionConfig{
+			{Columns: []string{"src_a", "unmapped"}, Rule: config.AssertionRuleUnique},
+		}
+		mappings := []config.ColumnMapping{{Source: "src_a", Target: "dst_a"}}
+		result := resolvePostAssertions(assertions, mappings)
+		if result[0].Columns[0] != "dst_a" || result[0].Columns[1] != "unmapped" {
+			t.Errorf("expected [dst_a, unmapped], got %v", result[0].Columns)
+		}
+	})
+
+	t.Run("case insensitive mapping", func(t *testing.T) {
+		assertions := []config.AssertionConfig{
+			{Column: "SRC_ID", Rule: config.AssertionRuleNotNull},
+		}
+		mappings := []config.ColumnMapping{{Source: "src_id", Target: "dst_id"}}
+		result := resolvePostAssertions(assertions, mappings)
+		if result[0].Column != "dst_id" {
+			t.Errorf("expected case-insensitive mapped column dst_id, got %s", result[0].Column)
+		}
+	})
+}
+
+func TestDLQWriteFn(t *testing.T) {
+	t.Run("nil writer returns nil", func(t *testing.T) {
+		fn := dlqwWriteFn(nil)
+		if fn != nil {
+			t.Error("expected nil function for nil dlqw")
+		}
+	})
+
+	t.Run("non-nil writer delegates to dlqw", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "dlq.jsonl")
+		dlqw, err := newDLQWriter(path, config.DLQFormatJSONL, []database.ColumnMetadata{{Name: "id"}})
+		if err != nil {
+			t.Fatalf("failed to create DLQ writer: %v", err)
+		}
+		defer dlqw.close()
+
+		fn := dlqwWriteFn(dlqw)
+		if fn == nil {
+			t.Fatal("expected non-nil function for non-nil dlqw")
+		}
+
+		if err := fn([]any{1}, "test error"); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+
+		// Verify the file was written
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("failed to read DLQ file: %v", err)
+		}
+		if len(content) == 0 {
+			t.Error("expected DLQ file to have content")
+		}
+	})
 }
