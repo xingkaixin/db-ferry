@@ -100,6 +100,19 @@ func TestDaemonRunOnceBadConfig(t *testing.T) {
 	}
 }
 
+func TestDaemonStopBeforeRun(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	d := New(Options{ConfigPath: cfgPath})
+	d.Stop()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+}
+
 func TestDaemonStop(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath, _, _ := setupTestDBs(t, dir)

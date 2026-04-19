@@ -9,6 +9,25 @@ import (
 	"time"
 )
 
+func TestHealthServerStopWithoutStart(t *testing.T) {
+	d := New(Options{ConfigPath: "task.toml"})
+	hsrv := NewHealthServer("127.0.0.1:0", d)
+	if err := hsrv.Stop(); err != nil {
+		t.Fatalf("Stop without Start should return nil, got %v", err)
+	}
+}
+
+func TestHealthServerStartListenError(t *testing.T) {
+	d := New(Options{ConfigPath: "task.toml"})
+	hsrv := NewHealthServer("!invalid", d)
+	hsrv.Start()
+	// Start should log and return without panic.
+	// server remains nil.
+	if hsrv.server != nil {
+		t.Fatal("expected server to be nil after listen error")
+	}
+}
+
 func TestHealthServerStartAndStop(t *testing.T) {
 	d := New(Options{ConfigPath: "task.toml"})
 	addr := "127.0.0.1:0"
