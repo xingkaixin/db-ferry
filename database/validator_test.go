@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"db-ferry/config"
+	"db-ferry/metrics"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	_ "github.com/mattn/go-sqlite3"
@@ -291,7 +292,7 @@ func TestValidateRowCount(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"cnt"}).AddRow(12))
 
 	task := config.TaskConfig{TableName: "users", TargetDB: "db1"}
-	if err := validateRowCount(mq, task, 10, 2); err != nil {
+	if err := validateRowCount(mq, task, 10, 2, metrics.NewNoopRecorder()); err != nil {
 		t.Fatalf("validateRowCount() error = %v", err)
 	}
 
@@ -299,7 +300,7 @@ func TestValidateRowCount(t *testing.T) {
 	mq2, mock2 := newMockQueryer(t)
 	mock2.ExpectQuery("SELECT COUNT\\(\\*\\) FROM").
 		WillReturnRows(sqlmock.NewRows([]string{"cnt"}).AddRow(15))
-	if err := validateRowCount(mq2, task, 10, 2); err == nil {
+	if err := validateRowCount(mq2, task, 10, 2, metrics.NewNoopRecorder()); err == nil {
 		t.Fatal("expected row count mismatch error")
 	}
 }
@@ -313,7 +314,7 @@ func TestValidateChecksumWithMock(t *testing.T) {
 	tgtMock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"h"}).AddRow("abc"))
 
 	task := config.TaskConfig{TableName: "users"}
-	err := validateChecksum(src, tgt, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1")
+	err := validateChecksum(src, tgt, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1", metrics.NewNoopRecorder())
 	if err != nil {
 		t.Fatalf("validateChecksum() error = %v", err)
 	}
@@ -323,7 +324,7 @@ func TestValidateChecksumWithMock(t *testing.T) {
 	tgt2, tgtMock2 := newMockQueryer(t)
 	srcMock2.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"h"}).AddRow("abc"))
 	tgtMock2.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"h"}).AddRow("def"))
-	err = validateChecksum(src2, tgt2, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1")
+	err = validateChecksum(src2, tgt2, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1", metrics.NewNoopRecorder())
 	if err == nil {
 		t.Fatal("expected checksum mismatch error")
 	}
@@ -375,7 +376,7 @@ func TestValidateSampleWithMock(t *testing.T) {
 	)
 
 	task := config.TaskConfig{TableName: "users", ValidateSampleSize: 1}
-	err := validateSample(src, tgt, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1")
+	err := validateSample(src, tgt, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1", metrics.NewNoopRecorder())
 	if err != nil {
 		t.Fatalf("validateSample() error = %v", err)
 	}
@@ -394,7 +395,7 @@ func TestValidateSampleRowNotFound(t *testing.T) {
 	)
 
 	task := config.TaskConfig{TableName: "users", ValidateSampleSize: 1}
-	if err := validateSample(src, tgt, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1"); err == nil {
+	if err := validateSample(src, tgt, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1", metrics.NewNoopRecorder()); err == nil {
 		t.Fatal("expected not found error")
 	}
 }
@@ -412,7 +413,7 @@ func TestValidateSampleValueMismatch(t *testing.T) {
 	)
 
 	task := config.TaskConfig{TableName: "users", ValidateSampleSize: 1}
-	if err := validateSample(src, tgt, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1"); err == nil {
+	if err := validateSample(src, tgt, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1", metrics.NewNoopRecorder()); err == nil {
 		t.Fatal("expected mismatch error")
 	}
 }
@@ -422,19 +423,19 @@ func TestValidateTask(t *testing.T) {
 	tgtMock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM").WillReturnRows(sqlmock.NewRows([]string{"cnt"}).AddRow(12))
 
 	task := config.TaskConfig{Validate: config.TaskValidateRowCount, TableName: "users", TargetDB: "db1"}
-	if err := ValidateTask(nil, tgt, "", config.DatabaseTypeMySQL, task, nil, "", 10, 2); err != nil {
+	if err := ValidateTask(nil, tgt, "", config.DatabaseTypeMySQL, task, nil, "", 10, 2, metrics.NewNoopRecorder()); err != nil {
 		t.Fatalf("ValidateTask(row_count) error = %v", err)
 	}
 
 	// none -> nil
 	task.Validate = config.TaskValidateNone
-	if err := ValidateTask(nil, nil, "", "", task, nil, "", 0, 0); err != nil {
+	if err := ValidateTask(nil, nil, "", "", task, nil, "", 0, 0, metrics.NewNoopRecorder()); err != nil {
 		t.Fatalf("ValidateTask(none) error = %v", err)
 	}
 
 	// unknown -> nil
 	task.Validate = "unknown"
-	if err := ValidateTask(nil, nil, "", "", task, nil, "", 0, 0); err != nil {
+	if err := ValidateTask(nil, nil, "", "", task, nil, "", 0, 0, metrics.NewNoopRecorder()); err != nil {
 		t.Fatalf("ValidateTask(unknown) error = %v", err)
 	}
 }
@@ -448,7 +449,7 @@ func TestValidateTaskChecksumAndSample(t *testing.T) {
 	tgtMock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"h"}).AddRow("abc"))
 
 	task := config.TaskConfig{Validate: config.TaskValidateChecksum, TableName: "users"}
-	if err := ValidateTask(src, tgt, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1", 0, 0); err != nil {
+	if err := ValidateTask(src, tgt, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1", 0, 0, metrics.NewNoopRecorder()); err != nil {
 		t.Fatalf("ValidateTask(checksum) error = %v", err)
 	}
 
@@ -459,7 +460,7 @@ func TestValidateTaskChecksumAndSample(t *testing.T) {
 
 	task.Validate = config.TaskValidateSample
 	task.ValidateSampleSize = 1
-	if err := ValidateTask(src2, tgt2, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1", 0, 0); err != nil {
+	if err := ValidateTask(src2, tgt2, config.DatabaseTypeMySQL, config.DatabaseTypeMySQL, task, columns, "SELECT 1", 0, 0, metrics.NewNoopRecorder()); err != nil {
 		t.Fatalf("ValidateTask(sample) error = %v", err)
 	}
 }
@@ -546,7 +547,7 @@ func TestValidateRowCountQueryError(t *testing.T) {
 	mq, mock := newMockQueryer(t)
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM").WillReturnError(fmt.Errorf("boom"))
 	task := config.TaskConfig{TableName: "users", TargetDB: "db1"}
-	if err := validateRowCount(mq, task, 10, 2); err == nil {
+	if err := validateRowCount(mq, task, 10, 2, metrics.NewNoopRecorder()); err == nil {
 		t.Fatal("expected error")
 	}
 }

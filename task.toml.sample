@@ -175,3 +175,13 @@ table_name = "db_ferry_migrations"
 #     [tasks.shard]
 #     enabled = true
 #     shards = 8
+
+#########################
+# Metrics Configuration #
+#########################
+
+[metrics]
+# enabled = true
+# listen_addr = ":9090"    # Prometheus pull endpoint, e.g. http://localhost:9090/metrics
+# endpoint = "http://localhost:4318/v1/metrics"  # OTLP HTTP push endpoint
+# interval = "30s"         # Push interval when endpoint is configured

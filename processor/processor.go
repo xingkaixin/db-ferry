@@ -16,6 +16,7 @@ import (
 
 	"db-ferry/config"
 	"db-ferry/database"
+	"db-ferry/metrics"
 	"db-ferry/utils"
 )
 
@@ -28,6 +29,7 @@ type Processor struct {
 	historyMu        sync.Mutex
 	version          string
 	sem              chan struct{}
+	metrics          metrics.Recorder
 }
 
 var sleepFn = time.Sleep
@@ -140,10 +142,14 @@ func NewProcessor(manager *database.ConnectionManager, cfg *config.Config) *Proc
 }
 
 // NewProcessorWithVersion creates a processor with an explicit version string.
-func NewProcessorWithVersion(manager *database.ConnectionManager, cfg *config.Config, version string) *Processor {
+func NewProcessorWithVersion(manager *database.ConnectionManager, cfg *config.Config, version string, rec ...metrics.Recorder) *Processor {
 	maxConcurrent := cfg.MaxConcurrentTasks
 	if maxConcurrent <= 0 {
 		maxConcurrent = 3
+	}
+	var recorder metrics.Recorder = metrics.NewNoopRecorder()
+	if len(rec) > 0 && rec[0] != nil {
+		recorder = rec[0]
 	}
 	return &Processor{
 		manager:          manager,
@@ -152,6 +158,7 @@ func NewProcessorWithVersion(manager *database.ConnectionManager, cfg *config.Co
 		historyRecorders: make(map[string]*database.HistoryRecorder),
 		version:          version,
 		sem:              make(chan struct{}, maxConcurrent),
+		metrics:          recorder,
 	}
 }
 
@@ -367,6 +374,10 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 	if task.Shard.Enabled {
 		return p.processShardedTask(task, silent)
 	}
+	start := time.Now()
+	defer func() {
+		p.metrics.RecordTaskDuration(task.TableName, task.SourceDB, task.TargetDB, float64(time.Since(start).Milliseconds()))
+	}()
 	log.Printf("Executing query for table %s", task.TableName)
 
 	sourceDB, err := p.manager.GetSource(task.SourceDB)
@@ -564,6 +575,7 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 
 		batch = append(batch, remapRow(row, colIndices))
 		processedRows++
+		p.metrics.RecordRowsProcessed(task.TableName, task.SourceDB, task.TargetDB, 1)
 
 		if progress != nil {
 			if totalRows > 0 {
@@ -574,13 +586,16 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		}
 
 		if len(batch) >= batchSize {
-			start := time.Now()
+			batchStart := time.Now()
 			dlqCount, err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys, dlqw)
-			latency := time.Since(start)
+			latency := time.Since(batchStart)
+			p.metrics.RecordBatchDuration(task.TableName, task.SourceDB, task.TargetDB, float64(latency.Milliseconds()))
+			p.metrics.RecordBatch(task.TableName, task.SourceDB, task.TargetDB, err == nil)
 			if err != nil {
 				return fmt.Errorf("failed to insert batch: %w", err)
 			}
 			totalDLQ += dlqCount
+			p.metrics.RecordDLQRows(task.TableName, task.SourceDB, task.TargetDB, int64(dlqCount))
 			if err := p.updateResumeState(task, lastResumeValue); err != nil {
 				return err
 			}
@@ -597,13 +612,16 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 	}
 
 	if len(batch) > 0 {
-		start := time.Now()
+		batchStart := time.Now()
 		dlqCount, err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys, dlqw)
-		latency := time.Since(start)
+		latency := time.Since(batchStart)
+		p.metrics.RecordBatchDuration(task.TableName, task.SourceDB, task.TargetDB, float64(latency.Milliseconds()))
+		p.metrics.RecordBatch(task.TableName, task.SourceDB, task.TargetDB, err == nil)
 		if err != nil {
 			return fmt.Errorf("failed to insert final batch: %w", err)
 		}
 		totalDLQ += dlqCount
+		p.metrics.RecordDLQRows(task.TableName, task.SourceDB, task.TargetDB, int64(dlqCount))
 		if err := p.updateResumeState(task, lastResumeValue); err != nil {
 			return err
 		}
@@ -655,7 +673,7 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 	if reportedProcessedRows < 0 {
 		reportedProcessedRows = 0
 	}
-	if err := database.ValidateTask(sourceDB, targetDB, sourceDBCfg.Type, targetDBCfg.Type, validationTask, columnsMeta, countSQL, reportedProcessedRows, targetCountBefore); err != nil {
+	if err := database.ValidateTask(sourceDB, targetDB, sourceDBCfg.Type, targetDBCfg.Type, validationTask, columnsMeta, countSQL, reportedProcessedRows, targetCountBefore, p.metrics); err != nil {
 		return err
 	}
 
@@ -740,6 +758,7 @@ func (p *Processor) migrateData(task config.TaskConfig, sourceDB database.Source
 
 		batch = append(batch, row)
 		processedRows++
+		p.metrics.RecordRowsProcessed(task.TableName, task.SourceDB, task.TargetDB, 1)
 
 		if progress != nil {
 			if totalRows > 0 {
@@ -750,11 +769,16 @@ func (p *Processor) migrateData(task config.TaskConfig, sourceDB database.Source
 		}
 
 		if len(batch) >= batchSize {
+			batchStart := time.Now()
 			dlqCount, err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys, dlqw)
+			latency := time.Since(batchStart)
+			p.metrics.RecordBatchDuration(task.TableName, task.SourceDB, task.TargetDB, float64(latency.Milliseconds()))
+			p.metrics.RecordBatch(task.TableName, task.SourceDB, task.TargetDB, err == nil)
 			if err != nil {
 				return 0, 0, fmt.Errorf("failed to insert batch: %w", err)
 			}
 			totalDLQ += dlqCount
+			p.metrics.RecordDLQRows(task.TableName, task.SourceDB, task.TargetDB, int64(dlqCount))
 			if err := p.updateResumeState(task, lastResumeValue); err != nil {
 				return 0, 0, err
 			}
@@ -763,11 +787,16 @@ func (p *Processor) migrateData(task config.TaskConfig, sourceDB database.Source
 	}
 
 	if len(batch) > 0 {
+		batchStart := time.Now()
 		dlqCount, err := p.insertBatchWithRetry(targetDB, task, columnsMeta, batch, mergeKeys, dlqw)
+		latency := time.Since(batchStart)
+		p.metrics.RecordBatchDuration(task.TableName, task.SourceDB, task.TargetDB, float64(latency.Milliseconds()))
+		p.metrics.RecordBatch(task.TableName, task.SourceDB, task.TargetDB, err == nil)
 		if err != nil {
 			return 0, 0, fmt.Errorf("failed to insert final batch: %w", err)
 		}
 		totalDLQ += dlqCount
+		p.metrics.RecordDLQRows(task.TableName, task.SourceDB, task.TargetDB, int64(dlqCount))
 		if err := p.updateResumeState(task, lastResumeValue); err != nil {
 			return 0, 0, err
 		}
@@ -789,6 +818,10 @@ func (p *Processor) migrateData(task config.TaskConfig, sourceDB database.Source
 }
 
 func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) error {
+	start := time.Now()
+	defer func() {
+		p.metrics.RecordTaskDuration(task.TableName, task.SourceDB, task.TargetDB, float64(time.Since(start).Milliseconds()))
+	}()
 	log.Printf("Executing sharded query for table %s with %d shards", task.TableName, task.Shard.Shards)
 
 	sourceDB, err := p.manager.GetSource(task.SourceDB)
@@ -964,7 +997,7 @@ func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) erro
 	if reportedProcessedRows < 0 {
 		reportedProcessedRows = 0
 	}
-	if err := database.ValidateTask(sourceDB, targetDB, sourceDBCfg.Type, targetDBCfg.Type, validationTask, columnsMeta, baseCountSQL, reportedProcessedRows, targetCountBefore); err != nil {
+	if err := database.ValidateTask(sourceDB, targetDB, sourceDBCfg.Type, targetDBCfg.Type, validationTask, columnsMeta, baseCountSQL, reportedProcessedRows, targetCountBefore, p.metrics); err != nil {
 		return err
 	}
 
@@ -977,6 +1010,10 @@ func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) erro
 }
 
 func (p *Processor) processTaskInternalWithSQL(task config.TaskConfig, silent bool, querySQL, countSQL string) error {
+	start := time.Now()
+	defer func() {
+		p.metrics.RecordTaskDuration(task.TableName, task.SourceDB, task.TargetDB, float64(time.Since(start).Milliseconds()))
+	}()
 	log.Printf("Executing query for table %s", task.TableName)
 
 	sourceDB, err := p.manager.GetSource(task.SourceDB)
@@ -1089,7 +1126,7 @@ func (p *Processor) processTaskInternalWithSQL(task config.TaskConfig, silent bo
 	if reportedProcessedRows < 0 {
 		reportedProcessedRows = 0
 	}
-	if err := database.ValidateTask(sourceDB, targetDB, sourceDBCfg.Type, targetDBCfg.Type, validationTask, columnsMeta, countSQL, reportedProcessedRows, targetCountBefore); err != nil {
+	if err := database.ValidateTask(sourceDB, targetDB, sourceDBCfg.Type, targetDBCfg.Type, validationTask, columnsMeta, countSQL, reportedProcessedRows, targetCountBefore, p.metrics); err != nil {
 		return err
 	}
 
