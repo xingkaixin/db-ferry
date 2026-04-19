@@ -41,6 +41,24 @@ const (
 	DLQFormatCSV   = "csv"
 )
 
+// Supported assertion failure actions.
+const (
+	AssertionActionWarn  = "warn"
+	AssertionActionAbort = "abort"
+	AssertionActionDLQ   = "dlq"
+)
+
+// Supported assertion rules.
+const (
+	AssertionRuleNotNull   = "not_null"
+	AssertionRuleRange     = "range"
+	AssertionRuleInSet     = "in_set"
+	AssertionRuleUnique    = "unique"
+	AssertionRuleRegex     = "regex"
+	AssertionRuleMinLength = "min_length"
+	AssertionRuleMaxLength = "max_length"
+)
+
 // Supported SSL modes.
 const (
 	SSLModeDisable    = "disable"
@@ -175,6 +193,20 @@ type AdaptiveBatchConfig struct {
 	MemoryLimitMB   int  `toml:"memory_limit_mb"`
 }
 
+// AssertionConfig defines a data quality assertion rule for a task.
+type AssertionConfig struct {
+	Column  string   `toml:"column,omitempty"`
+	Columns []string `toml:"columns,omitempty"`
+	Rule    string   `toml:"rule"`
+	Min     *float64 `toml:"min,omitempty"`
+	Max     *float64 `toml:"max,omitempty"`
+	Values  []string `toml:"values,omitempty"`
+	Pattern string   `toml:"pattern,omitempty"`
+	Length  int      `toml:"length,omitempty"`
+	OnFail  string   `toml:"on_fail,omitempty"`
+	Sample  bool     `toml:"sample,omitempty"`
+}
+
 // ColumnMapping defines a source-to-target column mapping with an optional transform.
 type ColumnMapping struct {
 	Source    string `toml:"source"`
@@ -210,12 +242,13 @@ type TaskConfig struct {
 	DLQPath string `toml:"dlq_path,omitempty"`
 	// DLQFormat 死信队列文件格式，支持 jsonl 和 csv，默认为 jsonl。
 	DLQFormat string          `toml:"dlq_format,omitempty"`
-	Indexes   []IndexConfig   `toml:"indexes,omitempty"`
-	Masking   []MaskingConfig `toml:"masking,omitempty"`
-	PreSQL    []string        `toml:"pre_sql,omitempty"`
-	PostSQL   []string        `toml:"post_sql,omitempty"`
-	DependsOn []string        `toml:"depends_on"`
-	Shard     ShardConfig     `toml:"shard,omitempty"`
+	Indexes    []IndexConfig     `toml:"indexes,omitempty"`
+	Masking    []MaskingConfig   `toml:"masking,omitempty"`
+	Assertions []AssertionConfig `toml:"assertions,omitempty"`
+	PreSQL     []string          `toml:"pre_sql,omitempty"`
+	PostSQL    []string          `toml:"post_sql,omitempty"`
+	DependsOn  []string          `toml:"depends_on"`
+	Shard      ShardConfig       `toml:"shard,omitempty"`
 }
 
 // MetricsConfig configures metrics collection and export.
@@ -502,6 +535,68 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("task %d, masking %d: rule '%s' requires value", i+1, j+1, m.Rule)
 			}
 			task.Masking[j] = m
+		}
+
+		seenAssertCols := make(map[string]struct{})
+		for j, a := range task.Assertions {
+			a.Rule = strings.ToLower(strings.TrimSpace(a.Rule))
+			if a.Rule == "" {
+				return fmt.Errorf("task %d, assertion %d: rule is required", i+1, j+1)
+			}
+			switch a.Rule {
+			case AssertionRuleNotNull, AssertionRuleRange, AssertionRuleInSet, AssertionRuleUnique, AssertionRuleRegex, AssertionRuleMinLength, AssertionRuleMaxLength:
+			default:
+				return fmt.Errorf("task %d, assertion %d: unsupported rule '%s'", i+1, j+1, a.Rule)
+			}
+
+			if a.Rule == AssertionRuleUnique {
+				if len(a.Columns) == 0 {
+					return fmt.Errorf("task %d, assertion %d: rule '%s' requires columns", i+1, j+1, a.Rule)
+				}
+			} else {
+				if a.Column == "" {
+					return fmt.Errorf("task %d, assertion %d: rule '%s' requires column", i+1, j+1, a.Rule)
+				}
+			}
+
+			if a.Rule == AssertionRuleRange {
+				if a.Min == nil && a.Max == nil {
+					return fmt.Errorf("task %d, assertion %d: rule '%s' requires min or max", i+1, j+1, a.Rule)
+				}
+			}
+			if a.Rule == AssertionRuleInSet && len(a.Values) == 0 {
+				return fmt.Errorf("task %d, assertion %d: rule '%s' requires values", i+1, j+1, a.Rule)
+			}
+			if a.Rule == AssertionRuleRegex && a.Pattern == "" {
+				return fmt.Errorf("task %d, assertion %d: rule '%s' requires pattern", i+1, j+1, a.Rule)
+			}
+			if (a.Rule == AssertionRuleMinLength || a.Rule == AssertionRuleMaxLength) && a.Length < 0 {
+				return fmt.Errorf("task %d, assertion %d: rule '%s' requires non-negative length", i+1, j+1, a.Rule)
+			}
+
+			a.OnFail = strings.ToLower(strings.TrimSpace(a.OnFail))
+			if a.OnFail == "" {
+				a.OnFail = AssertionActionAbort
+			}
+			switch a.OnFail {
+			case AssertionActionWarn, AssertionActionAbort, AssertionActionDLQ:
+			default:
+				return fmt.Errorf("task %d, assertion %d: on_fail must be '%s', '%s', or '%s'", i+1, j+1, AssertionActionWarn, AssertionActionAbort, AssertionActionDLQ)
+			}
+
+			key := a.Rule
+			if a.Column != "" {
+				key += ":" + strings.ToLower(a.Column)
+			}
+			if len(a.Columns) > 0 {
+				key += ":" + strings.ToLower(strings.Join(a.Columns, ","))
+			}
+			if _, exists := seenAssertCols[key]; exists {
+				return fmt.Errorf("task %d, assertion %d: duplicate assertion for rule '%s'", i+1, j+1, key)
+			}
+			seenAssertCols[key] = struct{}{}
+
+			task.Assertions[j] = a
 		}
 
 		c.Tasks[i] = task
