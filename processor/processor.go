@@ -18,15 +18,16 @@ import (
 )
 
 type Processor struct {
-	manager          *database.ConnectionManager
-	config           *config.Config
-	stateFiles       map[string]*stateFile
-	stateMu          sync.Mutex
-	historyRecorders map[string]*database.HistoryRecorder
-	historyMu        sync.Mutex
-	version          string
-	sem              chan struct{}
-	metrics          metrics.Recorder
+	manager              *database.ConnectionManager
+	config               *config.Config
+	stateFiles           map[string]*stateFile
+	stateMu              sync.Mutex
+	historyRecorders     map[string]*database.HistoryRecorder
+	historyMu            sync.Mutex
+	version              string
+	sem                  chan struct{}
+	metrics              metrics.Recorder
+	federatedMemoryLimit int
 }
 
 var sleepFn = time.Sleep
@@ -54,6 +55,11 @@ func NewProcessorWithVersion(manager *database.ConnectionManager, cfg *config.Co
 		sem:              make(chan struct{}, maxConcurrent),
 		metrics:          recorder,
 	}
+}
+
+// SetFederatedMemoryLimit sets the maximum rows per source for in-memory JOIN.
+func (p *Processor) SetFederatedMemoryLimit(limit int) {
+	p.federatedMemoryLimit = limit
 }
 
 func (p *Processor) ProcessAllTasks() error {
@@ -274,6 +280,9 @@ func (p *Processor) processTask(task config.TaskConfig) error {
 }
 
 func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (err error) {
+	if task.IsFederated() {
+		return p.processFederatedTask(task, silent)
+	}
 	if task.Shard.Enabled {
 		return p.processShardedTask(task, silent)
 	}
@@ -1678,14 +1687,18 @@ func (p *Processor) PlanAllTasks(w io.Writer) error {
 }
 
 func (p *Processor) planTask(w io.Writer, taskIndex, totalTasks, overallIndex int, task config.TaskConfig) error {
-	sourceDB, err := p.manager.GetSource(task.SourceDB)
-	if err != nil {
-		return err
-	}
-
 	targetDBCfg, ok := p.config.GetDatabase(task.TargetDB)
 	if !ok {
 		return fmt.Errorf("target_db '%s' is not defined", task.TargetDB)
+	}
+
+	if task.IsFederated() {
+		return p.planFederatedTask(w, taskIndex, totalTasks, overallIndex, task, targetDBCfg)
+	}
+
+	sourceDB, err := p.manager.GetSource(task.SourceDB)
+	if err != nil {
+		return err
 	}
 
 	resumeLiteral, err := p.resolveResumeLiteral(task)
@@ -1772,6 +1785,32 @@ func (p *Processor) planTask(w io.Writer, taskIndex, totalTasks, overallIndex in
 		fmt.Fprintln(w)
 	}
 
+	return nil
+}
+
+func (p *Processor) planFederatedTask(w io.Writer, taskIndex, totalTasks, overallIndex int, task config.TaskConfig, targetDBCfg config.DatabaseConfig) error {
+	fmt.Fprintf(w, "[PLAN] Task %d/%d: %s\n", taskIndex, totalTasks, task.TableName)
+
+	var sourceNames []string
+	for _, s := range task.Sources {
+		sourceNames = append(sourceNames, fmt.Sprintf("%s(%s)", s.Alias, s.DB))
+	}
+	fmt.Fprintf(w, "  Federated: %d sources [%s]  →  Target: %s\n", len(task.Sources), strings.Join(sourceNames, ", "), task.TargetDB)
+	fmt.Fprintf(w, "  JOIN:      %s JOIN on %s\n", task.Join.Type, strings.Join(task.Join.Keys, ", "))
+	fmt.Fprintf(w, "  Mode:      %s\n", task.Mode)
+
+	batchSize := task.BatchSize
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+	fmt.Fprintf(w, "  Batch:     %d\n", batchSize)
+	if task.SchemaEvolution && (task.Mode == config.TaskModeAppend || task.Mode == config.TaskModeMerge) {
+		fmt.Fprintln(w, "  Schema:    evolution enabled (missing columns will be added via ALTER TABLE)")
+	}
+
+	if overallIndex < len(p.config.Tasks) {
+		fmt.Fprintln(w)
+	}
 	return nil
 }
 

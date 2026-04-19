@@ -232,6 +232,19 @@ type ColumnMapping struct {
 	Transform string `toml:"transform"`
 }
 
+// SourceConfig defines a single source for a federated query task.
+type SourceConfig struct {
+	Alias string `toml:"alias"`
+	DB    string `toml:"db"`
+	SQL   string `toml:"sql"`
+}
+
+// JoinConfig defines the JOIN parameters for a federated query task.
+type JoinConfig struct {
+	Keys []string `toml:"keys"`
+	Type string   `toml:"type"`
+}
+
 // TaskConfig defines a single migration job.
 type TaskConfig struct {
 	TableName          string              `toml:"table_name"`
@@ -250,6 +263,8 @@ type TaskConfig struct {
 	StateFile          string              `toml:"state_file"`
 	AdaptiveBatch      AdaptiveBatchConfig `toml:"adaptive_batch"`
 	Columns            []ColumnMapping     `toml:"columns,omitempty"`
+	Sources            []SourceConfig      `toml:"sources,omitempty"`
+	Join               JoinConfig          `toml:"join,omitempty"`
 	// AllowSameTable 明确允许同库执行并覆盖目标表（存在数据丢失风险）。
 	AllowSameTable bool `toml:"allow_same_table"`
 	// SkipCreateTable 跳过目标表的 drop/create 操作。
@@ -278,6 +293,11 @@ type MetricsConfig struct {
 	Endpoint   string `toml:"endpoint,omitempty"`    // OTLP HTTP push endpoint
 	Interval   string `toml:"interval,omitempty"`    // push interval, default 30s
 	ListenAddr string `toml:"listen_addr,omitempty"` // pull mode listen address, e.g. ":9090"
+}
+
+// IsFederated returns true if the task uses multiple sources with in-memory JOIN.
+func (t TaskConfig) IsFederated() bool {
+	return len(t.Sources) > 0
 }
 
 // HistoryConfig controls migration audit logging.
@@ -369,26 +389,88 @@ func (c *Config) Validate() error {
 		if task.TableName == "" {
 			return fmt.Errorf("task %d: table_name is required", i+1)
 		}
-		if task.SQL == "" {
-			return fmt.Errorf("task %d: sql is required", i+1)
+
+		var sourceDB DatabaseConfig
+		if task.IsFederated() {
+			if task.SQL != "" {
+				return fmt.Errorf("task %d: sql is not allowed in federated mode; use sources[].sql instead", i+1)
+			}
+			if task.SourceDB != "" {
+				return fmt.Errorf("task %d: source_db is not allowed in federated mode; use sources[].db instead", i+1)
+			}
+			if len(task.Sources) < 2 {
+				return fmt.Errorf("task %d: federated task requires at least 2 sources", i+1)
+			}
+
+			seenAlias := make(map[string]struct{})
+			for j, src := range task.Sources {
+				if src.Alias == "" {
+					return fmt.Errorf("task %d, source %d: alias is required", i+1, j+1)
+				}
+				if _, exists := seenAlias[src.Alias]; exists {
+					return fmt.Errorf("task %d, source %d: duplicate alias '%s'", i+1, j+1, src.Alias)
+				}
+				seenAlias[src.Alias] = struct{}{}
+				if src.DB == "" {
+					return fmt.Errorf("task %d, source %d: db is required", i+1, j+1)
+				}
+				if _, ok := c.databaseMap[src.DB]; !ok {
+					return fmt.Errorf("task %d, source %d: db '%s' is not defined", i+1, j+1, src.DB)
+				}
+				if src.SQL == "" {
+					return fmt.Errorf("task %d, source %d: sql is required", i+1, j+1)
+				}
+			}
+
+			if len(task.Join.Keys) == 0 {
+				return fmt.Errorf("task %d: join.keys is required for federated tasks", i+1)
+			}
+			joinType := strings.ToLower(strings.TrimSpace(task.Join.Type))
+			if joinType == "" {
+				joinType = "inner"
+			}
+			switch joinType {
+			case "inner", "left", "right":
+			default:
+				return fmt.Errorf("task %d: join.type must be %q, %q, or %q", i+1, "inner", "left", "right")
+			}
+			task.Join.Type = joinType
+
+			if task.ResumeKey != "" {
+				return fmt.Errorf("task %d: resume_key is not supported in federated mode", i+1)
+			}
+			if task.StateFile != "" {
+				return fmt.Errorf("task %d: state_file is not supported in federated mode", i+1)
+			}
+			if task.Shard.Enabled {
+				return fmt.Errorf("task %d: shard is not supported in federated mode", i+1)
+			}
+		} else {
+			if task.SQL == "" {
+				return fmt.Errorf("task %d: sql is required", i+1)
+			}
+			if task.SourceDB == "" {
+				return fmt.Errorf("task %d: source_db is required", i+1)
+			}
 		}
-		if task.SourceDB == "" {
-			return fmt.Errorf("task %d: source_db is required", i+1)
-		}
+
 		if task.TargetDB == "" {
 			return fmt.Errorf("task %d: target_db is required", i+1)
 		}
 
-		sourceDB, ok := c.databaseMap[task.SourceDB]
-		if !ok {
-			return fmt.Errorf("task %d: source_db '%s' is not defined", i+1, task.SourceDB)
+		if !task.IsFederated() {
+			var ok bool
+			sourceDB, ok = c.databaseMap[task.SourceDB]
+			if !ok {
+				return fmt.Errorf("task %d: source_db '%s' is not defined", i+1, task.SourceDB)
+			}
+			if task.SourceDB == task.TargetDB && !task.AllowSameTable {
+				return fmt.Errorf("task %d: source_db and target_db are both '%s'; set allow_same_table = true to allow same-database migrations", i+1, task.SourceDB)
+			}
 		}
 		targetDB, ok := c.databaseMap[task.TargetDB]
 		if !ok {
 			return fmt.Errorf("task %d: target_db '%s' is not defined", i+1, task.TargetDB)
-		}
-		if task.SourceDB == task.TargetDB && !task.AllowSameTable {
-			return fmt.Errorf("task %d: source_db and target_db are both '%s'; set allow_same_table = true to allow same-database migrations", i+1, task.SourceDB)
 		}
 
 		task.Mode = strings.ToLower(strings.TrimSpace(task.Mode))
@@ -499,8 +581,17 @@ func (c *Config) Validate() error {
 			seenTarget[lowerTarget] = struct{}{}
 		}
 
-		if err := ensureDatabaseSupportsSource(&sourceDB); err != nil {
-			return fmt.Errorf("task %d: %w", i+1, err)
+		if task.IsFederated() {
+			for _, src := range task.Sources {
+				srcDB := c.databaseMap[src.DB]
+				if err := ensureDatabaseSupportsSource(&srcDB); err != nil {
+					return fmt.Errorf("task %d: %w", i+1, err)
+				}
+			}
+		} else {
+			if err := ensureDatabaseSupportsSource(&sourceDB); err != nil {
+				return fmt.Errorf("task %d: %w", i+1, err)
+			}
 		}
 		if err := ensureDatabaseSupportsTarget(&targetDB); err != nil {
 			return fmt.Errorf("task %d: %w", i+1, err)

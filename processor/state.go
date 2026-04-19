@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"db-ferry/config"
 )
@@ -75,5 +76,12 @@ func (p *Processor) saveStateFile(path string, state *stateFile) error {
 }
 
 func (p *Processor) taskKey(task config.TaskConfig) string {
+	if task.IsFederated() {
+		var dbs []string
+		for _, s := range task.Sources {
+			dbs = append(dbs, s.DB)
+		}
+		return fmt.Sprintf("%s:%s:%s", strings.Join(dbs, "+"), task.TargetDB, task.TableName)
+	}
 	return fmt.Sprintf("%s:%s:%s", task.SourceDB, task.TargetDB, task.TableName)
 }

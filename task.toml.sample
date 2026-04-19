@@ -181,6 +181,29 @@ table_name = "db_ferry_migrations"
 #     [tasks.shard]
 #     enabled = true
 #     shards = 8
+#
+# - Federated queries (in-memory JOIN across multiple databases) use [[tasks.sources]] instead of source_db/sql.
+#   Each source needs a unique alias, a db reference, and a SQL query. Join keys and type define the JOIN.
+#   Federated tasks require exactly 2 sources, support inner/left/right joins, and do not support resume_key, shard, or state_file.
+#   Example:
+#     [[tasks]]
+#     table_name = "order_user_wide"
+#     mode = "replace"
+#     target_db = "duckdb_local"
+#
+#     [[tasks.sources]]
+#     alias = "orders"
+#     db = "mysql_inventory"
+#     sql = "SELECT order_id, user_id, amount FROM orders"
+#
+#     [[tasks.sources]]
+#     alias = "users"
+#     db = "postgres_reporting"
+#     sql = "SELECT user_id, user_name, region FROM users"
+#
+#     [tasks.join]
+#     keys = ["user_id"]
+#     type = "left"
 
 #########################
 # Metrics Configuration #

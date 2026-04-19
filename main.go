@@ -61,8 +61,9 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 	var (
 		tomlPath    = flags.String("config", defaultTomlPath, "Path to task.toml configuration file")
 		verbose     = flags.Bool("v", false, "Enable verbose logging")
-		showVersion = flags.Bool("version", false, "Show version information")
-		dryRun      = flags.Bool("dry-run", false, "Preview the migration plan without executing")
+		showVersion          = flags.Bool("version", false, "Show version information")
+		dryRun               = flags.Bool("dry-run", false, "Preview the migration plan without executing")
+		federatedMemoryLimit = flags.Int("federated-memory-limit", 1000000, "Max rows per source for federated in-memory JOIN")
 	)
 
 	if err := flags.Parse(args); err != nil {
@@ -119,6 +120,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 
 	manager := database.NewConnectionManager(cfg)
 	proc := processor.NewProcessorWithVersion(manager, cfg, version, rec)
+	proc.SetFederatedMemoryLimit(*federatedMemoryLimit)
 	defer func() {
 		cancel()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
