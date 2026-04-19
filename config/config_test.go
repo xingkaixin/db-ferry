@@ -940,6 +940,193 @@ func TestValidatePluginConfig(t *testing.T) {
 	})
 }
 
+func TestValidateFederatedTasks(t *testing.T) {
+	baseFederatedConfig := func(t *testing.T) *Config {
+		t.Helper()
+		dir := t.TempDir()
+		return &Config{
+			Databases: []DatabaseConfig{
+				{Name: "orders_db", Type: DatabaseTypeSQLite, Path: filepath.Join(dir, "orders.db")},
+				{Name: "users_db", Type: DatabaseTypeSQLite, Path: filepath.Join(dir, "users.db")},
+				{Name: "dst", Type: DatabaseTypeSQLite, Path: filepath.Join(dir, "dst.db")},
+			},
+			Tasks: []TaskConfig{
+				{
+					TableName: "order_user_wide",
+					TargetDB:  "dst",
+					Sources: []SourceConfig{
+						{Alias: "orders", DB: "orders_db", SQL: "SELECT order_id, user_id, amount FROM orders"},
+						{Alias: "users", DB: "users_db", SQL: "SELECT user_id, user_name, region FROM users"},
+					},
+					Join: JoinConfig{
+						Keys: []string{"user_id"},
+						Type: "inner",
+					},
+				},
+			},
+		}
+	}
+
+	t.Run("valid federated config passes", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected valid federated config to pass, got %v", err)
+		}
+		task := cfg.Tasks[0]
+		if task.Join.Type != "inner" {
+			t.Fatalf("expected join type inner, got %s", task.Join.Type)
+		}
+	})
+
+	t.Run("federated with source_db rejected", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].SourceDB = "orders_db"
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "source_db is not allowed in federated mode") {
+			t.Fatalf("expected source_db rejection error, got %v", err)
+		}
+	})
+
+	t.Run("federated with sql rejected", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].SQL = "SELECT 1"
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "sql is not allowed in federated mode") {
+			t.Fatalf("expected sql rejection error, got %v", err)
+		}
+	})
+
+	t.Run("federated requires at least 2 sources", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].Sources = cfg.Tasks[0].Sources[:1]
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "at least 2 sources") {
+			t.Fatalf("expected at least 2 sources error, got %v", err)
+		}
+	})
+
+	t.Run("federated source alias required", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].Sources[0].Alias = ""
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "alias is required") {
+			t.Fatalf("expected alias required error, got %v", err)
+		}
+	})
+
+	t.Run("federated source alias must be unique", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].Sources[1].Alias = "orders"
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "duplicate alias") {
+			t.Fatalf("expected duplicate alias error, got %v", err)
+		}
+	})
+
+	t.Run("federated source db required", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].Sources[0].DB = ""
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "db is required") {
+			t.Fatalf("expected db required error, got %v", err)
+		}
+	})
+
+	t.Run("federated source db must be defined", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].Sources[0].DB = "missing"
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "db 'missing' is not defined") {
+			t.Fatalf("expected undefined db error, got %v", err)
+		}
+	})
+
+	t.Run("federated source sql required", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].Sources[0].SQL = ""
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "sql is required") {
+			t.Fatalf("expected sql required error, got %v", err)
+		}
+	})
+
+	t.Run("federated join keys required", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].Join.Keys = nil
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "join.keys is required") {
+			t.Fatalf("expected join.keys required error, got %v", err)
+		}
+	})
+
+	t.Run("federated invalid join type rejected", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].Join.Type = "full"
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "join.type must be") {
+			t.Fatalf("expected invalid join type error, got %v", err)
+		}
+	})
+
+	t.Run("federated resume_key rejected", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].ResumeKey = "id"
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "resume_key is not supported in federated mode") {
+			t.Fatalf("expected resume_key rejection error, got %v", err)
+		}
+	})
+
+	t.Run("federated state_file rejected", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].StateFile = "state.json"
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "state_file is not supported in federated mode") {
+			t.Fatalf("expected state_file rejection error, got %v", err)
+		}
+	})
+
+	t.Run("federated shard rejected", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].Shard = ShardConfig{Enabled: true, Shards: 4}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "shard is not supported in federated mode") {
+			t.Fatalf("expected shard rejection error, got %v", err)
+		}
+	})
+
+	t.Run("federated target_db required", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].TargetDB = ""
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "target_db is required") {
+			t.Fatalf("expected target_db required error, got %v", err)
+		}
+	})
+
+	t.Run("federated target_db must be defined", func(t *testing.T) {
+		cfg := baseFederatedConfig(t)
+		cfg.Tasks[0].TargetDB = "missing"
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "target_db 'missing' is not defined") {
+			t.Fatalf("expected undefined target_db error, got %v", err)
+		}
+	})
+
+	t.Run("federated left and right join types accepted", func(t *testing.T) {
+		for _, joinType := range []string{"left", "right"} {
+			cfg := baseFederatedConfig(t)
+			cfg.Tasks[0].Join.Type = joinType
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected join type %s to pass, got %v", joinType, err)
+			}
+			if cfg.Tasks[0].Join.Type != joinType {
+				t.Fatalf("expected normalized join type %s, got %s", joinType, cfg.Tasks[0].Join.Type)
+			}
+		}
+	})
+}
+
 func TestValidateMaskingRules(t *testing.T) {
 	t.Run("valid masking passes", func(t *testing.T) {
 		cfg := baseConfig(t)

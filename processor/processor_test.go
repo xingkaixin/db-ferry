@@ -2739,6 +2739,448 @@ func TestProcessTaskWithPluginErrorNoDLQ(t *testing.T) {
 	}
 }
 
+
+
+func TestTaskKeyFederated(t *testing.T) {
+	p := &Processor{}
+	task := config.TaskConfig{
+		TableName: "wide",
+		TargetDB:  "dst",
+		Sources: []config.SourceConfig{
+			{DB: "db1"},
+			{DB: "db2"},
+		},
+	}
+	key := p.taskKey(task)
+	if key != "db1+db2:dst:wide" {
+		t.Fatalf("unexpected federated task key: %s", key)
+	}
+}
+
+func TestProcessFederatedTaskInnerJoin(t *testing.T) {
+	dir := t.TempDir()
+	ordersPath := filepath.Join(dir, "orders.db")
+	usersPath := filepath.Join(dir, "users.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, ordersPath, `CREATE TABLE orders (order_id INTEGER, user_id INTEGER, amount REAL)`)
+	setupSQLiteExec(t, ordersPath, `INSERT INTO orders(order_id, user_id, amount) VALUES (1, 101, 100.0), (2, 102, 200.0), (3, 103, 300.0), (4, 999, 50.0)`)
+
+	setupSQLiteSource(t, usersPath, `CREATE TABLE users (user_id INTEGER, user_name TEXT, region TEXT)`)
+	setupSQLiteExec(t, usersPath, `INSERT INTO users(user_id, user_name, region) VALUES (101, 'alice', 'us'), (102, 'bob', 'eu'), (103, 'charlie', 'ap')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "orders_db", Type: config.DatabaseTypeSQLite, Path: ordersPath},
+			{Name: "users_db", Type: config.DatabaseTypeSQLite, Path: usersPath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "order_user_wide",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Sources: []config.SourceConfig{
+					{Alias: "orders", DB: "orders_db", SQL: "SELECT order_id, user_id, amount FROM orders"},
+					{Alias: "users", DB: "users_db", SQL: "SELECT user_id, user_name, region FROM users"},
+				},
+				Join: config.JoinConfig{
+					Keys: []string{"user_id"},
+					Type: "inner",
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "order_user_wide"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("target row count = %d, want 3", count)
+	}
+
+	var orderID int
+	var userName string
+	var amount float64
+	if err := targetDB.QueryRow(`SELECT order_id, user_name, amount FROM "order_user_wide" WHERE user_id = 101`).Scan(&orderID, &userName, &amount); err != nil {
+		t.Fatalf("query specific row error = %v", err)
+	}
+	if orderID != 1 || userName != "alice" || amount != 100.0 {
+		t.Fatalf("unexpected row data: order_id=%d, user_name=%q, amount=%f", orderID, userName, amount)
+	}
+}
+
+func TestProcessFederatedTaskLeftJoin(t *testing.T) {
+	dir := t.TempDir()
+	ordersPath := filepath.Join(dir, "orders.db")
+	usersPath := filepath.Join(dir, "users.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, ordersPath, `CREATE TABLE orders (order_id INTEGER, user_id INTEGER)`)
+	setupSQLiteExec(t, ordersPath, `INSERT INTO orders(order_id, user_id) VALUES (1, 101), (2, 999)`)
+
+	setupSQLiteSource(t, usersPath, `CREATE TABLE users (user_id INTEGER, user_name TEXT)`)
+	setupSQLiteExec(t, usersPath, `INSERT INTO users(user_id, user_name) VALUES (101, 'alice')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "orders_db", Type: config.DatabaseTypeSQLite, Path: ordersPath},
+			{Name: "users_db", Type: config.DatabaseTypeSQLite, Path: usersPath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "order_user_wide",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Sources: []config.SourceConfig{
+					{Alias: "orders", DB: "orders_db", SQL: "SELECT order_id, user_id FROM orders"},
+					{Alias: "users", DB: "users_db", SQL: "SELECT user_id, user_name FROM users"},
+				},
+				Join: config.JoinConfig{
+					Keys: []string{"user_id"},
+					Type: "left",
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "order_user_wide"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("target row count = %d, want 2", count)
+	}
+
+	var userName sql.NullString
+	if err := targetDB.QueryRow(`SELECT user_name FROM "order_user_wide" WHERE order_id = 2`).Scan(&userName); err != nil {
+		t.Fatalf("query unmatched row error = %v", err)
+	}
+	if userName.Valid {
+		t.Fatalf("expected NULL user_name for unmatched row, got %q", userName.String)
+	}
+}
+
+func TestProcessFederatedTaskRightJoin(t *testing.T) {
+	dir := t.TempDir()
+	ordersPath := filepath.Join(dir, "orders.db")
+	usersPath := filepath.Join(dir, "users.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, ordersPath, `CREATE TABLE orders (order_id INTEGER, user_id INTEGER)`)
+	setupSQLiteExec(t, ordersPath, `INSERT INTO orders(order_id, user_id) VALUES (1, 101)`)
+
+	setupSQLiteSource(t, usersPath, `CREATE TABLE users (user_id INTEGER, user_name TEXT)`)
+	setupSQLiteExec(t, usersPath, `INSERT INTO users(user_id, user_name) VALUES (101, 'alice'), (999, 'orphan')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "orders_db", Type: config.DatabaseTypeSQLite, Path: ordersPath},
+			{Name: "users_db", Type: config.DatabaseTypeSQLite, Path: usersPath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "order_user_wide",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Sources: []config.SourceConfig{
+					{Alias: "orders", DB: "orders_db", SQL: "SELECT order_id, user_id FROM orders"},
+					{Alias: "users", DB: "users_db", SQL: "SELECT user_id, user_name FROM users"},
+				},
+				Join: config.JoinConfig{
+					Keys: []string{"user_id"},
+					Type: "right",
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "order_user_wide"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("target row count = %d, want 2", count)
+	}
+
+	var orderID sql.NullInt64
+	var userName string
+	if err := targetDB.QueryRow(`SELECT order_id, user_name FROM "order_user_wide" WHERE user_id = 999`).Scan(&orderID, &userName); err != nil {
+		t.Fatalf("query unmatched row error = %v", err)
+	}
+	if orderID.Valid {
+		t.Fatalf("expected NULL order_id for unmatched right row, got %d", orderID.Int64)
+	}
+	if userName != "orphan" {
+		t.Fatalf("expected user_name 'orphan', got %q", userName)
+	}
+}
+
+func TestProcessFederatedTaskCompositeJoinKey(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.db")
+	rightPath := filepath.Join(dir, "right.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, leftPath, `CREATE TABLE left_tbl (a INTEGER, b INTEGER, val1 TEXT)`)
+	setupSQLiteExec(t, leftPath, `INSERT INTO left_tbl(a, b, val1) VALUES (1, 1, 'x1'), (1, 2, 'x2'), (2, 1, 'x3')`)
+
+	setupSQLiteSource(t, rightPath, `CREATE TABLE right_tbl (a INTEGER, b INTEGER, val2 TEXT)`)
+	setupSQLiteExec(t, rightPath, `INSERT INTO right_tbl(a, b, val2) VALUES (1, 1, 'y1'), (1, 2, 'y2'), (3, 3, 'y3')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "left_db", Type: config.DatabaseTypeSQLite, Path: leftPath},
+			{Name: "right_db", Type: config.DatabaseTypeSQLite, Path: rightPath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "joined",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Sources: []config.SourceConfig{
+					{Alias: "left", DB: "left_db", SQL: "SELECT a, b, val1 FROM left_tbl"},
+					{Alias: "right", DB: "right_db", SQL: "SELECT a, b, val2 FROM right_tbl"},
+				},
+				Join: config.JoinConfig{
+					Keys: []string{"a", "b"},
+					Type: "inner",
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "joined"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("target row count = %d, want 2", count)
+	}
+}
+
+func TestProcessFederatedTaskColumnConflict(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.db")
+	rightPath := filepath.Join(dir, "right.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, leftPath, `CREATE TABLE left_tbl (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, leftPath, `INSERT INTO left_tbl(id, name) VALUES (1, 'alice')`)
+
+	setupSQLiteSource(t, rightPath, `CREATE TABLE right_tbl (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, rightPath, `INSERT INTO right_tbl(id, name) VALUES (1, 'bob')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "left_db", Type: config.DatabaseTypeSQLite, Path: leftPath},
+			{Name: "right_db", Type: config.DatabaseTypeSQLite, Path: rightPath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "joined",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Sources: []config.SourceConfig{
+					{Alias: "left", DB: "left_db", SQL: "SELECT id, name FROM left_tbl"},
+					{Alias: "right", DB: "right_db", SQL: "SELECT id, name FROM right_tbl"},
+				},
+				Join: config.JoinConfig{
+					Keys: []string{"id"},
+					Type: "inner",
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	err := p.processTask(cfg.Tasks[0])
+	if err == nil || !strings.Contains(err.Error(), `column "name" conflicts`) {
+		t.Fatalf("expected column conflict error, got %v", err)
+	}
+}
+
+func TestProcessFederatedTaskMemoryLimit(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.db")
+	rightPath := filepath.Join(dir, "right.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, leftPath, `CREATE TABLE left_tbl (id INTEGER)`)
+	for i := 1; i <= 10; i++ {
+		setupSQLiteExec(t, leftPath, fmt.Sprintf(`INSERT INTO left_tbl(id) VALUES (%d)`, i))
+	}
+
+	setupSQLiteSource(t, rightPath, `CREATE TABLE right_tbl (id INTEGER)`)
+	setupSQLiteExec(t, rightPath, `INSERT INTO right_tbl(id) VALUES (1)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "left_db", Type: config.DatabaseTypeSQLite, Path: leftPath},
+			{Name: "right_db", Type: config.DatabaseTypeSQLite, Path: rightPath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "joined",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Sources: []config.SourceConfig{
+					{Alias: "left", DB: "left_db", SQL: "SELECT id FROM left_tbl"},
+					{Alias: "right", DB: "right_db", SQL: "SELECT id FROM right_tbl"},
+				},
+				Join: config.JoinConfig{
+					Keys: []string{"id"},
+					Type: "inner",
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	p.SetFederatedMemoryLimit(5)
+	t.Cleanup(func() { _ = p.Close() })
+
+	err := p.processTask(cfg.Tasks[0])
+	if err == nil || !strings.Contains(err.Error(), "exceeding --federated-memory-limit") {
+		t.Fatalf("expected memory limit error, got %v", err)
+	}
+}
+
+func TestPlanFederatedTask(t *testing.T) {
+	dir := t.TempDir()
+	ordersPath := filepath.Join(dir, "orders.db")
+
+	setupSQLiteSource(t, ordersPath, `CREATE TABLE orders (order_id INTEGER, user_id INTEGER)`)
+	setupSQLiteExec(t, ordersPath, `INSERT INTO orders(order_id, user_id) VALUES (1, 101)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "orders_db", Type: config.DatabaseTypeSQLite, Path: ordersPath},
+			{Name: "users_db", Type: config.DatabaseTypeSQLite, Path: filepath.Join(dir, "users.db")},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: filepath.Join(dir, "target.db")},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "order_user_wide",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Sources: []config.SourceConfig{
+					{Alias: "orders", DB: "orders_db", SQL: "SELECT order_id, user_id FROM orders"},
+					{Alias: "users", DB: "users_db", SQL: "SELECT user_id, user_name FROM users"},
+				},
+				Join: config.JoinConfig{
+					Keys: []string{"user_id"},
+					Type: "left",
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	var buf bytes.Buffer
+	if err := p.PlanAllTasks(&buf); err != nil {
+		t.Fatalf("PlanAllTasks() error = %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Federated: 2 sources") {
+		t.Fatalf("expected federated info in plan, got:\n%s", out)
+	}
+	if !strings.Contains(out, "left JOIN on user_id") {
+		t.Fatalf("expected JOIN info in plan, got:\n%s", out)
+	}
+}
+
 func TestProcessShardedTaskWithResumeFrom(t *testing.T) {
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.db")
