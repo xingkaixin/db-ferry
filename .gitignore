@@ -17,6 +17,10 @@ npm/db-ferry-win32-x64/bin/db-ferry.exe
 
 # agent
 .claude
+.agents
+
+# agent skills
+skills-lock.json
 
 
 # cloudflare
