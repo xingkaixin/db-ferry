@@ -259,9 +259,10 @@ func (r *PrometheusRecorder) writeCounterMetrics(w io.Writer, name, help string,
 			labels["target_db"] = parts[2]
 		}
 		if len(parts) >= 4 {
-			if name == "db_ferry_task_batches_total" {
+			switch name {
+			case "db_ferry_task_batches_total":
 				labels["status"] = parts[3]
-			} else if name == "db_ferry_task_validation_mismatches_total" {
+			case "db_ferry_task_validation_mismatches_total":
 				labels["validate_type"] = parts[3]
 			}
 		}
@@ -347,9 +348,7 @@ func StartPushLoop(ctx context.Context, rec Recorder, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := rec.Push(ctx); err != nil {
-				// Silent failure for background push to avoid disrupting migration.
-			}
+			_ = rec.Push(ctx) // Silent failure for background push to avoid disrupting migration.
 		}
 	}
 }
