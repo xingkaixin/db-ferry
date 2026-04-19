@@ -37,8 +37,8 @@ func newPluginEngine(cfg config.PluginConfig) (rowTransformer, error) {
 
 // luaTransformer implements rowTransformer using gopher-lua.
 type luaTransformer struct {
-	lstate *lua.LState
-	script string
+	lstate  *lua.LState
+	script  string
 	timeout time.Duration
 }
 
