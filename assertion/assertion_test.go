@@ -1,7 +1,6 @@
 package assertion
 
 import (
-	"database/sql"
 	"testing"
 
 	"db-ferry/config"
@@ -205,13 +204,4 @@ func TestBuildTableFromClause(t *testing.T) {
 	if got := BuildTableFromClause(config.DatabaseTypePostgreSQL, "orders"); got != `"orders"` {
 		t.Errorf("unexpected table clause for PostgreSQL: %s", got)
 	}
-}
-
-// mockQueryer implements the queryer interface for testing.
-type mockQueryer struct {
-	queryFn func(sql string) (*sql.Rows, error)
-}
-
-func (m *mockQueryer) Query(sql string) (*sql.Rows, error) {
-	return m.queryFn(sql)
 }

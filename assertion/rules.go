@@ -2,7 +2,6 @@ package assertion
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"db-ferry/config"
@@ -307,30 +306,4 @@ func BuildFromClause(dbType, wrappedSQL string) string {
 // BuildTableFromClause builds a FROM clause for post-migration checks.
 func BuildTableFromClause(dbType, tableName string) string {
 	return database.QuoteTableName(tableName, dbType)
-}
-
-// formatSQLValue formats a value for use in SQL.
-func formatSQLValue(v any) string {
-	switch val := v.(type) {
-	case string:
-		return quoteSQLString(val)
-	case []byte:
-		return quoteSQLString(string(val))
-	case nil:
-		return "NULL"
-	default:
-		return fmt.Sprintf("%v", val)
-	}
-}
-
-// intPtr converts a string pointer to int, returning 0 on error.
-func intPtr(s *string) int {
-	if s == nil {
-		return 0
-	}
-	v, err := strconv.Atoi(*s)
-	if err != nil {
-		return 0
-	}
-	return v
 }
