@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -892,6 +893,91 @@ func TestRunHistoryLimitFlag(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "users_copy") {
 		t.Fatalf("expected history output, got:\n%s", out.String())
+	}
+}
+
+func TestRunDaemonCommand(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "db.sqlite")
+	cfgPath := filepath.Join(dir, "task.toml")
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open db error = %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create table error = %v", err)
+	}
+
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + dbPath + `"`,
+		"",
+		"[[databases]]",
+		`name = "dst"`,
+		`type = "sqlite"`,
+		`path = "` + filepath.Join(dir, "target.db") + `"`,
+		"",
+		"[[tasks]]",
+		`table_name = "users_copy"`,
+		`sql = "SELECT id FROM users"`,
+		`source_db = "src"`,
+		`target_db = "dst"`,
+		`mode = "replace"`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		var out2 bytes.Buffer
+		var errOut2 bytes.Buffer
+		_, _ = run([]string{"-config", cfgPath, "daemon", "-health-addr", "127.0.0.1:0"}, &out2, &errOut2)
+	}()
+
+	// Run a second daemon instance to test the command path directly.
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		_, _ = run([]string{"-config", cfgPath, "daemon", "-health-addr", "127.0.0.1:0"}, &out, &errOut)
+	}()
+
+	// Direct invocation with stop.
+	code, runErr := run([]string{"-config", cfgPath, "daemon", "-health-addr", "127.0.0.1:0"}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run daemon error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run daemon code = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "Daemon started") {
+		t.Fatalf("expected daemon start message, got:\n%s", out.String())
+	}
+}
+
+func TestRunDaemonCommandRejectsExtraArgs(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"daemon", "extra"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for extra args")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "unknown daemon argument") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
