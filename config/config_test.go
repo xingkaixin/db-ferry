@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func baseConfig(t *testing.T) *Config {
@@ -848,6 +849,94 @@ func TestMetricsConfigValidation(t *testing.T) {
 		cfg.Metrics = MetricsConfig{Enabled: false, Interval: "bad"}
 		if err := cfg.Validate(); err != nil {
 			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+}
+func TestValidateNotifyConfig(t *testing.T) {
+	t.Run("valid notify config passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Notify = NotifyConfig{
+			OnSuccess: []string{"https://hooks.slack.com/services/xxx"},
+			OnFailure: []string{"https://hooks.example.com/fail"},
+			Timeout:   10 * time.Second,
+			Retry:     2,
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+
+	t.Run("invalid URL rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Notify = NotifyConfig{
+			OnSuccess: []string{"://bad-url"},
+		}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "invalid URL") {
+			t.Fatalf("expected invalid URL error, got %v", err)
+		}
+	})
+
+	t.Run("empty URL rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Notify = NotifyConfig{
+			OnFailure: []string{""},
+		}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "URL is required") {
+			t.Fatalf("expected URL required error, got %v", err)
+		}
+	})
+
+	t.Run("negative timeout rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Notify = NotifyConfig{
+			Timeout: -1 * time.Second,
+		}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "timeout must be >= 0") {
+			t.Fatalf("expected timeout error, got %v", err)
+		}
+	})
+
+	t.Run("negative retry rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Notify = NotifyConfig{
+			Retry: -1,
+		}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "retry must be >= 0") {
+			t.Fatalf("expected retry error, got %v", err)
+		}
+	})
+
+	t.Run("empty notify config passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+}
+
+func TestNotifyConfigHasURLs(t *testing.T) {
+	t.Run("has URLs when on_success is set", func(t *testing.T) {
+		n := NotifyConfig{OnSuccess: []string{"https://example.com"}}
+		if !n.HasURLs() {
+			t.Fatal("expected HasURLs() to be true")
+		}
+	})
+
+	t.Run("has URLs when on_failure is set", func(t *testing.T) {
+		n := NotifyConfig{OnFailure: []string{"https://example.com"}}
+		if !n.HasURLs() {
+			t.Fatal("expected HasURLs() to be true")
+		}
+	})
+
+	t.Run("no URLs when empty", func(t *testing.T) {
+		n := NotifyConfig{}
+		if n.HasURLs() {
+			t.Fatal("expected HasURLs() to be false")
 		}
 	})
 }

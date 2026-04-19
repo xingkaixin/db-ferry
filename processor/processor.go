@@ -17,6 +17,14 @@ import (
 	"db-ferry/utils"
 )
 
+// TaskResult captures the outcome of a single migration task.
+type TaskResult struct {
+	Name   string
+	Rows   int
+	Status string
+	Error  string
+}
+
 type Processor struct {
 	manager              *database.ConnectionManager
 	config               *config.Config
@@ -28,9 +36,26 @@ type Processor struct {
 	sem                  chan struct{}
 	metrics              metrics.Recorder
 	federatedMemoryLimit int
+	taskResults      []TaskResult
+	resultsMu        sync.Mutex
 }
 
 var sleepFn = time.Sleep
+
+func (p *Processor) recordTaskResult(r TaskResult) {
+	p.resultsMu.Lock()
+	p.taskResults = append(p.taskResults, r)
+	p.resultsMu.Unlock()
+}
+
+// TaskResults returns a copy of all recorded task results.
+func (p *Processor) TaskResults() []TaskResult {
+	p.resultsMu.Lock()
+	defer p.resultsMu.Unlock()
+	out := make([]TaskResult, len(p.taskResults))
+	copy(out, p.taskResults)
+	return out
+}
 
 func NewProcessor(manager *database.ConnectionManager, cfg *config.Config) *Processor {
 	return NewProcessorWithVersion(manager, cfg, "dev")
@@ -290,6 +315,28 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 	defer func() {
 		p.metrics.RecordTaskDuration(task.TableName, task.SourceDB, task.TargetDB, float64(time.Since(start).Milliseconds()))
 	}()
+
+	processedRows := 0
+	totalDLQ := 0
+	defer func() {
+		status := "success"
+		errMsg := ""
+		if err != nil {
+			status = "failed"
+			errMsg = err.Error()
+		}
+		rows := processedRows - totalDLQ
+		if rows < 0 {
+			rows = 0
+		}
+		p.recordTaskResult(TaskResult{
+			Name:   task.TableName,
+			Rows:   rows,
+			Status: status,
+			Error:  errMsg,
+		})
+	}()
+
 	log.Printf("Executing query for table %s", task.TableName)
 
 	sourceDB, err := p.manager.GetSource(task.SourceDB)
@@ -481,8 +528,6 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 	}
 
 	var batch [][]any
-	processedRows := 0
-	totalDLQ := 0
 	var lastResumeValue any
 
 	if historyID != "" && recorder != nil {
@@ -810,7 +855,7 @@ func (p *Processor) migrateData(task config.TaskConfig, sourceDB database.Source
 	return processedRows, totalDLQ, nil
 }
 
-func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) error {
+func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) (err error) {
 	start := time.Now()
 	defer func() {
 		p.metrics.RecordTaskDuration(task.TableName, task.SourceDB, task.TargetDB, float64(time.Since(start).Milliseconds()))
@@ -953,6 +998,25 @@ func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) erro
 	var mu sync.Mutex
 	totalProcessed := 0
 	totalDLQ := 0
+
+	defer func() {
+		status := "success"
+		errMsg := ""
+		if err != nil {
+			status = "failed"
+			errMsg = err.Error()
+		}
+		rows := totalProcessed - totalDLQ
+		if rows < 0 {
+			rows = 0
+		}
+		p.recordTaskResult(TaskResult{
+			Name:   task.TableName,
+			Rows:   rows,
+			Status: status,
+			Error:  errMsg,
+		})
+	}()
 
 	for i, r := range ranges {
 		wg.Add(1)

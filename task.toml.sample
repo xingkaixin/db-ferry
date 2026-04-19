@@ -148,6 +148,16 @@ enabled = true
 table_name = "db_ferry_migrations"
 
 #########################
+# Notify Configuration  #
+#########################
+
+[notify]
+on_success = ["https://hooks.slack.com/services/xxx"]
+on_failure = ["https://hooks.slack.com/services/xxx"]
+timeout = "10s"
+retry = 2
+
+#########################
 # Notes                #
 #########################
 # - Define all source and target databases in the [[databases]] section using unique names (aliases)
