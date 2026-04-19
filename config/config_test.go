@@ -899,3 +899,119 @@ func TestValidateMaskingRules(t *testing.T) {
 		}
 	})
 }
+
+func TestAssertionValidation(t *testing.T) {
+	minVal := 0.0
+	maxVal := 100.0
+
+	t.Run("valid assertions pass", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{
+			{Column: "id", Rule: AssertionRuleNotNull},
+			{Column: "score", Rule: AssertionRuleRange, Min: &minVal, Max: &maxVal},
+			{Column: "status", Rule: AssertionRuleInSet, Values: []string{"a", "b"}},
+			{Columns: []string{"id", "name"}, Rule: AssertionRuleUnique},
+			{Column: "email", Rule: AssertionRuleRegex, Pattern: `^.*@.*$`},
+			{Column: "name", Rule: AssertionRuleMinLength, Length: 1},
+			{Column: "code", Rule: AssertionRuleMaxLength, Length: 10},
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected valid config, got: %v", err)
+		}
+	})
+
+	t.Run("unsupported rule fails", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{{Column: "id", Rule: "unknown"}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "unsupported rule") {
+			t.Fatalf("expected unsupported rule error, got: %v", err)
+		}
+	})
+
+	t.Run("unique requires columns", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{{Rule: AssertionRuleUnique}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "requires columns") {
+			t.Fatalf("expected columns error, got: %v", err)
+		}
+	})
+
+	t.Run("non-unique requires column", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{{Rule: AssertionRuleNotNull}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "requires column") {
+			t.Fatalf("expected column error, got: %v", err)
+		}
+	})
+
+	t.Run("range requires min or max", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{{Column: "score", Rule: AssertionRuleRange}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "requires min or max") {
+			t.Fatalf("expected range error, got: %v", err)
+		}
+	})
+
+	t.Run("in_set requires values", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{{Column: "status", Rule: AssertionRuleInSet}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "requires values") {
+			t.Fatalf("expected values error, got: %v", err)
+		}
+	})
+
+	t.Run("regex requires pattern", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{{Column: "email", Rule: AssertionRuleRegex}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "requires pattern") {
+			t.Fatalf("expected pattern error, got: %v", err)
+		}
+	})
+
+	t.Run("min_length requires non-negative length", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{{Column: "name", Rule: AssertionRuleMinLength, Length: -1}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "non-negative length") {
+			t.Fatalf("expected length error, got: %v", err)
+		}
+	})
+
+	t.Run("invalid on_fail fails", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{{Column: "id", Rule: AssertionRuleNotNull, OnFail: "panic"}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "on_fail") {
+			t.Fatalf("expected on_fail error, got: %v", err)
+		}
+	})
+
+	t.Run("default on_fail is abort", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{{Column: "id", Rule: AssertionRuleNotNull}}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected valid config, got: %v", err)
+		}
+		if cfg.Tasks[0].Assertions[0].OnFail != AssertionActionAbort {
+			t.Fatalf("expected default on_fail=abort, got: %s", cfg.Tasks[0].Assertions[0].OnFail)
+		}
+	})
+
+	t.Run("duplicate assertion fails", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Assertions = []AssertionConfig{
+			{Column: "id", Rule: AssertionRuleNotNull},
+			{Column: "id", Rule: AssertionRuleNotNull},
+		}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "duplicate assertion") {
+			t.Fatalf("expected duplicate error, got: %v", err)
+		}
+	})
+}

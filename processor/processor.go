@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"db-ferry/assertion"
 	"db-ferry/config"
 	"db-ferry/database"
 	"db-ferry/utils"
@@ -464,6 +465,23 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		defer dlqw.close()
 	}
 
+	if len(task.Assertions) > 0 {
+		assertEngine := assertion.NewEngine(task.Assertions)
+		log.Printf("Running %d pre-migration assertions for table %s", len(task.Assertions), task.TableName)
+		results := assertEngine.RunPreCheck(sourceDB, sourceDBCfg.Type, countSQL)
+		if err := assertEngine.HandleResults(results, sourceColumnsMeta, dlqwWriteFn(dlqw)); err != nil {
+			return fmt.Errorf("pre-migration assertion failed for table %s: %w", task.TableName, err)
+		}
+		for _, res := range results {
+			if res.Rule.Config().OnFail == config.AssertionActionDLQ && !res.Passed() {
+				fromClause := assertion.BuildFromClause(sourceDBCfg.Type, countSQL)
+				if dlqErr := assertEngine.FetchViolations(sourceDB, sourceDBCfg.Type, fromClause, res, sourceColumnsMeta, dlqwWriteFn(dlqw)); dlqErr != nil {
+					log.Printf("[ASSERTION DLQ] failed to fetch pre-migration violations: %v", dlqErr)
+				}
+			}
+		}
+	}
+
 	if task.SkipCreateTable {
 		log.Printf("Skipping table creation for %s", task.TableName)
 	} else {
@@ -645,6 +663,24 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		log.Printf("Successfully executed all post_sql hooks for table %s", task.TableName)
 	}
 
+	if len(task.Assertions) > 0 {
+		postAssertions := resolvePostAssertions(task.Assertions, task.Columns)
+		assertEngine := assertion.NewEngine(postAssertions)
+		log.Printf("Running %d post-migration assertions for table %s", len(postAssertions), task.TableName)
+		results := assertEngine.RunPostCheck(targetDB, targetDBCfg.Type, task.TableName)
+		if err := assertEngine.HandleResults(results, columnsMeta, dlqwWriteFn(dlqw)); err != nil {
+			return fmt.Errorf("post-migration assertion failed for table %s: %w", task.TableName, err)
+		}
+		for _, res := range results {
+			if res.Rule.Config().OnFail == config.AssertionActionDLQ && !res.Passed() {
+				fromClause := assertion.BuildTableFromClause(targetDBCfg.Type, task.TableName)
+				if dlqErr := assertEngine.FetchViolations(targetDB, targetDBCfg.Type, fromClause, res, columnsMeta, dlqwWriteFn(dlqw)); dlqErr != nil {
+					log.Printf("[ASSERTION DLQ] failed to fetch post-migration violations: %v", dlqErr)
+				}
+			}
+		}
+	}
+
 	targetDBCfg, ok = p.config.GetDatabase(task.TargetDB)
 	if !ok {
 		return fmt.Errorf("target_db '%s' is not defined", task.TargetDB)
@@ -801,6 +837,11 @@ func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) erro
 		return err
 	}
 
+	sourceDBCfg, ok := p.config.GetDatabase(task.SourceDB)
+	if !ok {
+		return fmt.Errorf("source_db '%s' is not defined", task.SourceDB)
+	}
+
 	resumeLiteral := task.ResumeFrom
 
 	baseQuerySQL, baseCountSQL := buildTaskSQL(task.SQL, task.ResumeKey, resumeLiteral)
@@ -860,6 +901,23 @@ func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) erro
 			return fmt.Errorf("failed to initialize DLQ writer: %w", err)
 		}
 		defer dlqw.close()
+	}
+
+	if len(task.Assertions) > 0 {
+		assertEngine := assertion.NewEngine(task.Assertions)
+		log.Printf("Running %d pre-migration assertions for table %s", len(task.Assertions), task.TableName)
+		results := assertEngine.RunPreCheck(sourceDB, sourceDBCfg.Type, baseCountSQL)
+		if err := assertEngine.HandleResults(results, columnsMeta, dlqwWriteFn(dlqw)); err != nil {
+			return fmt.Errorf("pre-migration assertion failed for table %s: %w", task.TableName, err)
+		}
+		for _, res := range results {
+			if res.Rule.Config().OnFail == config.AssertionActionDLQ && !res.Passed() {
+				fromClause := assertion.BuildFromClause(sourceDBCfg.Type, baseCountSQL)
+				if dlqErr := assertEngine.FetchViolations(sourceDB, sourceDBCfg.Type, fromClause, res, columnsMeta, dlqwWriteFn(dlqw)); dlqErr != nil {
+					log.Printf("[ASSERTION DLQ] failed to fetch pre-migration violations: %v", dlqErr)
+				}
+			}
+		}
 	}
 
 	if task.SkipCreateTable {
@@ -951,7 +1009,7 @@ func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) erro
 		log.Printf("Successfully executed all post_sql hooks for table %s", task.TableName)
 	}
 
-	sourceDBCfg, ok := p.config.GetDatabase(task.SourceDB)
+	sourceDBCfg, ok = p.config.GetDatabase(task.SourceDB)
 	if !ok {
 		return fmt.Errorf("source_db '%s' is not defined", task.SourceDB)
 	}
@@ -959,6 +1017,25 @@ func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) erro
 	if !ok {
 		return fmt.Errorf("target_db '%s' is not defined", task.TargetDB)
 	}
+
+	if len(task.Assertions) > 0 {
+		postAssertions := resolvePostAssertions(task.Assertions, task.Columns)
+		assertEngine := assertion.NewEngine(postAssertions)
+		log.Printf("Running %d post-migration assertions for table %s", len(postAssertions), task.TableName)
+		results := assertEngine.RunPostCheck(targetDB, targetDBCfg.Type, task.TableName)
+		if err := assertEngine.HandleResults(results, columnsMeta, dlqwWriteFn(dlqw)); err != nil {
+			return fmt.Errorf("post-migration assertion failed for table %s: %w", task.TableName, err)
+		}
+		for _, res := range results {
+			if res.Rule.Config().OnFail == config.AssertionActionDLQ && !res.Passed() {
+				fromClause := assertion.BuildTableFromClause(targetDBCfg.Type, task.TableName)
+				if dlqErr := assertEngine.FetchViolations(targetDB, targetDBCfg.Type, fromClause, res, columnsMeta, dlqwWriteFn(dlqw)); dlqErr != nil {
+					log.Printf("[ASSERTION DLQ] failed to fetch post-migration violations: %v", dlqErr)
+				}
+			}
+		}
+	}
+
 	validationTask := task
 	reportedProcessedRows := totalProcessed - totalDLQ
 	if reportedProcessedRows < 0 {
@@ -1026,6 +1103,23 @@ func (p *Processor) processTaskInternalWithSQL(task config.TaskConfig, silent bo
 		defer dlqw.close()
 	}
 
+	if len(task.Assertions) > 0 {
+		assertEngine := assertion.NewEngine(task.Assertions)
+		log.Printf("Running %d pre-migration assertions for table %s", len(task.Assertions), task.TableName)
+		results := assertEngine.RunPreCheck(sourceDB, sourceDBCfg.Type, countSQL)
+		if err := assertEngine.HandleResults(results, columnsMeta, dlqwWriteFn(dlqw)); err != nil {
+			return fmt.Errorf("pre-migration assertion failed for table %s: %w", task.TableName, err)
+		}
+		for _, res := range results {
+			if res.Rule.Config().OnFail == config.AssertionActionDLQ && !res.Passed() {
+				fromClause := assertion.BuildFromClause(sourceDBCfg.Type, countSQL)
+				if dlqErr := assertEngine.FetchViolations(sourceDB, sourceDBCfg.Type, fromClause, res, columnsMeta, dlqwWriteFn(dlqw)); dlqErr != nil {
+					log.Printf("[ASSERTION DLQ] failed to fetch pre-migration violations: %v", dlqErr)
+				}
+			}
+		}
+	}
+
 	if task.SkipCreateTable {
 		log.Printf("Skipping table creation for %s", task.TableName)
 	} else {
@@ -1082,6 +1176,24 @@ func (p *Processor) processTaskInternalWithSQL(task config.TaskConfig, silent bo
 	targetDBCfg, ok := p.config.GetDatabase(task.TargetDB)
 	if !ok {
 		return fmt.Errorf("target_db '%s' is not defined", task.TargetDB)
+	}
+
+	if len(task.Assertions) > 0 {
+		postAssertions := resolvePostAssertions(task.Assertions, task.Columns)
+		assertEngine := assertion.NewEngine(postAssertions)
+		log.Printf("Running %d post-migration assertions for table %s", len(postAssertions), task.TableName)
+		results := assertEngine.RunPostCheck(targetDB, targetDBCfg.Type, task.TableName)
+		if err := assertEngine.HandleResults(results, columnsMeta, dlqwWriteFn(dlqw)); err != nil {
+			return fmt.Errorf("post-migration assertion failed for table %s: %w", task.TableName, err)
+		}
+		for _, res := range results {
+			if res.Rule.Config().OnFail == config.AssertionActionDLQ && !res.Passed() {
+				fromClause := assertion.BuildTableFromClause(targetDBCfg.Type, task.TableName)
+				if dlqErr := assertEngine.FetchViolations(targetDB, targetDBCfg.Type, fromClause, res, columnsMeta, dlqwWriteFn(dlqw)); dlqErr != nil {
+					log.Printf("[ASSERTION DLQ] failed to fetch post-migration violations: %v", dlqErr)
+				}
+			}
+		}
 	}
 
 	validationTask := task
@@ -1690,4 +1802,44 @@ func formatNumber(n int) string {
 	}
 	parts = append([]string{s}, parts...)
 	return strings.Join(parts, ",")
+}
+
+func dlqwWriteFn(dlqw *dlqWriter) func(row []any, errMsg string) error {
+	if dlqw == nil {
+		return nil
+	}
+	return func(row []any, errMsg string) error {
+		return dlqw.write(row, errMsg, "", "")
+	}
+}
+
+func resolvePostAssertions(assertions []config.AssertionConfig, mappings []config.ColumnMapping) []config.AssertionConfig {
+	if len(mappings) == 0 {
+		result := make([]config.AssertionConfig, len(assertions))
+		copy(result, assertions)
+		return result
+	}
+	mappingMap := make(map[string]string, len(mappings))
+	for _, m := range mappings {
+		mappingMap[strings.ToLower(m.Source)] = m.Target
+	}
+	result := make([]config.AssertionConfig, len(assertions))
+	for i, a := range assertions {
+		result[i] = a
+		if a.Column != "" {
+			if target, ok := mappingMap[strings.ToLower(a.Column)]; ok {
+				result[i].Column = target
+			}
+		}
+		if len(a.Columns) > 0 {
+			result[i].Columns = make([]string, len(a.Columns))
+			for j, col := range a.Columns {
+				result[i].Columns[j] = col
+				if target, ok := mappingMap[strings.ToLower(col)]; ok {
+					result[i].Columns[j] = target
+				}
+			}
+		}
+	}
+	return result
 }
