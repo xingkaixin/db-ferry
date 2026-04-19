@@ -32,15 +32,15 @@ type NoopRecorder struct{}
 
 func NewNoopRecorder() *NoopRecorder { return &NoopRecorder{} }
 
-func (n *NoopRecorder) RecordRowsProcessed(_, _, _ string, _ int64)        {}
-func (n *NoopRecorder) RecordBatch(_, _, _ string, _ bool)                 {}
-func (n *NoopRecorder) RecordBatchDuration(_, _, _ string, _ float64)      {}
-func (n *NoopRecorder) RecordDLQRows(_, _, _ string, _ int64)              {}
-func (n *NoopRecorder) RecordValidationMismatch(_, _, _, _ string)         {}
-func (n *NoopRecorder) RecordTaskDuration(_, _, _ string, _ float64)       {}
-func (n *NoopRecorder) ServeHTTP(_ string) error                           { return nil }
-func (n *NoopRecorder) Push(_ context.Context) error                       { return nil }
-func (n *NoopRecorder) Shutdown(_ context.Context) error                   { return nil }
+func (n *NoopRecorder) RecordRowsProcessed(_, _, _ string, _ int64)   {}
+func (n *NoopRecorder) RecordBatch(_, _, _ string, _ bool)            {}
+func (n *NoopRecorder) RecordBatchDuration(_, _, _ string, _ float64) {}
+func (n *NoopRecorder) RecordDLQRows(_, _, _ string, _ int64)         {}
+func (n *NoopRecorder) RecordValidationMismatch(_, _, _, _ string)    {}
+func (n *NoopRecorder) RecordTaskDuration(_, _, _ string, _ float64)  {}
+func (n *NoopRecorder) ServeHTTP(_ string) error                      { return nil }
+func (n *NoopRecorder) Push(_ context.Context) error                  { return nil }
+func (n *NoopRecorder) Shutdown(_ context.Context) error              { return nil }
 
 var defaultBuckets = []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000}
 
