@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"db-ferry/config"
+	"db-ferry/metrics"
 )
 
 // queryer abstracts the minimal query capability needed for validation.
@@ -20,27 +21,28 @@ type queryer interface {
 // ValidateTask runs the configured validation strategy for a completed task.
 func ValidateTask(sourceDB, targetDB queryer, sourceDBType, targetDBType string,
 	task config.TaskConfig, columns []ColumnMetadata, sourceWrappedSQL string,
-	processedRows int, targetCountBefore int) error {
+	processedRows int, targetCountBefore int, recorder metrics.Recorder) error {
 
 	switch task.Validate {
 	case config.TaskValidateRowCount:
-		return validateRowCount(targetDB, task, processedRows, targetCountBefore)
+		return validateRowCount(targetDB, task, processedRows, targetCountBefore, recorder)
 	case config.TaskValidateChecksum:
-		return validateChecksum(sourceDB, targetDB, sourceDBType, targetDBType, task, columns, sourceWrappedSQL)
+		return validateChecksum(sourceDB, targetDB, sourceDBType, targetDBType, task, columns, sourceWrappedSQL, recorder)
 	case config.TaskValidateSample:
-		return validateSample(sourceDB, targetDB, sourceDBType, targetDBType, task, columns, sourceWrappedSQL)
+		return validateSample(sourceDB, targetDB, sourceDBType, targetDBType, task, columns, sourceWrappedSQL, recorder)
 	default:
 		return nil
 	}
 }
 
-func validateRowCount(targetDB queryer, task config.TaskConfig, processedRows, targetCountBefore int) error {
+func validateRowCount(targetDB queryer, task config.TaskConfig, processedRows, targetCountBefore int, recorder metrics.Recorder) error {
 	targetCountAfter, err := getTableRowCount(targetDB, task.TableName, task.TargetDB)
 	if err != nil {
 		return fmt.Errorf("failed to get target row count after insert: %w", err)
 	}
 	inserted := targetCountAfter - targetCountBefore
 	if inserted != processedRows {
+		recorder.RecordValidationMismatch(task.TableName, task.SourceDB, task.TargetDB, task.Validate)
 		return fmt.Errorf("row count validation failed for table %s: expected %d inserted rows but got %d", task.TableName, processedRows, inserted)
 	}
 	return nil
@@ -78,7 +80,7 @@ func getTableRowCount(q queryer, tableName, dbType string) (int, error) {
 }
 
 func validateChecksum(sourceDB, targetDB queryer, sourceDBType, targetDBType string,
-	task config.TaskConfig, columns []ColumnMetadata, sourceWrappedSQL string) error {
+	task config.TaskConfig, columns []ColumnMetadata, sourceWrappedSQL string, recorder metrics.Recorder) error {
 
 	sourceChecksum, err := computeChecksum(sourceDB, sourceDBType, columns, sourceWrappedSQL)
 	if err != nil {
@@ -92,6 +94,7 @@ func validateChecksum(sourceDB, targetDB queryer, sourceDBType, targetDBType str
 	}
 
 	if sourceChecksum != targetChecksum {
+		recorder.RecordValidationMismatch(task.TableName, task.SourceDB, task.TargetDB, task.Validate)
 		return fmt.Errorf("checksum validation failed for table %s: source checksum %q != target checksum %q", task.TableName, sourceChecksum, targetChecksum)
 	}
 	log.Printf("Checksum validation passed for table %s", task.TableName)
@@ -211,7 +214,7 @@ func aggregateHashes(hashes []string) string {
 }
 
 func validateSample(sourceDB, targetDB queryer, sourceDBType, targetDBType string,
-	task config.TaskConfig, columns []ColumnMetadata, sourceWrappedSQL string) error {
+	task config.TaskConfig, columns []ColumnMetadata, sourceWrappedSQL string, recorder metrics.Recorder) error {
 
 	sampleSize := task.ValidateSampleSize
 	if sampleSize <= 0 {
@@ -275,6 +278,7 @@ func validateSample(sourceDB, targetDB queryer, sourceDBType, targetDBType strin
 	}
 
 	if len(diffs) > 0 {
+		recorder.RecordValidationMismatch(task.TableName, task.SourceDB, task.TargetDB, task.Validate)
 		return fmt.Errorf("sample validation failed for table %s (%d/%d sample rows differ):\n  %s",
 			task.TableName, len(diffs), rowNum, strings.Join(diffs, "\n  "))
 	}

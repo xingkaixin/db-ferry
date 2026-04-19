@@ -811,6 +811,47 @@ func TestValidateDependsOn(t *testing.T) {
 	})
 }
 
+func TestMetricsConfigValidation(t *testing.T) {
+	t.Run("enabled with defaults", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Metrics = MetricsConfig{Enabled: true}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if cfg.Metrics.Interval != "30s" {
+			t.Fatalf("expected default interval 30s, got %s", cfg.Metrics.Interval)
+		}
+	})
+
+	t.Run("invalid interval rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Metrics = MetricsConfig{Enabled: true, Interval: "not-a-duration"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "invalid metrics interval") {
+			t.Fatalf("expected invalid interval error, got %v", err)
+		}
+	})
+
+	t.Run("valid interval passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Metrics = MetricsConfig{Enabled: true, Interval: "1m", ListenAddr: ":9090"}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if cfg.Metrics.Interval != "1m" {
+			t.Fatalf("expected interval 1m, got %s", cfg.Metrics.Interval)
+		}
+	})
+
+	t.Run("disabled metrics skips validation", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Metrics = MetricsConfig{Enabled: false, Interval: "bad"}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+}
+
 func TestHistoryTable(t *testing.T) {
 	t.Run("default table name", func(t *testing.T) {
 		h := HistoryConfig{Enabled: true}

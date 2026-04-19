@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"flag"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"db-ferry/diff"
 	"db-ferry/doctor"
 	mcpserver "db-ferry/mcp"
+	"db-ferry/metrics"
 	"db-ferry/processor"
 )
 
@@ -87,9 +89,39 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 
 	log.Printf("Loaded %d tasks from configuration", len(cfg.Tasks))
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var rec metrics.Recorder = metrics.NewNoopRecorder()
+	if cfg.Metrics.Enabled {
+		rec = metrics.NewPrometheusRecorder(version, cfg.Metrics.Endpoint)
+		if cfg.Metrics.ListenAddr != "" {
+			if err := rec.ServeHTTP(cfg.Metrics.ListenAddr); err != nil {
+				return 1, fmt.Errorf("failed to start metrics server: %w", err)
+			}
+			log.Printf("Metrics server listening on %s", cfg.Metrics.ListenAddr)
+		}
+		if cfg.Metrics.Endpoint != "" {
+			interval, err := time.ParseDuration(cfg.Metrics.Interval)
+			if err != nil {
+				return 1, fmt.Errorf("invalid metrics interval: %w", err)
+			}
+			go metrics.StartPushLoop(ctx, rec, interval)
+		}
+		if cfg.Metrics.ListenAddr == "" && cfg.Metrics.Endpoint == "" {
+			log.Println("Warning: metrics enabled but no listen_addr or endpoint configured")
+		}
+	}
+
 	manager := database.NewConnectionManager(cfg)
-	proc := processor.NewProcessorWithVersion(manager, cfg, version)
+	proc := processor.NewProcessorWithVersion(manager, cfg, version, rec)
 	defer func() {
+		cancel()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		if err := rec.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Warning: failed to shutdown metrics: %v", err)
+		}
 		if closeErr := proc.Close(); closeErr != nil {
 			log.Printf("Warning: failed to close resources: %v", closeErr)
 		}

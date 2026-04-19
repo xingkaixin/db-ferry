@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -217,6 +218,14 @@ type TaskConfig struct {
 	Shard     ShardConfig     `toml:"shard,omitempty"`
 }
 
+// MetricsConfig configures metrics collection and export.
+type MetricsConfig struct {
+	Enabled    bool   `toml:"enabled"`
+	Endpoint   string `toml:"endpoint,omitempty"`    // OTLP HTTP push endpoint
+	Interval   string `toml:"interval,omitempty"`    // push interval, default 30s
+	ListenAddr string `toml:"listen_addr,omitempty"` // pull mode listen address, e.g. ":9090"
+}
+
 // HistoryConfig controls migration audit logging.
 type HistoryConfig struct {
 	Enabled   bool   `toml:"enabled"`
@@ -237,6 +246,7 @@ type Config struct {
 	Tasks              []TaskConfig     `toml:"tasks"`
 	MaxConcurrentTasks int              `toml:"max_concurrent_tasks"`
 	History            HistoryConfig    `toml:"history"`
+	Metrics            MetricsConfig    `toml:"metrics"`
 
 	databaseMap map[string]DatabaseConfig
 }
@@ -503,6 +513,15 @@ func (c *Config) Validate() error {
 
 	if err := detectTaskCycle(c.Tasks); err != nil {
 		return err
+	}
+
+	if c.Metrics.Enabled {
+		if c.Metrics.Interval == "" {
+			c.Metrics.Interval = "30s"
+		}
+		if _, err := time.ParseDuration(c.Metrics.Interval); err != nil {
+			return fmt.Errorf("invalid metrics interval %q: %w", c.Metrics.Interval, err)
+		}
 	}
 
 	return nil
