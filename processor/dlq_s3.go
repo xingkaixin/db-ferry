@@ -13,9 +13,13 @@ import (
 	"db-ferry/database"
 )
 
+type s3API interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+}
+
 type s3DLQStore struct {
 	buffer *cloudDLQBuffer
-	client *s3.Client
+	client s3API
 	bucket string
 	key    string
 }
@@ -36,7 +40,10 @@ func newS3DLQStore(path, format string, columns []database.ColumnMetadata) (*s3D
 	}
 
 	client := s3.NewFromConfig(cfg)
+	return newS3DLQStoreWithClient(client, bucket, key, format, columns)
+}
 
+func newS3DLQStoreWithClient(client s3API, bucket, key, format string, columns []database.ColumnMetadata) (*s3DLQStore, error) {
 	buffer, err := newCloudDLQBuffer(format, columns)
 	if err != nil {
 		return nil, err
