@@ -13,8 +13,10 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/mark3labs/mcp-go v0.48.0
 	github.com/mattn/go-sqlite3 v1.14.32
+	github.com/robertkrimen/otto v0.5.1
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/sijms/go-ora/v2 v2.9.0
+	github.com/yuin/gopher-lua v1.1.2
 	golang.org/x/term v0.34.0
 )
 
@@ -78,4 +80,5 @@ require (
 	golang.org/x/text v0.28.0 // indirect
 	golang.org/x/tools v0.36.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
+	gopkg.in/sourcemap.v1 v1.0.5 // indirect
 )

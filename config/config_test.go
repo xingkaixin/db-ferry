@@ -868,6 +868,78 @@ func TestHistoryTable(t *testing.T) {
 	})
 }
 
+func TestValidatePluginConfig(t *testing.T) {
+	t.Run("valid lua plugin passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Plugin = PluginConfig{Engine: PluginEngineLua, Script: "function transform(row) return row end", TimeoutMs: 10}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if cfg.Tasks[0].Plugin.TimeoutMs != 10 {
+			t.Fatalf("expected timeout 10, got %d", cfg.Tasks[0].Plugin.TimeoutMs)
+		}
+	})
+
+	t.Run("valid javascript plugin passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Plugin = PluginConfig{Engine: "JavaScript", Script: "function transform(row) { return row; }"}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if cfg.Tasks[0].Plugin.Engine != PluginEngineJavaScript {
+			t.Fatalf("expected normalized engine %s, got %s", PluginEngineJavaScript, cfg.Tasks[0].Plugin.Engine)
+		}
+	})
+
+	t.Run("empty engine skips validation", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Plugin = PluginConfig{Engine: "", Script: ""}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+
+	t.Run("invalid engine rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Plugin = PluginConfig{Engine: "python", Script: "print(1)"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "plugin.engine must be") {
+			t.Fatalf("expected invalid engine error, got %v", err)
+		}
+	})
+
+	t.Run("engine set but empty script rejected", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Plugin = PluginConfig{Engine: PluginEngineLua, Script: "   "}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "plugin.script is required") {
+			t.Fatalf("expected script required error, got %v", err)
+		}
+	})
+
+	t.Run("timeout defaults to 5 when zero", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Plugin = PluginConfig{Engine: PluginEngineLua, Script: "return row", TimeoutMs: 0}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if cfg.Tasks[0].Plugin.TimeoutMs != 5 {
+			t.Fatalf("expected default timeout 5, got %d", cfg.Tasks[0].Plugin.TimeoutMs)
+		}
+	})
+
+	t.Run("timeout defaults to 5 when negative", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Plugin = PluginConfig{Engine: PluginEngineLua, Script: "return row", TimeoutMs: -1}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if cfg.Tasks[0].Plugin.TimeoutMs != 5 {
+			t.Fatalf("expected default timeout 5, got %d", cfg.Tasks[0].Plugin.TimeoutMs)
+		}
+	})
+}
+
 func TestValidateMaskingRules(t *testing.T) {
 	t.Run("valid masking passes", func(t *testing.T) {
 		cfg := baseConfig(t)

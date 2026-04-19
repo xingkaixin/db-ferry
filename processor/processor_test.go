@@ -2492,6 +2492,253 @@ func TestProcessShardedTaskEmptyTable(t *testing.T) {
 	}
 }
 
+func TestProcessTaskWithLuaPlugin(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT, value REAL)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name, value) VALUES (1, 'alice', 10.5), (2, 'bob', 20.0)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name, value FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Plugin: config.PluginConfig{
+					Engine:    config.PluginEngineLua,
+					Script:    `function transform(row) row.name = row.name .. "_lua"; row.value = row.value * 2; return row end`,
+					TimeoutMs: 1000,
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("target row count = %d, want 2", count)
+	}
+
+	var name string
+	var value float64
+	if err := targetDB.QueryRow(`SELECT name, value FROM "dst_users" WHERE id = 1`).Scan(&name, &value); err != nil {
+		t.Fatalf("query transformed row error = %v", err)
+	}
+	if name != "alice_lua" {
+		t.Fatalf("expected name 'alice_lua', got %q", name)
+	}
+	if value != 21.0 {
+		t.Fatalf("expected value 21.0, got %f", value)
+	}
+}
+
+func TestProcessTaskWithJSPlugin(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT, value REAL)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name, value) VALUES (1, 'alice', 10.5), (2, 'bob', 20.0)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name, value FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Plugin: config.PluginConfig{
+					Engine:    config.PluginEngineJavaScript,
+					Script:    `function transform(row) { row.name = row.name + "_js"; row.value = row.value * 2; return row; }`,
+					TimeoutMs: 1000,
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("target row count = %d, want 2", count)
+	}
+
+	var name string
+	var value float64
+	if err := targetDB.QueryRow(`SELECT name, value FROM "dst_users" WHERE id = 1`).Scan(&name, &value); err != nil {
+		t.Fatalf("query transformed row error = %v", err)
+	}
+	if name != "alice_js" {
+		t.Fatalf("expected name 'alice_js', got %q", name)
+	}
+	if value != 21.0 {
+		t.Fatalf("expected value 21.0, got %f", value)
+	}
+}
+
+func TestProcessTaskWithPluginDLQ(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+	dlqPath := filepath.Join(dir, "dlq", "failed.jsonl")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'alice'), (2, 'bob')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				DLQPath:   dlqPath,
+				Plugin: config.PluginConfig{
+					Engine: config.PluginEngineLua,
+					Script: `function transform(row) if row.name == "bob" then error("bad row") end; return row end`,
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.processTask(cfg.Tasks[0]); err != nil {
+		t.Fatalf("processTask() error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	var count int
+	if err := targetDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&count); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("target row count = %d, want 1", count)
+	}
+
+	data, err := os.ReadFile(dlqPath)
+	if err != nil {
+		t.Fatalf("ReadFile(DLQ) error = %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 DLQ line, got %d", len(lines))
+	}
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("unmarshal DLQ line error = %v", err)
+	}
+	if !strings.Contains(entry["error"].(string), "plugin transform failed") {
+		t.Fatalf("expected plugin transform failed error, got %v", entry["error"])
+	}
+}
+
+func TestProcessTaskWithPluginErrorNoDLQ(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'alice'), (2, 'bob')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeReplace,
+				Plugin: config.PluginConfig{
+					Engine: config.PluginEngineLua,
+					Script: `function transform(row) error("always fail") end`,
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	err := p.processTask(cfg.Tasks[0])
+	if err == nil || !strings.Contains(err.Error(), "plugin transform failed") {
+		t.Fatalf("expected plugin transform error, got %v", err)
+	}
+}
+
 func TestProcessShardedTaskWithResumeFrom(t *testing.T) {
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.db")

@@ -476,6 +476,15 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		log.Printf("Applying %d masking rules for table %s", len(task.Masking), task.TableName)
 	}
 
+	pluginEngine, err := newPluginEngine(task.Plugin)
+	if err != nil {
+		return fmt.Errorf("failed to initialize plugin engine: %w", err)
+	}
+	if pluginEngine != nil {
+		log.Printf("Applying %s plugin for table %s", task.Plugin.Engine, task.TableName)
+		defer pluginEngine.close()
+	}
+
 	var dlqw *dlqWriter
 	if task.DLQPath != "" {
 		dlqw, err = newDLQWriter(task.DLQPath, task.DLQFormat, columnsMeta)
@@ -595,6 +604,20 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		}
 
 		row = masker.apply(row, columnsMeta)
+
+		if pluginEngine != nil {
+			row, err = pluginEngine.transform(row, columnsMeta)
+			if err != nil {
+				if dlqw != nil {
+					if dlqErr := dlqw.write(row, "plugin transform failed: "+err.Error(), p.taskKey(task), task.TableName); dlqErr != nil {
+						return fmt.Errorf("failed to write to DLQ: %w", dlqErr)
+					}
+					totalDLQ++
+					continue
+				}
+				return fmt.Errorf("plugin transform failed: %w", err)
+			}
+		}
 
 		if resumeIndex >= 0 {
 			lastResumeValue = row[resumeIndex]
@@ -760,6 +783,15 @@ func (p *Processor) migrateData(task config.TaskConfig, sourceDB database.Source
 	}
 	defer rows.Close()
 
+	pluginEngine, err := newPluginEngine(task.Plugin)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to initialize plugin engine: %w", err)
+	}
+	if pluginEngine != nil {
+		log.Printf("Applying %s plugin for table %s", task.Plugin.Engine, task.TableName)
+		defer pluginEngine.close()
+	}
+
 	resumeIndex := -1
 	if task.ResumeKey != "" {
 		resumeIndex = findColumnIndex(columnsMeta, task.ResumeKey)
@@ -795,6 +827,20 @@ func (p *Processor) migrateData(task config.TaskConfig, sourceDB database.Source
 		row, err := p.scanRow(rows, columnsMeta)
 		if err != nil {
 			return 0, 0, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		if pluginEngine != nil {
+			row, err = pluginEngine.transform(row, columnsMeta)
+			if err != nil {
+				if dlqw != nil {
+					if dlqErr := dlqw.write(row, "plugin transform failed: "+err.Error(), p.taskKey(task), task.TableName); dlqErr != nil {
+						return 0, 0, fmt.Errorf("failed to write to DLQ: %w", dlqErr)
+					}
+					totalDLQ++
+					continue
+				}
+				return 0, 0, fmt.Errorf("plugin transform failed: %w", err)
+			}
 		}
 
 		if resumeIndex >= 0 {
