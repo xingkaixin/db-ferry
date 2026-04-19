@@ -3335,3 +3335,300 @@ func TestDLQWriteFn(t *testing.T) {
 		}
 	})
 }
+
+func TestTaskResultsSerial(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_a (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_a(id, name) VALUES (1, 'a1')`)
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_b (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_b(id, name) VALUES (10, 'b1')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_a",
+				SQL:       "SELECT id, name FROM src_a",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+			},
+			{
+				TableName: "dst_b",
+				SQL:       "SELECT id, name FROM src_b",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.ProcessAllTasks(); err != nil {
+		t.Fatalf("ProcessAllTasks() error = %v", err)
+	}
+
+	results := p.TaskResults()
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	nameSet := make(map[string]struct{})
+	for _, r := range results {
+		nameSet[r.Name] = struct{}{}
+		if r.Status != "success" {
+			t.Fatalf("expected status success for %s, got %s", r.Name, r.Status)
+		}
+		if r.Rows != 1 {
+			t.Fatalf("expected 1 row for %s, got %d", r.Name, r.Rows)
+		}
+		if r.Error != "" {
+			t.Fatalf("expected no error for %s, got %s", r.Name, r.Error)
+		}
+	}
+	if _, ok := nameSet["dst_a"]; !ok {
+		t.Fatal("expected dst_a in results")
+	}
+	if _, ok := nameSet["dst_b"]; !ok {
+		t.Fatal("expected dst_b in results")
+	}
+}
+
+func TestTaskResultsParallel(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_a (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_a(id, name) VALUES (1, 'a1'), (2, 'a2')`)
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_b (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_b(id, name) VALUES (10, 'b1'), (20, 'b2')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_a",
+				SQL:       "SELECT id, name FROM src_a",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+			},
+			{
+				TableName: "dst_b",
+				SQL:       "SELECT id, name FROM src_b",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+			},
+		},
+		MaxConcurrentTasks: 2,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.ProcessAllTasks(); err != nil {
+		t.Fatalf("ProcessAllTasks() error = %v", err)
+	}
+
+	results := p.TaskResults()
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	for _, r := range results {
+		if r.Status != "success" {
+			t.Fatalf("expected status success for %s, got %s", r.Name, r.Status)
+		}
+		if r.Rows != 2 {
+			t.Fatalf("expected 2 rows for %s, got %d", r.Name, r.Rows)
+		}
+	}
+}
+
+func TestTaskResultsWithFailure(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_a (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_a(id, name) VALUES (1, 'a1')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_a",
+				SQL:       "SELECT bad_column FROM src_a",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	err := p.ProcessAllTasks()
+	if err == nil {
+		t.Fatal("expected ProcessAllTasks error")
+	}
+
+	results := p.TaskResults()
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != "failed" {
+		t.Fatalf("expected status failed, got %s", results[0].Status)
+	}
+	if results[0].Error == "" {
+		t.Fatal("expected non-empty error message")
+	}
+}
+
+func TestTaskResultsReturnsCopy(t *testing.T) {
+	p := NewProcessor(nil, &config.Config{})
+	p.recordTaskResult(TaskResult{Name: "t1", Rows: 10, Status: "success"})
+
+	r1 := p.TaskResults()
+	r2 := p.TaskResults()
+
+	if len(r1) != 1 || len(r2) != 1 {
+		t.Fatalf("expected 1 result in each copy")
+	}
+
+	// Modifying one copy should not affect the other.
+	r1[0].Rows = 999
+	if p.taskResults[0].Rows != 10 {
+		t.Fatal("modifying copy should not affect internal state")
+	}
+}
+
+func TestTaskResultsIgnoresIgnoredTasks(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'a')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "run_table",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+			},
+			{
+				TableName: "ignored_table",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Ignore:    true,
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.ProcessAllTasks(); err != nil {
+		t.Fatalf("ProcessAllTasks() error = %v", err)
+	}
+
+	results := p.TaskResults()
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (ignored task excluded), got %d", len(results))
+	}
+	if results[0].Name != "run_table" {
+		t.Fatalf("expected run_table, got %s", results[0].Name)
+	}
+}
+
+func TestTaskResultsShardedTask(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_events (id INTEGER PRIMARY KEY, name TEXT)`)
+	for i := 1; i <= 20; i++ {
+		setupSQLiteExec(t, sourcePath, fmt.Sprintf(`INSERT INTO src_events(id, name) VALUES (%d, 'event_%d')`, i, i))
+	}
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName:  "dst_events",
+				SQL:        "SELECT id, name FROM src_events",
+				SourceDB:   "src",
+				TargetDB:   "dst",
+				Mode:       config.TaskModeAppend,
+				ResumeKey:  "id",
+				ResumeFrom: "0",
+				Shard:      config.ShardConfig{Enabled: true, Shards: 2},
+			},
+		},
+		MaxConcurrentTasks: 2,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	if err := p.ProcessAllTasks(); err != nil {
+		t.Fatalf("ProcessAllTasks() error = %v", err)
+	}
+
+	results := p.TaskResults()
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for sharded task, got %d", len(results))
+	}
+	if results[0].Name != "dst_events" {
+		t.Fatalf("expected dst_events, got %s", results[0].Name)
+	}
+	if results[0].Status != "success" {
+		t.Fatalf("expected status success, got %s", results[0].Status)
+	}
+	if results[0].Rows != 20 {
+		t.Fatalf("expected 20 rows, got %d", results[0].Rows)
+	}
+}

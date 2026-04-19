@@ -22,6 +22,7 @@ import (
 	"db-ferry/doctor"
 	mcpserver "db-ferry/mcp"
 	"db-ferry/metrics"
+	"db-ferry/notify"
 	"db-ferry/processor"
 )
 
@@ -140,8 +141,23 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 		return 0, nil
 	}
 
-	if err := proc.ProcessAllTasks(); err != nil {
-		return 1, fmt.Errorf("failed to process tasks: %w", err)
+	startedAt := time.Now()
+	processErr := proc.ProcessAllTasks()
+	duration := time.Since(startedAt)
+
+	if cfg.Notify.HasURLs() {
+		event := "migration.success"
+		if processErr != nil {
+			event = "migration.failure"
+		}
+		client := notify.NewClient(cfg.Notify)
+		if err := client.Send(event, *tomlPath, proc.TaskResults(), duration); err != nil {
+			log.Printf("Warning: failed to send notification: %v", err)
+		}
+	}
+
+	if processErr != nil {
+		return 1, fmt.Errorf("failed to process tasks: %w", processErr)
 	}
 
 	log.Println("All tasks completed successfully!")

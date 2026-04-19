@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -306,6 +307,19 @@ type HistoryConfig struct {
 	TableName string `toml:"table_name"`
 }
 
+// NotifyConfig defines webhook notification URLs and behavior.
+type NotifyConfig struct {
+	OnSuccess []string      `toml:"on_success"`
+	OnFailure []string      `toml:"on_failure"`
+	Timeout   time.Duration `toml:"timeout"`
+	Retry     int           `toml:"retry"`
+}
+
+// HasURLs reports whether any notification URLs are configured.
+func (n *NotifyConfig) HasURLs() bool {
+	return len(n.OnSuccess) > 0 || len(n.OnFailure) > 0
+}
+
 // Table returns the configured history table name or the default.
 func (h *HistoryConfig) Table() string {
 	if h.TableName == "" {
@@ -321,6 +335,7 @@ type Config struct {
 	MaxConcurrentTasks int              `toml:"max_concurrent_tasks"`
 	History            HistoryConfig    `toml:"history"`
 	Metrics            MetricsConfig    `toml:"metrics"`
+	Notify             NotifyConfig     `toml:"notify"`
 
 	databaseMap map[string]DatabaseConfig
 }
@@ -743,6 +758,9 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("invalid metrics interval %q: %w", c.Metrics.Interval, err)
 		}
 	}
+	if err := validateNotifyConfig(&c.Notify); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -759,6 +777,32 @@ func (dbCfg DatabaseConfig) ResolveReplicaConfig(r ReplicaConfig) DatabaseConfig
 		resolved.Port = r.Port
 	}
 	return resolved
+}
+
+func validateNotifyConfig(n *NotifyConfig) error {
+	for i, u := range n.OnSuccess {
+		if u == "" {
+			return fmt.Errorf("notify.on_success[%d]: URL is required", i)
+		}
+		if _, err := url.ParseRequestURI(u); err != nil {
+			return fmt.Errorf("notify.on_success[%d]: invalid URL %q: %w", i, u, err)
+		}
+	}
+	for i, u := range n.OnFailure {
+		if u == "" {
+			return fmt.Errorf("notify.on_failure[%d]: URL is required", i)
+		}
+		if _, err := url.ParseRequestURI(u); err != nil {
+			return fmt.Errorf("notify.on_failure[%d]: invalid URL %q: %w", i, u, err)
+		}
+	}
+	if n.Timeout < 0 {
+		return fmt.Errorf("notify.timeout must be >= 0")
+	}
+	if n.Retry < 0 {
+		return fmt.Errorf("notify.retry must be >= 0")
+	}
+	return nil
 }
 
 func validateDatabaseConfig(db *DatabaseConfig) error {
