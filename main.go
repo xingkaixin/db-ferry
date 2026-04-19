@@ -7,12 +7,15 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"db-ferry/config"
+	"db-ferry/daemon"
 	"db-ferry/database"
 	"db-ferry/diff"
 	"db-ferry/doctor"
@@ -29,6 +32,7 @@ const (
 	diffCommandName    = "diff"
 	mcpCommandName     = "mcp"
 	mcpServeCommand    = "serve"
+	daemonCommandName  = "daemon"
 )
 
 var configTemplateTarget = "task.toml"
@@ -122,6 +126,8 @@ func runCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
 		return runDiffCommand(args[1:], tomlPath, stdout)
 	case mcpCommandName:
 		return runMCPCommand(args[1:], stdout)
+	case daemonCommandName:
+		return runDaemonCommand(args[1:], tomlPath, stdout)
 	default:
 		return 2, fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -330,6 +336,48 @@ func runConfigInitCommand(args []string, stdout io.Writer) (int, error) {
 		return runInteractiveWizard(stdout)
 	}
 	return initConfigTemplate(stdout)
+}
+
+func runDaemonCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
+	flags := flag.NewFlagSet("daemon", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+
+	watch := flags.Bool("watch", false, "Watch config file for changes and auto-reload")
+	healthAddr := flags.String("health-addr", ":8080", "HTTP health check listen address")
+
+	if err := flags.Parse(args); err != nil {
+		return 2, err
+	}
+	if len(flags.Args()) > 0 {
+		return 2, fmt.Errorf("unknown daemon argument: %s", flags.Args()[0])
+	}
+
+	d := daemon.New(daemon.Options{
+		ConfigPath:   tomlPath,
+		HealthAddr:   *healthAddr,
+		WatchEnabled: *watch,
+		Version:      version,
+	})
+
+	hsrv := daemon.NewHealthServer(*healthAddr, d)
+	hsrv.Start()
+	defer func() { _ = hsrv.Stop() }()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-sigCh
+		log.Println("Received shutdown signal, stopping daemon...")
+		d.Stop()
+	}()
+
+	fmt.Fprintf(stdout, "Daemon started (watch=%v, health=%s)\n", *watch, *healthAddr)
+	if err := d.Run(); err != nil {
+		return 1, fmt.Errorf("daemon error: %w", err)
+	}
+	fmt.Fprintln(stdout, "Daemon stopped")
+	return 0, nil
 }
 
 func initConfigTemplate(stdout io.Writer) (int, error) {

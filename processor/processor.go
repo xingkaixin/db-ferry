@@ -156,6 +156,10 @@ func NewProcessorWithVersion(manager *database.ConnectionManager, cfg *config.Co
 }
 
 func (p *Processor) ProcessAllTasks() error {
+	return p.ProcessAllTasksContext(context.Background())
+}
+
+func (p *Processor) ProcessAllTasksContext(ctx context.Context) error {
 	tasks, _, deps, children, inDegree := p.buildTaskGraph()
 	totalTasks := len(tasks)
 
@@ -168,6 +172,11 @@ func (p *Processor) ProcessAllTasks() error {
 	// Fast path: single task or explicitly serial.
 	if totalTasks <= 1 || cap(p.sem) == 1 {
 		for _, task := range p.config.Tasks {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
 			if task.Ignore {
 				log.Printf("Skipping ignored task: %s", task.TableName)
 				continue
@@ -184,7 +193,7 @@ func (p *Processor) ProcessAllTasks() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	sched := &taskScheduler{
@@ -192,7 +201,7 @@ func (p *Processor) ProcessAllTasks() error {
 		tasks:         tasks,
 		deps:          deps,
 		children:      children,
-		ctx:           ctx,
+		ctx:           childCtx,
 		cancel:        cancel,
 		results:       make([]error, totalTasks),
 		resultReady:   make([]chan struct{}, totalTasks),
