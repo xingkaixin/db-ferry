@@ -981,6 +981,140 @@ func TestRunDaemonCommandRejectsExtraArgs(t *testing.T) {
 	}
 }
 
+func TestRunDiffCommandErrors(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	// Invalid flag.
+	code, err := run([]string{"diff", "-badflag"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for invalid flag")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+
+	out.Reset()
+	errOut.Reset()
+
+	// Extra positional argument.
+	code, err = run([]string{"diff", "extra"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for extra args")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out.Reset()
+	errOut.Reset()
+
+	// Missing -task.
+	code, err = run([]string{"diff"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for missing task")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "-task is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out.Reset()
+	errOut.Reset()
+
+	// Invalid config.
+	code, err = run([]string{"-config", "missing.toml", "diff", "-task", "users"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for missing config")
+	}
+	if code != 1 {
+		t.Fatalf("run() code = %d, want 1", code)
+	}
+	if !strings.Contains(err.Error(), "failed to load configuration") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunDiffCommand(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+	cfgPath := filepath.Join(dir, "task.toml")
+
+	sourceDB, err := sql.Open("sqlite3", sourcePath)
+	if err != nil {
+		t.Fatalf("open source db error = %v", err)
+	}
+	defer sourceDB.Close()
+
+	if _, err := sourceDB.Exec(`CREATE TABLE src_users (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create source table error = %v", err)
+	}
+	if _, err := sourceDB.Exec(`INSERT INTO src_users(id, name) VALUES (1, 'alice'), (2, 'bob')`); err != nil {
+		t.Fatalf("insert source rows error = %v", err)
+	}
+
+	targetDB, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer targetDB.Close()
+
+	if _, err := targetDB.Exec(`CREATE TABLE dst_users (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create target table error = %v", err)
+	}
+	if _, err := targetDB.Exec(`INSERT INTO dst_users(id, name) VALUES (1, 'alice'), (2, 'bob')`); err != nil {
+		t.Fatalf("insert target rows error = %v", err)
+	}
+
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + sourcePath + `"`,
+		"",
+		"[[databases]]",
+		`name = "dst"`,
+		`type = "sqlite"`,
+		`path = "` + targetPath + `"`,
+		"",
+		"[[tasks]]",
+		`table_name = "dst_users"`,
+		`sql = "SELECT id, name FROM src_users ORDER BY id"`,
+		`source_db = "src"`,
+		`target_db = "dst"`,
+		`mode = "merge"`,
+		`merge_keys = ["id"]`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, runErr := run([]string{"-config", cfgPath, "diff", "-task", "dst_users", "-format", "json"}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run diff error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run diff code = %d, want 0", code)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "summary") {
+		t.Fatalf("expected diff output, got:\n%s", got)
+	}
+}
+
 func chdirForTest(t *testing.T, dir string) {
 	t.Helper()
 
