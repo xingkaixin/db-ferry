@@ -80,6 +80,12 @@ const (
 	MaskRuleHash          = "hash"
 )
 
+// Supported plugin engines.
+const (
+	PluginEngineLua        = "lua"
+	PluginEngineJavaScript = "javascript"
+)
+
 var supportedMaskRules = map[string]struct{}{
 	MaskRulePhoneCN:       {},
 	MaskRulePhoneUS:       {},
@@ -90,6 +96,11 @@ var supportedMaskRules = map[string]struct{}{
 	MaskRuleRandomDate:    {},
 	MaskRuleFixedValue:    {},
 	MaskRuleHash:          {},
+}
+
+var supportedPluginEngines = map[string]struct{}{
+	PluginEngineLua:        {},
+	PluginEngineJavaScript: {},
 }
 
 // ShardConfig defines range-based sharding for a single table.
@@ -184,6 +195,13 @@ type MaskingConfig struct {
 	Value  string    `toml:"value,omitempty"`
 }
 
+// PluginConfig defines a row-level transformation plugin for a task.
+type PluginConfig struct {
+	Engine    string `toml:"engine"`
+	Script    string `toml:"script"`
+	TimeoutMs int    `toml:"timeout_ms"`
+}
+
 // AdaptiveBatchConfig configures dynamic batch-size tuning for a task.
 type AdaptiveBatchConfig struct {
 	Enabled         bool `toml:"enabled"`
@@ -244,6 +262,7 @@ type TaskConfig struct {
 	DLQFormat  string            `toml:"dlq_format,omitempty"`
 	Indexes    []IndexConfig     `toml:"indexes,omitempty"`
 	Masking    []MaskingConfig   `toml:"masking,omitempty"`
+	Plugin     PluginConfig      `toml:"plugin,omitempty"`
 	Assertions []AssertionConfig `toml:"assertions,omitempty"`
 	PreSQL     []string          `toml:"pre_sql,omitempty"`
 	PostSQL    []string          `toml:"post_sql,omitempty"`
@@ -483,6 +502,19 @@ func (c *Config) Validate() error {
 		}
 		if err := ensureDatabaseSupportsTarget(&targetDB); err != nil {
 			return fmt.Errorf("task %d: %w", i+1, err)
+		}
+
+		if task.Plugin.Engine != "" {
+			task.Plugin.Engine = strings.ToLower(strings.TrimSpace(task.Plugin.Engine))
+			if _, ok := supportedPluginEngines[task.Plugin.Engine]; !ok {
+				return fmt.Errorf("task %d: plugin.engine must be %q or %q", i+1, PluginEngineLua, PluginEngineJavaScript)
+			}
+			if strings.TrimSpace(task.Plugin.Script) == "" {
+				return fmt.Errorf("task %d: plugin.script is required when plugin.engine is set", i+1)
+			}
+			if task.Plugin.TimeoutMs <= 0 {
+				task.Plugin.TimeoutMs = 5
+			}
 		}
 
 		for j, index := range task.Indexes {
