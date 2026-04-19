@@ -1115,6 +1115,131 @@ func TestRunDiffCommand(t *testing.T) {
 	}
 }
 
+func TestRunDiffMissingTaskFlag(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "task.toml")
+	if err := os.WriteFile(cfgPath, []byte("[[databases]]\nname=\"src\"\ntype=\"sqlite\"\npath=\"./a.db\"\n"), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"-config", cfgPath, "diff"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for missing -task")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "-task is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunDiffRejectsExtraArgs(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"diff", "extra"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for extra args")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunMCPServeInvalidFlag(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, err := run([]string{"mcp", "serve", "-badflag"}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected error for invalid flag")
+	}
+	if code != 2 {
+		t.Fatalf("run() code = %d, want 2", code)
+	}
+}
+
+func TestRunFederatedMemoryLimitHappyPath(t *testing.T) {
+	oldWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(oldWriter)
+
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+	cfgPath := filepath.Join(dir, "task.toml")
+
+	sourceDB, err := sql.Open("sqlite3", sourcePath)
+	if err != nil {
+		t.Fatalf("open source db error = %v", err)
+	}
+	t.Cleanup(func() { _ = sourceDB.Close() })
+
+	if _, err := sourceDB.Exec(`CREATE TABLE src_users (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create source table error = %v", err)
+	}
+	if _, err := sourceDB.Exec(`INSERT INTO src_users(id, name) VALUES (1, 'alice')`); err != nil {
+		t.Fatalf("insert source rows error = %v", err)
+	}
+
+	content := strings.Join([]string{
+		"[[databases]]",
+		`name = "src"`,
+		`type = "sqlite"`,
+		`path = "` + sourcePath + `"`,
+		"",
+		"[[databases]]",
+		`name = "dst"`,
+		`type = "sqlite"`,
+		`path = "` + targetPath + `"`,
+		"",
+		"[[tasks]]",
+		`table_name = "dst_users"`,
+		`sql = "SELECT id, name FROM src_users ORDER BY id"`,
+		`source_db = "src"`,
+		`target_db = "dst"`,
+		`mode = "replace"`,
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config error = %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	code, runErr := run([]string{"-config", cfgPath, "-federated-memory-limit", "500000"}, &out, &errOut)
+	if runErr != nil {
+		t.Fatalf("run() error = %v", runErr)
+	}
+	if code != 0 {
+		t.Fatalf("run() code = %d, want 0", code)
+	}
+}
+
+func chdirForTest(t *testing.T, dir string) {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory error = %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("change working directory error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatalf("restore working directory error = %v", err)
+		}
+	})
+}
+
 func chdirForTest(t *testing.T, dir string) {
 	t.Helper()
 
