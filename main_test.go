@@ -1239,20 +1239,3 @@ func chdirForTest(t *testing.T, dir string) {
 		}
 	})
 }
-
-func chdirForTest(t *testing.T, dir string) {
-	t.Helper()
-
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get working directory error = %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("change working directory error = %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(wd); err != nil {
-			t.Fatalf("restore working directory error = %v", err)
-		}
-	})
-}

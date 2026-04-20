@@ -2739,8 +2739,6 @@ func TestProcessTaskWithPluginErrorNoDLQ(t *testing.T) {
 	}
 }
 
-
-
 func TestTaskKeyFederated(t *testing.T) {
 	p := &Processor{}
 	task := config.TaskConfig{
