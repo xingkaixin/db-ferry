@@ -36,8 +36,8 @@ type Processor struct {
 	sem                  chan struct{}
 	metrics              metrics.Recorder
 	federatedMemoryLimit int
-	taskResults      []TaskResult
-	resultsMu        sync.Mutex
+	taskResults          []TaskResult
+	resultsMu            sync.Mutex
 }
 
 var sleepFn = time.Sleep
