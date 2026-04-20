@@ -18,7 +18,7 @@ var (
 	_ TargetDB = (*DuckDB)(nil)
 )
 
-func NewDuckDB(path string) (*DuckDB, error) {
+func NewDuckDB(path string, maxOpen, maxIdle int, encryptionKey string) (*DuckDB, error) {
 	return nil, fmt.Errorf("duckdb is not supported on windows builds")
 }
 
@@ -32,6 +32,10 @@ func (d *DuckDB) Query(sql string) (*sql.Rows, error) {
 
 func (d *DuckDB) GetRowCount(sql string) (int, error) {
 	return 0, fmt.Errorf("duckdb is not supported on windows builds")
+}
+
+func (d *DuckDB) GetTableColumns(tableName string) ([]ColumnMetadata, error) {
+	return nil, fmt.Errorf("duckdb is not supported on windows builds")
 }
 
 func (d *DuckDB) CreateTable(tableName string, columns []ColumnMetadata) error {
