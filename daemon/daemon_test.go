@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"db-ferry/config"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -386,6 +388,246 @@ func TestDaemonScheduleWithWatchReload(t *testing.T) {
 		_ = os.WriteFile(cfgPath, append(newContent, []byte("\n# changed\n")...), 0o644)
 
 		time.Sleep(400 * time.Millisecond)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+
+	var cnt int
+	if err := dstDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&cnt); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if cnt != 2 {
+		t.Fatalf("target row count = %d, want 2", cnt)
+	}
+}
+
+func TestParseDaemonScheduleTime(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"RFC3339", "2026-01-01T00:00:00Z", false},
+		{"compact", "2026-01-01T00:00:00", false},
+		{"invalid", "not-a-date", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseDaemonScheduleTime(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.IsZero() {
+				t.Fatal("expected non-zero time")
+			}
+		})
+	}
+}
+
+func TestDaemonLoadLastRunInvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	_ = os.WriteFile(path, []byte("not json"), 0o644)
+
+	d := New(Options{ConfigPath: filepath.Join(dir, "task.toml")})
+	_, err := d.loadLastRun(path)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestDaemonHandleMissedCatchupLoadError(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	scheduleSection := "\n[schedule]\ncron = \"@every 1h\"\nmissed_catchup = true\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	// Create a state file that is a directory to force a read error.
+	statePath := filepath.Join(dir, ".db-ferry-schedule-state.json")
+	_ = os.Mkdir(statePath, 0o755)
+
+	d := New(Options{ConfigPath: cfgPath})
+	cfg, _ := config.LoadConfig(cfgPath)
+	err := d.handleMissedCatchup(cfg, time.Local)
+	if err == nil {
+		t.Fatal("expected error for unreadable state file")
+	}
+}
+
+func TestDaemonHandleMissedCatchupNoState(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	scheduleSection := "\n[schedule]\ncron = \"@every 1h\"\nmissed_catchup = true\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	// No state file exists, so lastRun should be zero and handleMissedCatchup returns nil.
+	d := New(Options{ConfigPath: cfgPath})
+	cfg, _ := config.LoadConfig(cfgPath)
+	err := d.handleMissedCatchup(cfg, time.Local)
+	if err != nil {
+		t.Fatalf("expected no error when state file missing: %v", err)
+	}
+}
+
+func TestDaemonHandleMissedCatchupInvalidCron(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	scheduleSection := "\n[schedule]\ncron = \"invalid cron\"\nmissed_catchup = true\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	// Write state with an old last_run.
+	statePath := filepath.Join(dir, ".db-ferry-schedule-state.json")
+	state := scheduleState{LastRun: time.Now().Add(-2 * time.Hour)}
+	data, _ := json.Marshal(state)
+	_ = os.WriteFile(statePath, data, 0o644)
+
+	d := New(Options{ConfigPath: cfgPath})
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		// Config validation rejects invalid cron, so handleMissedCatchup
+		// won't even be reached in real usage. Skip this test path.
+		t.Skipf("config validation rejected invalid cron: %v", err)
+	}
+	err = d.handleMissedCatchup(cfg, time.Local)
+	if err == nil {
+		t.Fatal("expected error for invalid cron expression")
+	}
+}
+
+func TestDaemonRunWithScheduleInvalidTimezone(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	scheduleSection := "\n[schedule]\ncron = \"@every 1h\"\ntimezone = \"Invalid/Zone\"\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	d := New(Options{ConfigPath: cfgPath})
+	err := d.Run()
+	if err == nil {
+		t.Fatal("expected error for invalid timezone")
+	}
+}
+
+func TestDaemonRunWithScheduleInvalidCron(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	scheduleSection := "\n[schedule]\ncron = \"bad cron\"\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	d := New(Options{ConfigPath: cfgPath})
+	err := d.Run()
+	if err == nil {
+		t.Fatal("expected error for invalid cron expression")
+	}
+}
+
+func TestDaemonScheduledJobStartAt(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	// Set start_at far in the future so the job skips execution.
+	scheduleSection := "\n[schedule]\ncron = \"@every 50ms\"\nstart_at = \"2099-01-01T00:00:00\"\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	d := New(Options{ConfigPath: cfgPath})
+
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+}
+
+func TestDaemonScheduledJobEndAt(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	// Set end_at in the past so the job skips execution.
+	scheduleSection := "\n[schedule]\ncron = \"@every 50ms\"\nend_at = \"2000-01-01T00:00:00\"\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	d := New(Options{ConfigPath: cfgPath})
+
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+}
+
+func TestDaemonScheduledJobStopDuringRetry(t *testing.T) {
+	oldDelay := scheduleRetryDelay
+	scheduleRetryDelay = 500 * time.Millisecond
+	defer func() { scheduleRetryDelay = oldDelay }()
+
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	newContent := strings.ReplaceAll(string(content), "FROM src_users", "FROM nonexistent_table")
+	scheduleSection := "\n[schedule]\ncron = \"@every 50ms\"\nretry_on_failure = true\nmax_retry = 3\n"
+	_ = os.WriteFile(cfgPath, append([]byte(newContent), []byte(scheduleSection)...), 0o644)
+
+	d := New(Options{ConfigPath: cfgPath})
+
+	go func() {
+		// Stop while the job is waiting for retry.
+		time.Sleep(150 * time.Millisecond)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+}
+
+func TestDaemonRunWithWatchSameHash(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, dstDB := setupTestDBs(t, dir)
+
+	d := New(Options{ConfigPath: cfgPath, WatchEnabled: true})
+
+	go func() {
+		// Wait for initial round.
+		time.Sleep(200 * time.Millisecond)
+
+		// Trigger a write but restore original content before debounce fires.
+		original, _ := os.ReadFile(cfgPath)
+		_ = os.WriteFile(cfgPath, append(original, []byte("\n# temp\n")...), 0o644)
+		time.Sleep(100 * time.Millisecond)
+		_ = os.WriteFile(cfgPath, original, 0o644)
+
+		time.Sleep(700 * time.Millisecond)
 		d.Stop()
 	}()
 
