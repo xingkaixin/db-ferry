@@ -1,6 +1,6 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-go_cmd := "mise x go@1.25.2 -- go"
+go_cmd := "mise x go -- go"
 golangci_lint_cmd := "mise x golangci-lint@2.10.1 -- golangci-lint"
 
 default:
