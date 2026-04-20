@@ -1404,3 +1404,146 @@ func TestAssertionValidation(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateCDCConfig(t *testing.T) {
+	t.Run("valid cdc config passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeAppend
+		cfg.Tasks[0].StateFile = "./state.json"
+		cfg.Tasks[0].CDC = CDCConfig{
+			Enabled:      true,
+			CursorColumn: "updated_at",
+			PollInterval: "5m",
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected valid CDC config to pass, got %v", err)
+		}
+		if cfg.Tasks[0].ResumeKey != "updated_at" {
+			t.Fatalf("expected ResumeKey set to cursor_column, got %s", cfg.Tasks[0].ResumeKey)
+		}
+	})
+
+	t.Run("cdc requires cursor_column", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeAppend
+		cfg.Tasks[0].StateFile = "./state.json"
+		cfg.Tasks[0].CDC = CDCConfig{Enabled: true, PollInterval: "5m"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "cdc.cursor_column is required") {
+			t.Fatalf("expected cursor_column required error, got %v", err)
+		}
+	})
+
+	t.Run("cdc requires append or merge mode", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeReplace
+		cfg.Tasks[0].StateFile = "./state.json"
+		cfg.Tasks[0].CDC = CDCConfig{Enabled: true, CursorColumn: "id", PollInterval: "5m"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "cdc requires mode") {
+			t.Fatalf("expected mode error, got %v", err)
+		}
+	})
+
+	t.Run("cdc requires state_file", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeAppend
+		cfg.Tasks[0].CDC = CDCConfig{Enabled: true, CursorColumn: "id", PollInterval: "5m"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "cdc requires state_file") {
+			t.Fatalf("expected state_file required error, got %v", err)
+		}
+	})
+
+	t.Run("cdc requires poll_interval", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeAppend
+		cfg.Tasks[0].StateFile = "./state.json"
+		cfg.Tasks[0].CDC = CDCConfig{Enabled: true, CursorColumn: "id"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "cdc.poll_interval is required") {
+			t.Fatalf("expected poll_interval required error, got %v", err)
+		}
+	})
+
+	t.Run("cdc rejects invalid poll_interval", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeAppend
+		cfg.Tasks[0].StateFile = "./state.json"
+		cfg.Tasks[0].CDC = CDCConfig{Enabled: true, CursorColumn: "id", PollInterval: "not-a-duration"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "invalid cdc.poll_interval") {
+			t.Fatalf("expected invalid poll_interval error, got %v", err)
+		}
+	})
+
+	t.Run("cdc not supported in federated mode", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := &Config{
+			Databases: []DatabaseConfig{
+				{Name: "db1", Type: DatabaseTypeSQLite, Path: filepath.Join(dir, "db1.db")},
+				{Name: "db2", Type: DatabaseTypeSQLite, Path: filepath.Join(dir, "db2.db")},
+				{Name: "dst", Type: DatabaseTypeSQLite, Path: filepath.Join(dir, "dst.db")},
+			},
+			Tasks: []TaskConfig{
+				{
+					TableName: "wide",
+					TargetDB:  "dst",
+					Sources: []SourceConfig{
+						{Alias: "a", DB: "db1", SQL: "SELECT id FROM t1"},
+						{Alias: "b", DB: "db2", SQL: "SELECT id FROM t2"},
+					},
+					Join: JoinConfig{Keys: []string{"id"}, Type: "inner"},
+					CDC:  CDCConfig{Enabled: true, CursorColumn: "id", PollInterval: "5m"},
+				},
+			},
+		}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "cdc is not supported in federated mode") {
+			t.Fatalf("expected federated CDC error, got %v", err)
+		}
+	})
+
+	t.Run("cdc not supported with shard", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeAppend
+		cfg.Tasks[0].StateFile = "./state.json"
+		cfg.Tasks[0].ResumeKey = "id"
+		cfg.Tasks[0].Shard = ShardConfig{Enabled: true, Shards: 4}
+		cfg.Tasks[0].CDC = CDCConfig{Enabled: true, CursorColumn: "id", PollInterval: "5m"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "cdc is not supported with shard") {
+			t.Fatalf("expected shard CDC error, got %v", err)
+		}
+	})
+
+	t.Run("cdc initial_cursor sets resume_from", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeAppend
+		cfg.Tasks[0].StateFile = "./state.json"
+		cfg.Tasks[0].CDC = CDCConfig{
+			Enabled:       true,
+			CursorColumn:  "updated_at",
+			PollInterval:  "5m",
+			InitialCursor: "2024-01-01",
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected valid CDC config to pass, got %v", err)
+		}
+		if cfg.Tasks[0].ResumeFrom != "2024-01-01" {
+			t.Fatalf("expected ResumeFrom set to initial_cursor, got %s", cfg.Tasks[0].ResumeFrom)
+		}
+	})
+
+	t.Run("cdc resume_key must match cursor_column", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Tasks[0].Mode = TaskModeAppend
+		cfg.Tasks[0].StateFile = "./state.json"
+		cfg.Tasks[0].ResumeKey = "created_at"
+		cfg.Tasks[0].CDC = CDCConfig{Enabled: true, CursorColumn: "updated_at", PollInterval: "5m"}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "resume_key and cdc.cursor_column must match") {
+			t.Fatalf("expected resume_key mismatch error, got %v", err)
+		}
+	})
+}

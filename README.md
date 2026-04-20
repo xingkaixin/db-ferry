@@ -25,6 +25,7 @@
 - `diff` command for source-target data comparison
 - MCP server with 5 agent-native tools for AI integration
 - Range-based sharding for single-table parallel reads (append/merge mode)
+- CDC polling mode for continuous incremental synchronization with cursor-based filtering
 - Read replica and connection pool configuration
 - Progress bars for each task, including row counts when available
 
@@ -162,6 +163,7 @@
  - `masking`: PII masking rules per column (`column`, `rule`, optional `range`/`value`)
  - `adaptive_batch`: dynamic batch-size tuning (`enabled`, `min_size`, `max_size`, `target_latency_ms`, `memory_limit_mb`)
  - `shard`: range-based parallel sharding for single-table reads (`enabled`, `shards`); requires `resume_key`, only in append/merge mode
+ - `cdc`: continuous incremental sync via polling (`enabled`, `cursor_column`, `poll_interval`, `initial_cursor`, `delete_detection`); requires `mode = append/merge`, `state_file`, and `resume_key` (auto-set to `cursor_column`); not supported with federated or shard tasks
  - `validate_sample_size`: number of rows to sample when `validate = "sample"`
  - `[[tasks.indexes]]`: optional index creation statements applied after data load (partial indexes via `where` are supported on SQLite targets)
 

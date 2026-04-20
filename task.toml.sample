@@ -192,6 +192,25 @@ retry = 2
 #     enabled = true
 #     shards = 8
 #
+# - CDC (Change Data Capture) polling mode enables continuous incremental sync.
+#   Use cdc.enabled with cursor_column, poll_interval, and state_file.
+#   mode must be "append" or "merge". The SQL can use {{.LastValue}} template for the cursor.
+#   When no initial_cursor is set, the first sync uses 0 as the default cursor value.
+#   Example:
+#     [[tasks]]
+#     table_name = "events"
+#     sql = "SELECT id, event_type, payload, created_at FROM events WHERE created_at > {{.LastValue}}"
+#     source_db = "mysql_inventory"
+#     target_db = "sqlite_local"
+#     mode = "append"
+#     state_file = "./state/events.json"
+#
+#     [tasks.cdc]
+#     enabled = true
+#     cursor_column = "created_at"
+#     poll_interval = "5m"
+#     initial_cursor = "2024-01-01"
+#
 # - Federated queries (in-memory JOIN across multiple databases) use [[tasks.sources]] instead of source_db/sql.
 #   Each source needs a unique alias, a db reference, and a SQL query. Join keys and type define the JOIN.
 #   Federated tasks require exactly 2 sources, support inner/left/right joins, and do not support resume_key, shard, or state_file.

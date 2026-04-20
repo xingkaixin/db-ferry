@@ -2,6 +2,7 @@ package processor
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -3630,5 +3631,152 @@ func TestTaskResultsShardedTask(t *testing.T) {
 	}
 	if results[0].Rows != 20 {
 		t.Fatalf("expected 20 rows, got %d", results[0].Rows)
+	}
+}
+
+func TestBuildTaskSQLLastValueTemplate(t *testing.T) {
+	t.Run("replaces template with resume literal", func(t *testing.T) {
+		dataSQL, countSQL := buildTaskSQL("SELECT id, name FROM users WHERE updated_at > {{.LastValue}}", "updated_at", "'2024-01-01'")
+		wantData := "SELECT id, name FROM users WHERE updated_at > '2024-01-01' ORDER BY updated_at"
+		wantCount := "SELECT * FROM (SELECT id, name FROM users WHERE updated_at > '2024-01-01') __tmpl"
+		if dataSQL != wantData {
+			t.Fatalf("dataSQL mismatch: got %q, want %q", dataSQL, wantData)
+		}
+		if countSQL != wantCount {
+			t.Fatalf("countSQL mismatch: got %q, want %q", countSQL, wantCount)
+		}
+	})
+
+	t.Run("replaces template with 0 when no resume literal", func(t *testing.T) {
+		dataSQL, countSQL := buildTaskSQL("SELECT id FROM logs WHERE ts >= {{.LastValue}}", "ts", "")
+		wantData := "SELECT id FROM logs WHERE ts >= 0 ORDER BY ts"
+		wantCount := "SELECT * FROM (SELECT id FROM logs WHERE ts >= 0) __tmpl"
+		if dataSQL != wantData {
+			t.Fatalf("dataSQL mismatch: got %q, want %q", dataSQL, wantData)
+		}
+		if countSQL != wantCount {
+			t.Fatalf("countSQL mismatch: got %q, want %q", countSQL, wantCount)
+		}
+	})
+
+	t.Run("does not add ORDER BY when already present", func(t *testing.T) {
+		dataSQL, countSQL := buildTaskSQL("SELECT id FROM events WHERE id > {{.LastValue}} ORDER BY id DESC", "id", "10")
+		wantData := "SELECT id FROM events WHERE id > 10 ORDER BY id DESC"
+		wantCount := "SELECT * FROM (SELECT id FROM events WHERE id > 10 ORDER BY id DESC) __tmpl"
+		if dataSQL != wantData {
+			t.Fatalf("dataSQL mismatch: got %q, want %q", dataSQL, wantData)
+		}
+		if countSQL != wantCount {
+			t.Fatalf("countSQL mismatch: got %q, want %q", countSQL, wantCount)
+		}
+	})
+
+	t.Run("does not add ORDER BY when resume key empty", func(t *testing.T) {
+		dataSQL, countSQL := buildTaskSQL("SELECT id FROM events WHERE id > {{.LastValue}}", "", "10")
+		wantData := "SELECT id FROM events WHERE id > 10"
+		wantCount := "SELECT * FROM (SELECT id FROM events WHERE id > 10) __tmpl"
+		if dataSQL != wantData {
+			t.Fatalf("dataSQL mismatch: got %q, want %q", dataSQL, wantData)
+		}
+		if countSQL != wantCount {
+			t.Fatalf("countSQL mismatch: got %q, want %q", countSQL, wantCount)
+		}
+	})
+}
+
+func TestCDCPollingEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+	statePath := filepath.Join(dir, "state.json")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_events (id INTEGER PRIMARY KEY, name TEXT, updated_at INTEGER)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_events(id, name, updated_at) VALUES (1, 'a', 100), (2, 'b', 200)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_events",
+				SQL:       "SELECT id, name, updated_at FROM src_events WHERE updated_at > {{.LastValue}}",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeAppend,
+				StateFile: statePath,
+				CDC:       config.CDCConfig{Enabled: true, CursorColumn: "updated_at", PollInterval: "100ms"},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	// Initial sync: should migrate rows 1 and 2.
+	ctx := context.Background()
+	if err := p.ProcessAllTasksContext(ctx); err != nil {
+		t.Fatalf("initial sync error = %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM dst_events`).Scan(&count); err != nil {
+		t.Fatalf("count rows error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 rows after initial sync, got %d", count)
+	}
+
+	// Verify state file updated to max updated_at (200).
+	stateData, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("read state file error = %v", err)
+	}
+	var st stateFile
+	if err := json.Unmarshal(stateData, &st); err != nil {
+		t.Fatalf("unmarshal state error = %v", err)
+	}
+	key := p.taskKey(cfg.Tasks[0])
+	if st.Tasks[key] != "200" {
+		t.Fatalf("expected state cursor 200, got %s", st.Tasks[key])
+	}
+
+	// Insert new rows with larger updated_at.
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_events(id, name, updated_at) VALUES (3, 'c', 300), (4, 'd', 400)`)
+
+	// Run one CDC round.
+	cdcTasks := []config.TaskConfig{cfg.Tasks[0]}
+	if err := p.runCDCRound(ctx, cdcTasks); err != nil {
+		t.Fatalf("cdc round error = %v", err)
+	}
+
+	if err := db.QueryRow(`SELECT COUNT(*) FROM dst_events`).Scan(&count); err != nil {
+		t.Fatalf("count rows after cdc error = %v", err)
+	}
+	if count != 4 {
+		t.Fatalf("expected 4 rows after CDC round, got %d", count)
+	}
+
+	// Verify state cursor advanced to 400.
+	stateData, err = os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("read state file after cdc error = %v", err)
+	}
+	if err := json.Unmarshal(stateData, &st); err != nil {
+		t.Fatalf("unmarshal state after cdc error = %v", err)
+	}
+	if st.Tasks[key] != "400" {
+		t.Fatalf("expected state cursor 400 after CDC, got %s", st.Tasks[key])
 	}
 }

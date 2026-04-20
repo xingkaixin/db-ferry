@@ -1393,6 +1393,72 @@ func (p *Processor) resolveResumeLiteral(task config.TaskConfig) (string, error)
 	return task.ResumeFrom, nil
 }
 
+func (p *Processor) runCDCRound(ctx context.Context, cdcTasks []config.TaskConfig) error {
+	for _, task := range cdcTasks {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		log.Printf("[cdc] Polling task: %s", task.TableName)
+		if err := p.processTaskInternal(task, true); err != nil {
+			return fmt.Errorf("cdc task %s failed: %w", task.TableName, err)
+		}
+		log.Printf("[cdc] Task %s polled successfully", task.TableName)
+	}
+	return nil
+}
+
+// ProcessCDCTasksContext executes all tasks once, then continuously polls
+// CDC-enabled tasks at their configured intervals until ctx is cancelled.
+func (p *Processor) ProcessCDCTasksContext(ctx context.Context) error {
+	// Execute all tasks (including CDC) once for the initial sync.
+	if err := p.ProcessAllTasksContext(ctx); err != nil {
+		return err
+	}
+
+	var cdcTasks []config.TaskConfig
+	var minInterval time.Duration = -1
+	for _, task := range p.config.Tasks {
+		if task.Ignore {
+			continue
+		}
+		if !task.CDC.Enabled {
+			continue
+		}
+		cdcTasks = append(cdcTasks, task)
+		interval, _ := time.ParseDuration(task.CDC.PollInterval)
+		if minInterval < 0 || interval < minInterval {
+			minInterval = interval
+		}
+	}
+
+	if len(cdcTasks) == 0 {
+		return nil
+	}
+
+	log.Printf("CDC mode active: %d task(s), polling every %v", len(cdcTasks), minInterval)
+
+	ticker := time.NewTicker(minInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("[cdc] Stopping CDC polling")
+			return nil
+		case <-ticker.C:
+			if err := p.runCDCRound(ctx, cdcTasks); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
+		}
+	}
+}
+
 func (p *Processor) updateResumeState(task config.TaskConfig, value any) error {
 	if task.ResumeKey == "" || task.StateFile == "" {
 		return nil
@@ -1477,6 +1543,24 @@ func execHookSQLs(targetDB database.TargetDB, sqls []string) error {
 
 func buildTaskSQL(baseSQL, resumeKey, resumeLiteral string) (string, string) {
 	normalized := trimSQL(baseSQL)
+
+	// Support {{.LastValue}} template in user SQL.
+	if strings.Contains(normalized, "{{.LastValue}}") {
+		var replacement string
+		if resumeLiteral != "" {
+			replacement = resumeLiteral
+		} else {
+			replacement = "0"
+		}
+		normalized = strings.ReplaceAll(normalized, "{{.LastValue}}", replacement)
+		dataSQL := normalized
+		if resumeKey != "" && !hasOrderBy(normalized) {
+			dataSQL = fmt.Sprintf("%s ORDER BY %s", normalized, resumeKey)
+		}
+		countSQL := fmt.Sprintf("SELECT * FROM (%s) __tmpl", normalized)
+		return dataSQL, countSQL
+	}
+
 	if resumeKey == "" {
 		return normalized, normalized
 	}
@@ -1488,6 +1572,11 @@ func buildTaskSQL(baseSQL, resumeKey, resumeLiteral string) (string, string) {
 
 	dataSQL := fmt.Sprintf("%s ORDER BY %s", wrapped, resumeKey)
 	return dataSQL, wrapped
+}
+
+func hasOrderBy(sql string) bool {
+	upper := strings.ToUpper(sql)
+	return strings.Contains(upper, "ORDER BY")
 }
 
 func trimSQL(sqlText string) string {

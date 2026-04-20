@@ -142,7 +142,21 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 	}
 
 	startedAt := time.Now()
-	processErr := proc.ProcessAllTasks()
+	var processErr error
+
+	if hasCDCTasks(cfg) {
+		// CDC mode: run initial sync then poll continuously.
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sigCh
+			log.Println("Received shutdown signal, stopping CDC polling...")
+			cancel()
+		}()
+		processErr = proc.ProcessCDCTasksContext(ctx)
+	} else {
+		processErr = proc.ProcessAllTasksContext(ctx)
+	}
 	duration := time.Since(startedAt)
 
 	if cfg.Notify.HasURLs() {
@@ -162,6 +176,15 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 
 	log.Println("All tasks completed successfully!")
 	return 0, nil
+}
+
+func hasCDCTasks(cfg *config.Config) bool {
+	for _, task := range cfg.Tasks {
+		if !task.Ignore && task.CDC.Enabled {
+			return true
+		}
+	}
+	return false
 }
 
 func runCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
