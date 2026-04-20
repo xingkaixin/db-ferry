@@ -25,6 +25,21 @@ type TaskResult struct {
 	Error  string
 }
 
+// ProgressEvent is emitted during task execution to report real-time progress.
+type ProgressEvent struct {
+	Type       string
+	TaskName   string
+	SourceDB   string
+	TargetDB   string
+	TotalRows  int
+	Processed  int
+	DurationMs int64
+	Error      string
+}
+
+// ProgressNotifier receives progress events. It must be safe for concurrent use.
+type ProgressNotifier func(ProgressEvent)
+
 type Processor struct {
 	manager              *database.ConnectionManager
 	config               *config.Config
@@ -38,6 +53,7 @@ type Processor struct {
 	federatedMemoryLimit int
 	taskResults          []TaskResult
 	resultsMu            sync.Mutex
+	progressNotifier     ProgressNotifier
 }
 
 var sleepFn = time.Sleep
@@ -85,6 +101,17 @@ func NewProcessorWithVersion(manager *database.ConnectionManager, cfg *config.Co
 // SetFederatedMemoryLimit sets the maximum rows per source for in-memory JOIN.
 func (p *Processor) SetFederatedMemoryLimit(limit int) {
 	p.federatedMemoryLimit = limit
+}
+
+// SetProgressNotifier registers a callback that receives real-time progress events.
+func (p *Processor) SetProgressNotifier(fn ProgressNotifier) {
+	p.progressNotifier = fn
+}
+
+func (p *Processor) notify(event ProgressEvent) {
+	if p.progressNotifier != nil {
+		p.progressNotifier(event)
+	}
 }
 
 func (p *Processor) ProcessAllTasks() error {
@@ -335,6 +362,25 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 			Status: status,
 			Error:  errMsg,
 		})
+		if status == "success" {
+			p.notify(ProgressEvent{
+				Type:       "task.complete",
+				TaskName:   task.TableName,
+				SourceDB:   task.SourceDB,
+				TargetDB:   task.TargetDB,
+				Processed:  rows,
+				DurationMs: time.Since(start).Milliseconds(),
+			})
+		} else {
+			p.notify(ProgressEvent{
+				Type:       "task.error",
+				TaskName:   task.TableName,
+				SourceDB:   task.SourceDB,
+				TargetDB:   task.TargetDB,
+				Error:      errMsg,
+				DurationMs: time.Since(start).Milliseconds(),
+			})
+		}
 	}()
 
 	log.Printf("Executing query for table %s", task.TableName)
@@ -506,6 +552,14 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		log.Printf("Found %d rows to process for table %s", totalRows, task.TableName)
 	}
 
+	p.notify(ProgressEvent{
+		Type:      "task.start",
+		TaskName:  task.TableName,
+		SourceDB:  task.SourceDB,
+		TargetDB:  task.TargetDB,
+		TotalRows: totalRows,
+	})
+
 	var progress *utils.ProgressManager
 	if !silent {
 		if totalRows > 0 {
@@ -593,6 +647,14 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 			}
 			totalDLQ += dlqCount
 			p.metrics.RecordDLQRows(task.TableName, task.SourceDB, task.TargetDB, int64(dlqCount))
+			p.notify(ProgressEvent{
+				Type:      "task.progress",
+				TaskName:  task.TableName,
+				SourceDB:  task.SourceDB,
+				TargetDB:  task.TargetDB,
+				TotalRows: totalRows,
+				Processed: processedRows,
+			})
 			if err := p.updateResumeState(task, lastResumeValue); err != nil {
 				return err
 			}
@@ -619,6 +681,14 @@ func (p *Processor) processTaskInternal(task config.TaskConfig, silent bool) (er
 		}
 		totalDLQ += dlqCount
 		p.metrics.RecordDLQRows(task.TableName, task.SourceDB, task.TargetDB, int64(dlqCount))
+		p.notify(ProgressEvent{
+			Type:      "task.progress",
+			TaskName:  task.TableName,
+			SourceDB:  task.SourceDB,
+			TargetDB:  task.TargetDB,
+			TotalRows: totalRows,
+			Processed: processedRows,
+		})
 		if err := p.updateResumeState(task, lastResumeValue); err != nil {
 			return err
 		}
@@ -862,13 +932,36 @@ func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) (err
 	}()
 	log.Printf("Executing sharded query for table %s with %d shards", task.TableName, task.Shard.Shards)
 
+	p.notify(ProgressEvent{
+		Type:     "task.start",
+		TaskName: task.TableName,
+		SourceDB: task.SourceDB,
+		TargetDB: task.TargetDB,
+	})
+
 	sourceDB, err := p.manager.GetSource(task.SourceDB)
 	if err != nil {
+		p.notify(ProgressEvent{
+			Type:       "task.error",
+			TaskName:   task.TableName,
+			SourceDB:   task.SourceDB,
+			TargetDB:   task.TargetDB,
+			Error:      err.Error(),
+			DurationMs: time.Since(start).Milliseconds(),
+		})
 		return err
 	}
 
 	targetDB, err := p.manager.GetTarget(task.TargetDB)
 	if err != nil {
+		p.notify(ProgressEvent{
+			Type:       "task.error",
+			TaskName:   task.TableName,
+			SourceDB:   task.SourceDB,
+			TargetDB:   task.TargetDB,
+			Error:      err.Error(),
+			DurationMs: time.Since(start).Milliseconds(),
+		})
 		return err
 	}
 
@@ -1016,6 +1109,25 @@ func (p *Processor) processShardedTask(task config.TaskConfig, silent bool) (err
 			Status: status,
 			Error:  errMsg,
 		})
+		if status == "success" {
+			p.notify(ProgressEvent{
+				Type:       "task.complete",
+				TaskName:   task.TableName,
+				SourceDB:   task.SourceDB,
+				TargetDB:   task.TargetDB,
+				Processed:  rows,
+				DurationMs: time.Since(start).Milliseconds(),
+			})
+		} else {
+			p.notify(ProgressEvent{
+				Type:       "task.error",
+				TaskName:   task.TableName,
+				SourceDB:   task.SourceDB,
+				TargetDB:   task.TargetDB,
+				Error:      errMsg,
+				DurationMs: time.Since(start).Milliseconds(),
+			})
+		}
 	}()
 
 	for i, r := range ranges {

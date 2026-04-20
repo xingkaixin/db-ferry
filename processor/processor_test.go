@@ -62,6 +62,39 @@ func (m *retryTarget) Exec(string) error { return nil }
 
 func (m *retryTarget) GetTableColumns(string) ([]database.ColumnMetadata, error) { return nil, nil }
 
+func TestSetProgressNotifier(t *testing.T) {
+	p := &Processor{}
+	if p.progressNotifier != nil {
+		t.Fatal("expected nil progressNotifier by default")
+	}
+
+	var received []ProgressEvent
+	notifier := func(e ProgressEvent) {
+		received = append(received, e)
+	}
+	p.SetProgressNotifier(notifier)
+	if p.progressNotifier == nil {
+		t.Fatal("expected progressNotifier to be set")
+	}
+
+	// notify with nil notifier should not panic
+	p2 := &Processor{}
+	p2.notify(ProgressEvent{Type: "task.start", TaskName: "t1"})
+
+	p.notify(ProgressEvent{Type: "task.start", TaskName: "orders", TotalRows: 1000})
+	p.notify(ProgressEvent{Type: "task.progress", TaskName: "orders", Processed: 500})
+
+	if len(received) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(received))
+	}
+	if received[0].Type != "task.start" || received[0].TaskName != "orders" {
+		t.Fatalf("unexpected first event: %+v", received[0])
+	}
+	if received[1].Type != "task.progress" || received[1].Processed != 500 {
+		t.Fatalf("unexpected second event: %+v", received[1])
+	}
+}
+
 func TestProcessorHelpers(t *testing.T) {
 	if got := trimSQL(" SELECT 1;; "); got != "SELECT 1" {
 		t.Fatalf("trimSQL() = %q, want %q", got, "SELECT 1")

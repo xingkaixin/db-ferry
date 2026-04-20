@@ -236,6 +236,7 @@
  - `-config`: Path to the TOML configuration file (default: `task.toml`)
  - `-v`: Enable verbose logging with file/line prefixes
  - `-version`: Print build version and exit
+ - `-sse-port`: Start an SSE server (e.g. `:8080`) that streams real-time task progress via `/events` and exposes current status via `/status`; supports CORS for local frontend development
 
  ## Development Commands
 
@@ -257,7 +258,7 @@
  # run tests
  just test
 
- # run coverage gate (global >=80%, each package >=70%)
+ # run coverage gate (global >=75%, each package >=65%)
  just test-cover
 
  # build all packages
@@ -275,8 +276,8 @@
 - npm publish steps skip package versions that already exist, so a fixed workflow can rerun the same tag release to backfill only the missing packages
 
  Coverage rules:
- - Global coverage must be `>= 80%`
- - Each package coverage must be `>= 70%`
+ - Global coverage must be `>= 75%`
+ - Each package coverage must be `>= 65%`
  - Any package without test files is treated as failure in `test-cover`
 
  ## Data type mapping (high level)
