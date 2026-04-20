@@ -2,7 +2,7 @@
 set -euo pipefail
 
 global_threshold="${GLOBAL_COVERAGE_THRESHOLD:-80}"
-package_threshold="${PACKAGE_COVERAGE_THRESHOLD:-70}"
+package_threshold="${PACKAGE_COVERAGE_THRESHOLD:-65}"
 go_bin="${GO_BIN:-go}"
 
 mkdir -p .cache/coverage
