@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/robfig/cron/v3"
 )
 
 // Supported database types.
@@ -325,6 +326,17 @@ type NotifyConfig struct {
 	Retry     int           `toml:"retry"`
 }
 
+// ScheduleConfig configures cron-based scheduling for the daemon mode.
+type ScheduleConfig struct {
+	Cron           string `toml:"cron"`
+	Timezone       string `toml:"timezone"`
+	RetryOnFailure bool   `toml:"retry_on_failure"`
+	MaxRetry       int    `toml:"max_retry"`
+	MissedCatchup  bool   `toml:"missed_catchup"`
+	StartAt        string `toml:"start_at"`
+	EndAt          string `toml:"end_at"`
+}
+
 // HasURLs reports whether any notification URLs are configured.
 func (n *NotifyConfig) HasURLs() bool {
 	return len(n.OnSuccess) > 0 || len(n.OnFailure) > 0
@@ -346,6 +358,7 @@ type Config struct {
 	History            HistoryConfig    `toml:"history"`
 	Metrics            MetricsConfig    `toml:"metrics"`
 	Notify             NotifyConfig     `toml:"notify"`
+	Schedule           ScheduleConfig   `toml:"schedule"`
 
 	databaseMap map[string]DatabaseConfig
 }
@@ -803,8 +816,54 @@ func (c *Config) Validate() error {
 	if err := validateNotifyConfig(&c.Notify); err != nil {
 		return err
 	}
+	if err := validateScheduleConfig(&c.Schedule); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+func validateScheduleConfig(s *ScheduleConfig) error {
+	if s.Cron == "" {
+		return nil
+	}
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	if _, err := parser.Parse(s.Cron); err != nil {
+		return fmt.Errorf("invalid schedule.cron %q: %w", s.Cron, err)
+	}
+	if s.Timezone != "" {
+		if _, err := time.LoadLocation(s.Timezone); err != nil {
+			return fmt.Errorf("invalid schedule.timezone %q: %w", s.Timezone, err)
+		}
+	}
+	if s.MaxRetry < 0 {
+		return fmt.Errorf("schedule.max_retry must be >= 0")
+	}
+	var startAt, endAt time.Time
+	var err error
+	if s.StartAt != "" {
+		startAt, err = parseScheduleTime(s.StartAt)
+		if err != nil {
+			return fmt.Errorf("invalid schedule.start_at %q: %w", s.StartAt, err)
+		}
+	}
+	if s.EndAt != "" {
+		endAt, err = parseScheduleTime(s.EndAt)
+		if err != nil {
+			return fmt.Errorf("invalid schedule.end_at %q: %w", s.EndAt, err)
+		}
+	}
+	if !startAt.IsZero() && !endAt.IsZero() && !endAt.After(startAt) {
+		return fmt.Errorf("schedule.end_at must be after schedule.start_at")
+	}
+	return nil
+}
+
+func parseScheduleTime(v string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02T15:04:05", v)
 }
 
 // ResolveReplicaConfig returns a full DatabaseConfig for a replica by inheriting

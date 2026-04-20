@@ -1,6 +1,7 @@
 # Changelog
 
 ## [0.8.0] - 2026-04-20
+- 新增内置 Cron 定时调度（daemon 模式），支持时区、失败重试、missed catchup 与执行窗口
 - 新增 CDC 轮询模式，支持基于游标的持续增量同步与优雅关闭
 - 新增 PII 脱敏与匿名化规则，内置 8 种规则类型
 - 新增 append/merge 模式下的 schema 演进（自动 ALTER TABLE ADD COLUMN）

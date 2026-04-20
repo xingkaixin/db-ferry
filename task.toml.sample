@@ -243,3 +243,16 @@ retry = 2
 # listen_addr = ":9090"    # Prometheus pull endpoint, e.g. http://localhost:9090/metrics
 # endpoint = "http://localhost:4318/v1/metrics"  # OTLP HTTP push endpoint
 # interval = "30s"         # Push interval when endpoint is configured
+
+#########################
+# Schedule Configuration #
+#########################
+
+[schedule]
+# cron = "0 2 * * *"           # Cron expression or descriptor like "@every 1h"
+# timezone = "Asia/Shanghai"    # IANA timezone name (default: system local)
+# retry_on_failure = true       # Retry on execution failure
+# max_retry = 3                 # Maximum retry attempts (default: 0)
+# missed_catchup = true         # Run immediately if a scheduled time was missed
+# start_at = "2026-01-01T00:00:00"  # Earliest execution time (RFC3339 or 2006-01-02T15:04:05)
+# end_at = "2026-12-31T23:59:59"    # Latest execution time

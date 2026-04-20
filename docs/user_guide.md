@@ -841,6 +841,31 @@ initial_cursor = "2024-01-01"
 - 发送 SIGINT/SIGTERM 信号可优雅停止轮询
 - CDC 不支持 federated 查询和 shard 分片
 
+### 技巧8:定时调度(Cron)实现自动化数据同步
+
+当需要按固定时间周期自动执行迁移时,在全局配置中添加 `[schedule]` 段,并配合 daemon 模式运行:
+
+```toml
+[schedule]
+cron = "0 2 * * *"           # 每天凌晨 2 点执行
+timezone = "Asia/Shanghai"    # 使用北京时间
+retry_on_failure = true       # 失败时自动重试
+max_retry = 3                 # 最多重试 3 次
+missed_catchup = true         # 如果上次未执行,启动时立即补跑
+start_at = "2026-01-01T00:00:00"  # 最早执行时间
+end_at = "2026-12-31T23:59:59"    # 最晚执行时间
+```
+
+说明:
+- `cron` 支持标准 5 字段表达式,也支持描述符如 `@every 1h`、`@daily`
+- `timezone` 使用 IANA 时区名(如 `Asia/Shanghai`、`America/New_York`),默认使用系统本地时区
+- `retry_on_failure` 开启后,失败会等待 1 分钟后重试,最多 `max_retry` 次
+- `missed_catchup` 开启后,如果 daemon 在计划时间未运行,下次启动时会立即补跑一次
+- `start_at`/`end_at` 限定执行窗口,窗口外的时间跳过执行
+- schedule 仅在 daemon 模式下生效,单次运行 `db-ferry` 命令不受 schedule 控制
+- 配置文件修改后会自动重载 schedule(需启用 watch 模式)
+- 每次调度的日志会写入 `logs/YYYY-MM-DD.log` 文件,方便排查问题
+
 ---
 
 ## 故障排查
