@@ -26,6 +26,7 @@
 - MCP server with 5 agent-native tools for AI integration
 - Range-based sharding for single-table parallel reads (append/merge mode)
 - CDC polling mode for continuous incremental synchronization with cursor-based filtering
+- Built-in cron scheduling for daemon mode with timezone, retry, and missed-catchup support
 - Read replica and connection pool configuration
 - Progress bars for each task, including row counts when available
 
@@ -179,6 +180,28 @@
 
  - `enabled`: write an audit record per task to the target database (table auto-created if missing)
  - `table_name`: override the default audit table name
+
+ ### Schedule configuration
+
+ Global `[schedule]` section enables cron-based execution when running in daemon mode. Only active when `db-ferry` is started as a daemon (e.g., via a service manager or `-watch`).
+
+ ```toml
+ [schedule]
+ cron = "0 2 * * *"
+ timezone = "Asia/Shanghai"
+ retry_on_failure = true
+ max_retry = 3
+ missed_catchup = true
+ start_at = "2026-01-01T00:00:00"
+ end_at = "2026-12-31T23:59:59"
+ ```
+
+ - `cron`: cron expression (standard 5-field) or descriptor such as `@every 1h`; validated at startup
+ - `timezone`: IANA timezone name (e.g., `America/New_York`); defaults to system local time
+ - `retry_on_failure`: when true, retries failed rounds up to `max_retry` times with a fixed 1-minute interval
+ - `max_retry`: maximum retry attempts (must be >= 0)
+ - `missed_catchup`: when true, executes immediately on startup if the last scheduled run was missed
+ - `start_at` / `end_at`: optional execution window boundaries in RFC3339 or `2006-01-02T15:04:05` format; rounds outside the window are skipped
 
  ## Usage
 

@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"db-ferry/processor"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/robfig/cron/v3"
 )
 
 // Daemon runs db-ferry in persistent mode, optionally watching for config changes.
@@ -31,6 +34,7 @@ type Daemon struct {
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	lastErr  error
+	cron     *cron.Cron
 }
 
 // Options configures the daemon.
@@ -63,6 +67,15 @@ func (d *Daemon) Run() error {
 		d.running = false
 		d.mu.Unlock()
 	}()
+
+	cfg, err := config.LoadConfig(d.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	if cfg.Schedule.Cron != "" {
+		return d.runWithSchedule(cfg)
+	}
 
 	if d.watchEnabled {
 		return d.runWithWatch()
@@ -232,6 +245,10 @@ func (d *Daemon) Stop() {
 	if d.cancel != nil {
 		d.cancel()
 	}
+	if d.cron != nil {
+		ctx := d.cron.Stop()
+		<-ctx.Done()
+	}
 	d.mu.Unlock()
 }
 
@@ -247,6 +264,307 @@ func (d *Daemon) LastError() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.lastErr
+}
+
+func (d *Daemon) runWithSchedule(cfg *config.Config) error {
+	loc := time.Local
+	if cfg.Schedule.Timezone != "" {
+		var err error
+		loc, err = time.LoadLocation(cfg.Schedule.Timezone)
+		if err != nil {
+			return fmt.Errorf("failed to load timezone: %w", err)
+		}
+	}
+
+	if cfg.Schedule.MissedCatchup {
+		if err := d.handleMissedCatchup(cfg, loc); err != nil {
+			log.Printf("[schedule] Missed catchup failed: %v", err)
+		}
+	}
+
+	c := cron.New(cron.WithLocation(loc))
+	job := &scheduledJob{d: d, cfg: cfg, loc: loc}
+	if _, err := c.AddJob(cfg.Schedule.Cron, job); err != nil {
+		return fmt.Errorf("failed to add cron job: %w", err)
+	}
+	c.Start()
+
+	d.mu.Lock()
+	d.cron = c
+	d.mu.Unlock()
+
+	if d.watchEnabled {
+		go d.watchConfigForSchedule(loc)
+	}
+
+	<-d.stopCh
+
+	ctx := c.Stop()
+	<-ctx.Done()
+	return nil
+}
+
+// scheduleRetryDelay controls the fixed interval between retry attempts in schedule mode.
+// It is exposed as a package-level variable so tests can override it.
+var scheduleRetryDelay = 1 * time.Minute
+
+type scheduledJob struct {
+	d   *Daemon
+	cfg *config.Config
+	loc *time.Location
+}
+
+func (j *scheduledJob) Run() {
+	now := time.Now().In(j.loc)
+	if j.cfg.Schedule.StartAt != "" {
+		startAt, err := parseDaemonScheduleTime(j.cfg.Schedule.StartAt)
+		if err == nil && now.Before(startAt) {
+			log.Printf("[schedule] Current time %s before start_at %s, skipping", now.Format(time.RFC3339), startAt.Format(time.RFC3339))
+			return
+		}
+	}
+	if j.cfg.Schedule.EndAt != "" {
+		endAt, err := parseDaemonScheduleTime(j.cfg.Schedule.EndAt)
+		if err == nil && now.After(endAt) {
+			log.Printf("[schedule] Current time %s after end_at %s, skipping", now.Format(time.RFC3339), endAt.Format(time.RFC3339))
+			return
+		}
+	}
+
+	logDir := "logs"
+	_ = os.MkdirAll(logDir, 0o755)
+	logFileName := filepath.Join(logDir, now.Format("2006-01-02")+".log")
+	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		log.Printf("[schedule] Failed to open log file %s: %v", logFileName, err)
+	} else {
+		oldOutput := log.Writer()
+		log.SetOutput(logFile)
+		defer func() {
+			log.SetOutput(oldOutput)
+			_ = logFile.Close()
+		}()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		select {
+		case <-j.d.stopCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	var execErr error
+	maxRetry := j.cfg.Schedule.MaxRetry
+	for attempt := 0; attempt <= maxRetry; attempt++ {
+		if attempt > 0 {
+			log.Printf("[schedule] Retry attempt %d/%d after failure", attempt, maxRetry)
+			select {
+			case <-time.After(scheduleRetryDelay):
+			case <-j.d.stopCh:
+				return
+			}
+		}
+		execErr = j.d.executeRound(ctx)
+		if execErr == nil {
+			break
+		}
+		log.Printf("[schedule] Migration round failed: %v", execErr)
+		j.d.mu.Lock()
+		j.d.lastErr = execErr
+		j.d.mu.Unlock()
+		if !j.cfg.Schedule.RetryOnFailure || attempt == maxRetry {
+			break
+		}
+	}
+
+	if j.cfg.Schedule.MissedCatchup {
+		if err := j.d.recordLastRun(j.d.scheduleStatePath(), time.Now()); err != nil {
+			log.Printf("[schedule] Failed to record last run: %v", err)
+		}
+	}
+}
+
+func (d *Daemon) scheduleStatePath() string {
+	dir := filepath.Dir(d.configPath)
+	return filepath.Join(dir, ".db-ferry-schedule-state.json")
+}
+
+type scheduleState struct {
+	LastRun time.Time `json:"last_run"`
+}
+
+func (d *Daemon) loadLastRun(path string) (time.Time, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return time.Time{}, nil
+		}
+		return time.Time{}, err
+	}
+	var state scheduleState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return time.Time{}, err
+	}
+	return state.LastRun, nil
+}
+
+func (d *Daemon) recordLastRun(path string, t time.Time) error {
+	state := scheduleState{LastRun: t}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func (d *Daemon) handleMissedCatchup(cfg *config.Config, loc *time.Location) error {
+	path := d.scheduleStatePath()
+	lastRun, err := d.loadLastRun(path)
+	if err != nil {
+		return fmt.Errorf("failed to load last run: %w", err)
+	}
+	if lastRun.IsZero() {
+		return nil
+	}
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	schedule, err := parser.Parse(cfg.Schedule.Cron)
+	if err != nil {
+		return fmt.Errorf("failed to parse cron: %w", err)
+	}
+	next := schedule.Next(lastRun)
+	now := time.Now().In(loc)
+	if next.Before(now) || next.Equal(now) {
+		log.Printf("[schedule] Missed catchup: last run %s, next scheduled %s, now %s", lastRun.Format(time.RFC3339), next.Format(time.RFC3339), now.Format(time.RFC3339))
+
+		logDir := "logs"
+		_ = os.MkdirAll(logDir, 0o755)
+		logFileName := filepath.Join(logDir, now.Format("2006-01-02")+".log")
+		logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			log.Printf("[schedule] Failed to open log file %s: %v", logFileName, err)
+		} else {
+			oldOutput := log.Writer()
+			log.SetOutput(logFile)
+			defer func() {
+				log.SetOutput(oldOutput)
+				_ = logFile.Close()
+			}()
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go func() {
+			<-d.stopCh
+			cancel()
+		}()
+		if err := d.executeRound(ctx); err != nil {
+			return fmt.Errorf("missed catchup execution failed: %w", err)
+		}
+		if err := d.recordLastRun(path, time.Now()); err != nil {
+			log.Printf("[schedule] Failed to record last run after catchup: %v", err)
+		}
+	}
+	return nil
+}
+
+func (d *Daemon) watchConfigForSchedule(currentLoc *time.Location) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Printf("[schedule] Failed to create file watcher: %v", err)
+		return
+	}
+	defer watcher.Close()
+
+	if err := watcher.Add(d.configPath); err != nil {
+		log.Printf("[schedule] Failed to watch config file %s: %v", d.configPath, err)
+		return
+	}
+
+	debounce := time.NewTimer(0)
+	<-debounce.C
+
+	for {
+		select {
+		case <-d.stopCh:
+			return
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+			if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) && !event.Has(fsnotify.Rename) {
+				continue
+			}
+			if event.Name != d.configPath {
+				continue
+			}
+			debounce.Reset(500 * time.Millisecond)
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			log.Printf("[schedule] Watcher error: %v", err)
+		case <-debounce.C:
+			newHash, err := d.hashConfig(d.configPath)
+			if err != nil {
+				log.Printf("[schedule] Failed to hash config after change: %v", err)
+				continue
+			}
+			d.mu.Lock()
+			oldHash := d.cfgHash
+			d.mu.Unlock()
+			if newHash == oldHash {
+				continue
+			}
+			log.Printf("[schedule] Config change detected (hash changed), reloading schedule...")
+
+			cfg, err := config.LoadConfig(d.configPath)
+			if err != nil {
+				log.Printf("[schedule] Failed to reload config: %v", err)
+				continue
+			}
+
+			loc := currentLoc
+			if cfg.Schedule.Timezone != "" {
+				newLoc, err := time.LoadLocation(cfg.Schedule.Timezone)
+				if err != nil {
+					log.Printf("[schedule] Failed to load timezone from new config: %v", err)
+					continue
+				}
+				loc = newLoc
+			}
+
+			d.mu.Lock()
+			if d.cron != nil {
+				ctx := d.cron.Stop()
+				<-ctx.Done()
+			}
+			d.cron = cron.New(cron.WithLocation(loc))
+			job := &scheduledJob{d: d, cfg: cfg, loc: loc}
+			if _, err := d.cron.AddJob(cfg.Schedule.Cron, job); err != nil {
+				log.Printf("[schedule] Failed to add cron job after reload: %v", err)
+				d.mu.Unlock()
+				continue
+			}
+			d.cron.Start()
+			d.mu.Unlock()
+
+			_ = watcher.Remove(d.configPath)
+			if err := watcher.Add(d.configPath); err != nil {
+				log.Printf("[schedule] Failed to re-watch config file: %v", err)
+			}
+		}
+	}
+}
+
+func parseDaemonScheduleTime(v string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02T15:04:05", v)
 }
 
 func (d *Daemon) hashConfig(path string) (string, error) {

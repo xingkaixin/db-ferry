@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,6 +195,211 @@ func TestDaemonRunWithWatchConfigChange(t *testing.T) {
 	err := d.Run()
 	if err != nil {
 		t.Fatalf("Run error = %v", err)
+	}
+}
+
+func TestDaemonRunWithSchedule(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, dstDB := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	scheduleSection := "\n[schedule]\ncron = \"@every 50ms\"\nmissed_catchup = true\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	// Write state file with an old last_run to trigger catchup immediately.
+	statePath := filepath.Join(dir, ".db-ferry-schedule-state.json")
+	state := scheduleState{LastRun: time.Now().Add(-2 * time.Hour)}
+	data, _ := json.Marshal(state)
+	_ = os.WriteFile(statePath, data, 0o644)
+
+	d := New(Options{ConfigPath: cfgPath})
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+
+	var cnt int
+	if err := dstDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&cnt); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if cnt != 2 {
+		t.Fatalf("target row count = %d, want 2", cnt)
+	}
+}
+
+func TestDaemonScheduleRetry(t *testing.T) {
+	oldDelay := scheduleRetryDelay
+	scheduleRetryDelay = 50 * time.Millisecond
+	defer func() { scheduleRetryDelay = oldDelay }()
+
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	// Replace source table name with a nonexistent one to force query failure.
+	newContent := strings.ReplaceAll(string(content), "FROM src_users", "FROM nonexistent_table")
+	scheduleSection := "\n[schedule]\ncron = \"@every 50ms\"\nretry_on_failure = true\nmax_retry = 1\n"
+	_ = os.WriteFile(cfgPath, append([]byte(newContent), []byte(scheduleSection)...), 0o644)
+
+	// Isolate logs directory per test to avoid cross-test contamination.
+	oldWd, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	defer func() { _ = os.Chdir(oldWd) }()
+
+	d := New(Options{ConfigPath: cfgPath})
+
+	go func() {
+		time.Sleep(1 * time.Second)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+
+	// Verify retry was triggered by inspecting the isolated log file.
+	entries, _ := os.ReadDir("logs")
+	var logContent string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".log") {
+			b, _ := os.ReadFile(filepath.Join("logs", e.Name()))
+			logContent += string(b)
+		}
+	}
+	if !strings.Contains(logContent, "Retry attempt") {
+		t.Fatalf("expected retry to be triggered; log content:\n%s", logContent)
+	}
+}
+
+func TestDaemonScheduleMissedCatchup(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, dstDB := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	scheduleSection := "\n[schedule]\ncron = \"0 * * * *\"\nmissed_catchup = true\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	// Write a state file with an old last_run to trigger catchup.
+	statePath := filepath.Join(dir, ".db-ferry-schedule-state.json")
+	state := scheduleState{LastRun: time.Now().Add(-2 * time.Hour)}
+	data, _ := json.Marshal(state)
+	_ = os.WriteFile(statePath, data, 0o644)
+
+	d := New(Options{ConfigPath: cfgPath})
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+
+	var cnt int
+	if err := dstDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&cnt); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if cnt != 2 {
+		t.Fatalf("target row count = %d, want 2", cnt)
+	}
+}
+
+func TestDaemonScheduleLogRotation(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	scheduleSection := "\n[schedule]\ncron = \"@every 50ms\"\nmissed_catchup = true\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	// Write state file with an old last_run to trigger catchup immediately.
+	statePath := filepath.Join(dir, ".db-ferry-schedule-state.json")
+	state := scheduleState{LastRun: time.Now().Add(-2 * time.Hour)}
+	data, _ := json.Marshal(state)
+	_ = os.WriteFile(statePath, data, 0o644)
+
+	// Change working directory so logs/ is created inside temp dir.
+	oldWd, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	defer func() { _ = os.Chdir(oldWd) }()
+
+	d := New(Options{ConfigPath: cfgPath})
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+
+	logDir := filepath.Join(dir, "logs")
+	entries, err := os.ReadDir(logDir)
+	if err != nil {
+		t.Fatalf("expected logs directory to exist: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one log file in logs directory")
+	}
+	found := false
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".log") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected a .log file in logs directory")
+	}
+}
+
+func TestDaemonScheduleWithWatchReload(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, dstDB := setupTestDBs(t, dir)
+
+	content, _ := os.ReadFile(cfgPath)
+	scheduleSection := "\n[schedule]\ncron = \"@every 200ms\"\nmissed_catchup = true\n"
+	_ = os.WriteFile(cfgPath, append(content, []byte(scheduleSection)...), 0o644)
+
+	// Write state file with an old last_run so catchup executes immediately.
+	statePath := filepath.Join(dir, ".db-ferry-schedule-state.json")
+	state := scheduleState{LastRun: time.Now().Add(-2 * time.Hour)}
+	data, _ := json.Marshal(state)
+	_ = os.WriteFile(statePath, data, 0o644)
+
+	d := New(Options{ConfigPath: cfgPath, WatchEnabled: true})
+
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		newContent, _ := os.ReadFile(cfgPath)
+		_ = os.WriteFile(cfgPath, append(newContent, []byte("\n# changed\n")...), 0o644)
+
+		time.Sleep(400 * time.Millisecond)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+
+	var cnt int
+	if err := dstDB.QueryRow(`SELECT COUNT(*) FROM "dst_users"`).Scan(&cnt); err != nil {
+		t.Fatalf("query target count error = %v", err)
+	}
+	if cnt != 2 {
+		t.Fatalf("target row count = %d, want 2", cnt)
 	}
 }
 

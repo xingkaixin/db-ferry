@@ -18,6 +18,7 @@ require (
 	github.com/mark3labs/mcp-go v0.48.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/robertkrimen/otto v0.5.1
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/sijms/go-ora/v2 v2.9.0
 	github.com/yuin/gopher-lua v1.1.2

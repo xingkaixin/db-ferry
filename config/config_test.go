@@ -1547,3 +1547,73 @@ func TestValidateCDCConfig(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateScheduleConfig(t *testing.T) {
+	t.Run("valid schedule passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Schedule = ScheduleConfig{Cron: "0 2 * * *", Timezone: "UTC", MaxRetry: 3}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+
+	t.Run("schedule with start_at and end_at passes", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Schedule = ScheduleConfig{
+			Cron:    "0 * * * *",
+			StartAt: "2025-01-01T00:00:00Z",
+			EndAt:   "2025-12-31T23:59:59Z",
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+
+	t.Run("empty cron skips schedule validation", func(t *testing.T) {
+		cfg := baseConfig(t)
+		cfg.Schedule = ScheduleConfig{Timezone: "bad", MaxRetry: -1}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected empty cron to skip validation, got %v", err)
+		}
+	})
+}
+
+func TestValidateScheduleInvalidCron(t *testing.T) {
+	cfg := baseConfig(t)
+	cfg.Schedule = ScheduleConfig{Cron: "invalid"}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "invalid schedule.cron") {
+		t.Fatalf("expected invalid cron error, got %v", err)
+	}
+}
+
+func TestValidateScheduleInvalidTimezone(t *testing.T) {
+	cfg := baseConfig(t)
+	cfg.Schedule = ScheduleConfig{Cron: "0 2 * * *", Timezone: "Mars/Zone"}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "invalid schedule.timezone") {
+		t.Fatalf("expected invalid timezone error, got %v", err)
+	}
+}
+
+func TestValidateScheduleEndBeforeStart(t *testing.T) {
+	cfg := baseConfig(t)
+	cfg.Schedule = ScheduleConfig{
+		Cron:    "0 2 * * *",
+		StartAt: "2025-12-31T00:00:00Z",
+		EndAt:   "2025-01-01T00:00:00Z",
+	}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "schedule.end_at must be after schedule.start_at") {
+		t.Fatalf("expected end before start error, got %v", err)
+	}
+}
+
+func TestValidateScheduleMaxRetry(t *testing.T) {
+	cfg := baseConfig(t)
+	cfg.Schedule = ScheduleConfig{Cron: "0 2 * * *", MaxRetry: -1}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "schedule.max_retry must be >= 0") {
+		t.Fatalf("expected max_retry error, got %v", err)
+	}
+}
