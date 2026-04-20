@@ -24,6 +24,7 @@ import (
 	"db-ferry/metrics"
 	"db-ferry/notify"
 	"db-ferry/processor"
+	"db-ferry/sse"
 )
 
 const (
@@ -65,6 +66,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 		showVersion          = flags.Bool("version", false, "Show version information")
 		dryRun               = flags.Bool("dry-run", false, "Preview the migration plan without executing")
 		federatedMemoryLimit = flags.Int("federated-memory-limit", 1000000, "Max rows per source for federated in-memory JOIN")
+		ssePort              = flags.String("sse-port", "", "SSE server listen address (e.g., :8080) for real-time progress streaming")
 	)
 
 	if err := flags.Parse(args); err != nil {
@@ -122,6 +124,54 @@ func run(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 	manager := database.NewConnectionManager(cfg)
 	proc := processor.NewProcessorWithVersion(manager, cfg, version, rec)
 	proc.SetFederatedMemoryLimit(*federatedMemoryLimit)
+
+	var sseServer *sse.Server
+	if *ssePort != "" {
+		sseServer = sse.NewServer()
+		if err := sseServer.Start(*ssePort); err != nil {
+			return 1, fmt.Errorf("failed to start SSE server: %w", err)
+		}
+		log.Printf("SSE server listening on %s", sseServer.Addr())
+		proc.SetProgressNotifier(func(event processor.ProgressEvent) {
+			var evtType sse.EventType
+			switch event.Type {
+			case "task.start":
+				evtType = sse.EventTaskStart
+			case "task.progress":
+				evtType = sse.EventTaskProgress
+			case "task.complete":
+				evtType = sse.EventTaskComplete
+			case "task.error":
+				evtType = sse.EventTaskError
+			default:
+				return
+			}
+			percentage := 0.0
+			if event.TotalRows > 0 {
+				percentage = float64(event.Processed) / float64(event.TotalRows) * 100
+			}
+			sseServer.Send(sse.Event{
+				Type: evtType,
+				Data: sse.TaskProgressData{
+					Task:          event.TaskName,
+					SourceDB:      event.SourceDB,
+					TargetDB:      event.TargetDB,
+					EstimatedRows: event.TotalRows,
+					Processed:     event.Processed,
+					Percentage:    percentage,
+					DurationMs:    event.DurationMs,
+					Error:         event.Error,
+				},
+				Time: time.Now(),
+			})
+		})
+		defer func() {
+			if err := sseServer.Stop(); err != nil {
+				log.Printf("Warning: failed to stop SSE server: %v", err)
+			}
+		}()
+	}
+
 	defer func() {
 		cancel()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)

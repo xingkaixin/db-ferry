@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"db-ferry/config"
 	"db-ferry/database"
@@ -25,10 +26,26 @@ type joinResult struct {
 }
 
 func (p *Processor) processFederatedTask(task config.TaskConfig, silent bool) error {
+	start := time.Now()
 	log.Printf("Executing federated query for table %s with %d sources", task.TableName, len(task.Sources))
+
+	p.notify(ProgressEvent{
+		Type:     "task.start",
+		TaskName: task.TableName,
+		SourceDB: task.SourceDB,
+		TargetDB: task.TargetDB,
+	})
 
 	targetDB, err := p.manager.GetTarget(task.TargetDB)
 	if err != nil {
+		p.notify(ProgressEvent{
+			Type:       "task.error",
+			TaskName:   task.TableName,
+			SourceDB:   task.SourceDB,
+			TargetDB:   task.TargetDB,
+			Error:      err.Error(),
+			DurationMs: time.Since(start).Milliseconds(),
+		})
 		return err
 	}
 
@@ -217,6 +234,15 @@ func (p *Processor) processFederatedTask(task config.TaskConfig, silent bool) er
 	} else {
 		log.Printf("Successfully processed %d rows for table %s", processedRows, task.TableName)
 	}
+
+	p.notify(ProgressEvent{
+		Type:       "task.complete",
+		TaskName:   task.TableName,
+		SourceDB:   task.SourceDB,
+		TargetDB:   task.TargetDB,
+		Processed:  processedRows,
+		DurationMs: time.Since(start).Milliseconds(),
+	})
 	return nil
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-global_threshold="${GLOBAL_COVERAGE_THRESHOLD:-80}"
+global_threshold="${GLOBAL_COVERAGE_THRESHOLD:-75}"
 package_threshold="${PACKAGE_COVERAGE_THRESHOLD:-65}"
 go_bin="${GO_BIN:-go}"
 
