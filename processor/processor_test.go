@@ -3780,3 +3780,110 @@ func TestCDCPollingEndToEnd(t *testing.T) {
 		t.Fatalf("expected state cursor 400 after CDC, got %s", st.Tasks[key])
 	}
 }
+
+func TestProcessCDCTasksContext(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+	statePath := filepath.Join(dir, "state.json")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_events (id INTEGER PRIMARY KEY, name TEXT, updated_at INTEGER)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_events(id, name, updated_at) VALUES (1, 'a', 100), (2, 'b', 200)`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_events",
+				SQL:       "SELECT id, name, updated_at FROM src_events WHERE updated_at > {{.LastValue}}",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeAppend,
+				StateFile: statePath,
+				CDC:       config.CDCConfig{Enabled: true, CursorColumn: "updated_at", PollInterval: "10ms"},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	if err := p.ProcessCDCTasksContext(ctx); err != nil {
+		t.Fatalf("ProcessCDCTasksContext error = %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM dst_events`).Scan(&count); err != nil {
+		t.Fatalf("count rows error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 rows after CDC initial sync, got %d", count)
+	}
+}
+
+func TestProcessCDCTasksContextNoCDCTasks(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	targetPath := filepath.Join(dir, "target.db")
+
+	setupSQLiteSource(t, sourcePath, `CREATE TABLE src_users (id INTEGER PRIMARY KEY, name TEXT)`)
+	setupSQLiteExec(t, sourcePath, `INSERT INTO src_users(id, name) VALUES (1, 'alice')`)
+
+	cfg := &config.Config{
+		Databases: []config.DatabaseConfig{
+			{Name: "src", Type: config.DatabaseTypeSQLite, Path: sourcePath},
+			{Name: "dst", Type: config.DatabaseTypeSQLite, Path: targetPath},
+		},
+		Tasks: []config.TaskConfig{
+			{
+				TableName: "dst_users",
+				SQL:       "SELECT id, name FROM src_users",
+				SourceDB:  "src",
+				TargetDB:  "dst",
+				Mode:      config.TaskModeAppend,
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	manager := database.NewConnectionManager(cfg)
+	p := NewProcessor(manager, cfg)
+	t.Cleanup(func() { _ = p.Close() })
+
+	ctx := context.Background()
+	if err := p.ProcessCDCTasksContext(ctx); err != nil {
+		t.Fatalf("ProcessCDCTasksContext error = %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", targetPath)
+	if err != nil {
+		t.Fatalf("open target db error = %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM dst_users`).Scan(&count); err != nil {
+		t.Fatalf("count rows error = %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 row, got %d", count)
+	}
+}
