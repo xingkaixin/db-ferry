@@ -16,6 +16,16 @@
 - DAG-based scheduling for parallel execution of independent tasks
 - Task-level `pre_sql` / `post_sql` hooks for running custom SQL before and after execution
 - Interactive configuration wizard (`db-ferry config init`) with step-by-step prompts
+- PII masking and anonymization rules with 8 built-in rule types
+- Schema evolution (auto `ALTER TABLE ADD COLUMN`) in append/merge mode
+- Migration audit table written to target databases for traceability
+- Adaptive batch size dynamic tuning based on latency and memory
+- Column-level mapping and transform expressions for ETL-style pipelines
+- Unified TLS/SSL support across all database adapters
+- `diff` command for source-target data comparison
+- MCP server with 5 agent-native tools for AI integration
+- Range-based sharding for single-table parallel reads (append/merge mode)
+- Read replica and connection pool configuration
 - Progress bars for each task, including row counts when available
 
  ## Installation
@@ -123,6 +133,9 @@
  - `type`: `oracle`, `mysql`, `postgresql`, `sqlserver`, `sqlite`, or `duckdb`
  - Oracle requires host, port, credentials, and service; MySQL/PostgreSQL/SQL Server require host, port, credentials, and database
  - SQLite and DuckDB only require a file `path` (relative or absolute, `:memory:` works for DuckDB)
+ - Connection pool: `pool_max_open`, `pool_max_idle` tune `sql.DB` settings
+ - Read replicas: `[[databases.replicas]]` with `host` and `priority`; set `replica_fallback = true` to fall back to the master
+ - TLS/SSL: `ssl_mode` (`disable`/`require`/`verify-ca`/`verify-full`), plus `ssl_cert`, `ssl_key`, `ssl_root_cert` as needed
 
  ### Task definitions
 
@@ -143,7 +156,27 @@
  - `post_sql`: custom SQL to execute against the target database after the task completes
  - `dlq_path`: dead-letter queue file path; failed rows are written here instead of failing the entire task
  - `dlq_format`: DLQ output format, `jsonl` (default) or `csv`
+ - `depends_on`: task dependencies declared by `table_name`; enables DAG-based scheduling
+ - `schema_evolution`: in append/merge mode, automatically run `ALTER TABLE ADD COLUMN` when the source introduces new columns
+ - `columns`: column-level mapping with optional transform expressions (`source` -> `target`, with `transform`)
+ - `masking`: PII masking rules per column (`column`, `rule`, optional `range`/`value`)
+ - `adaptive_batch`: dynamic batch-size tuning (`enabled`, `min_size`, `max_size`, `target_latency_ms`, `memory_limit_mb`)
+ - `shard`: range-based parallel sharding for single-table reads (`enabled`, `shards`); requires `resume_key`, only in append/merge mode
+ - `validate_sample_size`: number of rows to sample when `validate = "sample"`
  - `[[tasks.indexes]]`: optional index creation statements applied after data load (partial indexes via `where` are supported on SQLite targets)
+
+ ### History configuration
+
+ Global `[history]` section controls migration audit logging to the target database:
+
+ ```toml
+ [history]
+ enabled = true
+ table_name = "db_ferry_migrations"
+ ```
+
+ - `enabled`: write an audit record per task to the target database (table auto-created if missing)
+ - `table_name`: override the default audit table name
 
  ## Usage
 
@@ -162,11 +195,19 @@
 
  # Show version information
  db-ferry -version
+
+ # Compare source and target data for a task
+ db-ferry diff -task employees
+
+ # Start MCP server for AI agent integration
+ db-ferry mcp serve
  ```
 
  ### Command line options
 
  - `config init`: Interactive configuration wizard that creates `task.toml` in the current directory; walks through engine selection, connection details, and table choices. Falls back to the built-in sample if non-interactive. Fails if the file already exists
+ - `diff`: Compare source and target data for a given task. Flags: `-task` (required), `-keys`, `-where`, `-limit`, `-output`, `-format` (json/csv/html)
+ - `mcp serve`: Start an MCP server with 5 agent-native tools for AI integration
  - `-config`: Path to the TOML configuration file (default: `task.toml`)
  - `-v`: Enable verbose logging with file/line prefixes
  - `-version`: Print build version and exit

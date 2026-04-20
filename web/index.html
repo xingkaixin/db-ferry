@@ -682,7 +682,7 @@
       </a>
       <div class="nav-actions">
         <a class="nav-link" id="versionLink" href="https://github.com/xingkaixin/db-ferry/blob/main/CHANGELOG_zh.md" target="_blank" rel="noopener noreferrer" aria-label="Latest version">
-          <span class="nav-link-text" id="versionText">v0.7.0</span>
+          <span class="nav-link-text" id="versionText">v0.8.0</span>
         </a>
         <a class="nav-btn nav-btn-bordered" href="https://github.com/xingkaixin/db-ferry" target="_blank" rel="noopener noreferrer">
           <span class="material-symbols-outlined">code</span>
@@ -814,27 +814,31 @@
                 <span class="material-symbols-outlined">swap_horiz</span>
                 <div>
                   <strong>write modes</strong>
-                  <span data-i18n="engines-meta-one-value">replace / append / merge，覆盖全量与增量场景。</span>
+                  <span data-i18n="engines-meta-one-value">replace / append / merge，覆盖全量与增量场景。支持 schema 演进、列映射转换与 PII 脱敏。</span>
                 </div>
               </div>
               <div class="engine-meta-item">
                 <span class="material-symbols-outlined">fact_check</span>
                 <div>
                   <strong>validation</strong>
-                  <span data-i18n="engines-meta-two-value">row_count / checksum / sample 三级校验，在任务链里完成基础到精细的验收。</span>
+                  <span data-i18n="engines-meta-two-value">row_count / checksum / sample 三级校验，diff 命令精细对比源目标差异。</span>
                 </div>
               </div>
               <div class="engine-meta-item">
                 <span class="material-symbols-outlined">play_arrow</span>
                 <div>
-                  <strong>resume</strong>
-                  <span data-i18n="engines-meta-three-value">断点续传，大表中断后从上次位置继续。</span>
+                  <strong>parallel & resume</strong>
+                  <span data-i18n="engines-meta-three-value">DAG 并行调度、范围分片并行读取、断点续传，大表迁移不再阻塞。</span>
                 </div>
               </div>
             </div>
           </div>
 
           <div class="engines-list" aria-label="Supported databases">
+            <div class="engine-item">
+              <span class="material-symbols-outlined">database</span>
+              <span class="engine-name">ORACLE</span>
+            </div>
             <div class="engine-item">
               <span class="material-symbols-outlined">database</span>
               <span class="engine-name">POSTGRES</span>
@@ -845,7 +849,7 @@
             </div>
             <div class="engine-item">
               <span class="material-symbols-outlined">database</span>
-              <span class="engine-name">MONGODB</span>
+              <span class="engine-name">SQL SERVER</span>
             </div>
             <div class="engine-item">
               <span class="material-symbols-outlined">database</span>
@@ -853,7 +857,7 @@
             </div>
             <div class="engine-item">
               <span class="material-symbols-outlined">database</span>
-              <span class="engine-name">CLICKHOUSE</span>
+              <span class="engine-name">DUCKDB</span>
             </div>
           </div>
         </div>
@@ -913,7 +917,7 @@
         'hero-terminal-title': 'bash — db-ferry',
         'hero-eyebrow': 'task-driven database transfer',
         'hero-title': '用一份 task.toml，把跨数据库迁移收成一条可复用的工作流。',
-        'hero-lead': '声明源、目标、写入模式。DAG 并行执行、断点续传、死信队列与行级校验。重复交给团队。',
+        'hero-lead': '声明源、目标、写入模式。DAG 并行执行、分片并行读取、断点续传、死信队列、PII 脱敏、diff 对比与 MCP 集成。重复交给团队。',
         'cta-install': 'npm install db-ferry',
         'workflow-label': 'Workflow',
         'workflow-title': '三步上手，命令就是界面。',
@@ -923,12 +927,12 @@
         'workflow-step-two-label': '02. Declare',
         'workflow-step-two-desc': '生成 task.toml 模板，声明源库、目标库、写入模式。',
         'workflow-step-three-label': '03. Execute',
-        'workflow-step-three-desc': '执行迁移，DAG 调度独立任务并行执行，支持断点续传与批量进度显示。',
+        'workflow-step-three-desc': '执行迁移，DAG 调度独立任务并行执行，支持范围分片、断点续传与批量进度显示。',
         'engines-label': 'Engines',
         'engines-title': '覆盖主流业务库与本地分析库。',
         'engines-sub': '同一套 task.toml 语义，跨引擎迁移不需要改工具。',
         'engines-desc': 'db-ferry 处理协议转换、类型映射和批量流式传输，让你专注在数据路由上。',
-        'engines-meta-one-value': 'replace / append / merge，覆盖全量与增量场景。',
+        'engines-meta-one-value': 'replace / append / merge，覆盖全量与增量场景。支持 schema 演进、列映射转换与 PII 脱敏。',
         'engines-meta-two-value': 'row_count / checksum / sample 三级校验，在任务链里完成基础到精细的验收。',
         'engines-meta-three-value': '断点续传，大表中断后从上次位置继续。',
         'skills-desc': '<span class="material-symbols-outlined">smart_toy</span><strong>AI Skills</strong> — 把 db-ferry 的真实语义交给 AI，让它理解字段、命令和迁移边界，直接生成可用的任务片段。',
@@ -939,7 +943,7 @@
         'hero-terminal-title': 'bash — db-ferry',
         'hero-eyebrow': 'task-driven database transfer',
         'hero-title': 'Turn cross-database migration into a single reusable task.',
-        'hero-lead': 'Declare source, target, write mode. DAG parallel execution, resume, DLQ, and row-level validation. Repeat across your team.',
+        'hero-lead': 'Declare source, target, write mode. DAG parallel execution, sharded reads, resume, DLQ, PII masking, diff, and MCP integration. Repeat across your team.',
         'cta-install': 'npm install db-ferry',
         'workflow-label': 'Workflow',
         'workflow-title': 'Three steps. Commands as the interface.',
@@ -949,14 +953,14 @@
         'workflow-step-two-label': '02. Declare',
         'workflow-step-two-desc': 'Generate a task.toml template. Declare source, target, write mode.',
         'workflow-step-three-label': '03. Execute',
-        'workflow-step-three-desc': 'Run the migration with DAG-scheduled parallel tasks, resume support, and batch progress display.',
+        'workflow-step-three-desc': 'Run the migration with DAG-scheduled parallel tasks, range sharding, resume support, and batch progress display.',
         'engines-label': 'Engines',
         'engines-title': 'From production databases to local analytics.',
         'engines-sub': 'One task.toml syntax across engines. No toolchain switching.',
         'engines-desc': 'db-ferry handles protocol translation, type mapping, and bulk streaming so you can focus on the data route.',
-        'engines-meta-one-value': 'replace / append / merge cover full refreshes and incremental loads.',
-        'engines-meta-two-value': 'row_count / checksum / sample validation covers basic to fine-grained acceptance checks inside the task chain.',
-        'engines-meta-three-value': 'Breakpoint resume — continue large table transfers from where they stopped.',
+        'engines-meta-one-value': 'replace / append / merge cover full refreshes and incremental loads. Schema evolution, column mapping, and PII masking included.',
+        'engines-meta-two-value': 'row_count / checksum / sample validation plus diff command for fine-grained source-target comparison.',
+        'engines-meta-three-value': 'DAG scheduling, range sharding, and breakpoint resume — large table transfers no longer block.',
         'skills-desc': '<span class="material-symbols-outlined">smart_toy</span><strong>AI Skills</strong> — Give AI the actual db-ferry contract so it understands real fields, commands, and migration boundaries.',
         'footer-docs': 'Documentation',
         'footer-text': 'db-ferry — a task-driven cross-database migration tool built with Go.'

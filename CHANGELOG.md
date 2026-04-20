@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0] - 2026-04-20
+- Added PII masking and anonymization rules with 8 built-in rule types
+- Added schema evolution (auto `ALTER TABLE ADD COLUMN`) in append/merge mode
+- Added migration audit table to target databases for traceability
+- Added adaptive batch size dynamic tuning based on latency and memory
+- Added read replica and connection pool configuration for databases
+- Added column-level mapping and transform expressions for ETL-style pipelines
+- Added unified TLS/SSL support across all database adapters
+- Added `diff` command for source-target data comparison
+- Added MCP server with 5 agent-native tools for AI integration
+- Added range-based sharding for single-table parallel reads (append/merge mode)
+- Fixed ineffectual `batchSize` assignment in processor final batch
+- Fixed ineffectual `resumeIndex` assignment in `processShardedTask`
+
 ## [0.7.0] - 2026-04-17
 - Added DAG-based scheduling for parallel execution of independent tasks
 - Added dead-letter queue (DLQ) for failed batch inserts, capturing rows that fail after all retry attempts
