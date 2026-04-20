@@ -1,6 +1,7 @@
 # Changelog
 
 ## [0.8.0] - 2026-04-20
+- Added CDC polling mode for continuous incremental synchronization with cursor-based filtering and graceful shutdown
 - Added PII masking and anonymization rules with 8 built-in rule types
 - Added schema evolution (auto `ALTER TABLE ADD COLUMN`) in append/merge mode
 - Added migration audit table to target databases for traceability

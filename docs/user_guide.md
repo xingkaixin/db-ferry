@@ -810,6 +810,37 @@ merge_keys = ["customer_id"]
 - 目标表需要在 `merge_keys` 上有唯一约束
 - merge 会避免重建表,保留已有数据
 
+### 技巧7:CDC 轮询模式实现持续增量同步
+
+当需要持续不断地同步增量数据时,启用 CDC 轮询模式:
+
+```toml
+[[tasks]]
+table_name = "events"
+sql = "SELECT id, event_type, payload, created_at FROM events WHERE created_at > {{.LastValue}}"
+source_db = "生产数据库"
+target_db = "分析库"
+mode = "append"
+state_file = "./state/events.json"
+
+[tasks.cdc]
+enabled = true
+cursor_column = "created_at"
+poll_interval = "5m"
+initial_cursor = "2024-01-01"
+```
+
+说明:
+- `mode` 必须是 `append` 或 `merge`
+- `state_file` 用于持久化游标位置
+- `cursor_column` 自动作为 `resume_key` 使用
+- `poll_interval` 控制轮询间隔(如 `5m`、`30s`、`1h`)
+- `initial_cursor` 可选,首次同步的起始值;未设置时默认按 `0` 处理
+- SQL 中使用 `{{.LastValue}}` 模板变量,会被替换为当前游标值
+- 首次运行会先执行一次全量同步,随后进入轮询循环
+- 发送 SIGINT/SIGTERM 信号可优雅停止轮询
+- CDC 不支持 federated 查询和 shard 分片
+
 ---
 
 ## 故障排查

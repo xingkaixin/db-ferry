@@ -246,6 +246,15 @@ type JoinConfig struct {
 	Type string   `toml:"type"`
 }
 
+// CDCConfig configures change-data-capture polling for a task.
+type CDCConfig struct {
+	Enabled         bool   `toml:"enabled"`
+	CursorColumn    string `toml:"cursor_column"`
+	PollInterval    string `toml:"poll_interval"`
+	InitialCursor   string `toml:"initial_cursor"`
+	DeleteDetection bool   `toml:"delete_detection"`
+}
+
 // TaskConfig defines a single migration job.
 type TaskConfig struct {
 	TableName          string              `toml:"table_name"`
@@ -286,6 +295,7 @@ type TaskConfig struct {
 	PostSQL    []string          `toml:"post_sql,omitempty"`
 	DependsOn  []string          `toml:"depends_on"`
 	Shard      ShardConfig       `toml:"shard,omitempty"`
+	CDC        CDCConfig         `toml:"cdc,omitempty"`
 }
 
 // MetricsConfig configures metrics collection and export.
@@ -554,6 +564,38 @@ func (c *Config) Validate() error {
 		}
 		if task.DLQFormat != DLQFormatJSONL && task.DLQFormat != DLQFormatCSV {
 			return fmt.Errorf("task %d: dlq_format must be %q or %q", i+1, DLQFormatJSONL, DLQFormatCSV)
+		}
+
+		if task.CDC.Enabled {
+			if task.CDC.CursorColumn == "" {
+				return fmt.Errorf("task %d: cdc.cursor_column is required when cdc.enabled is true", i+1)
+			}
+			if task.IsFederated() {
+				return fmt.Errorf("task %d: cdc is not supported in federated mode", i+1)
+			}
+			if task.Shard.Enabled {
+				return fmt.Errorf("task %d: cdc is not supported with shard", i+1)
+			}
+			if task.Mode != TaskModeAppend && task.Mode != TaskModeMerge {
+				return fmt.Errorf("task %d: cdc requires mode %q or %q", i+1, TaskModeAppend, TaskModeMerge)
+			}
+			if task.StateFile == "" {
+				return fmt.Errorf("task %d: cdc requires state_file for cursor persistence", i+1)
+			}
+			if task.CDC.PollInterval == "" {
+				return fmt.Errorf("task %d: cdc.poll_interval is required when cdc.enabled is true", i+1)
+			}
+			if _, err := time.ParseDuration(task.CDC.PollInterval); err != nil {
+				return fmt.Errorf("task %d: invalid cdc.poll_interval %q: %w", i+1, task.CDC.PollInterval, err)
+			}
+			if task.ResumeKey != "" && !strings.EqualFold(task.ResumeKey, task.CDC.CursorColumn) {
+				return fmt.Errorf("task %d: resume_key and cdc.cursor_column must match when both are set", i+1)
+			}
+			// CDC automatically uses cursor_column as resume_key.
+			task.ResumeKey = task.CDC.CursorColumn
+			if task.CDC.InitialCursor != "" {
+				task.ResumeFrom = task.CDC.InitialCursor
+			}
 		}
 
 		task.ResumeKey = strings.TrimSpace(task.ResumeKey)
