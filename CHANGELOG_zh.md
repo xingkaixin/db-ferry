@@ -1,6 +1,13 @@
 # Changelog
 
 ## [0.9.0] - 2026-04-25
+- 新增嵌入式 Web Dashboard（`db-ferry web`），支持 SSE 实时进度流、TOML 配置编辑器与实时校验、迁移历史与对比、连接测试与表结构浏览、诊断检查
+- 新增 `chi` 路由用于 Dashboard API 端点（`/api/tasks`、`/api/config`、`/api/history`、`/api/databases`、`/api/doctor`、`/api/daemon/status`）
+- 新增 `sse.Server.Handler()` 方法，用于将 SSE 端点嵌入现有 HTTP 路由
+- 新增 `daemon.Daemon.TriggerRound()` 方法，支持从 Dashboard 触发即时迁移执行
+- 新增 `doctor.Doctor.RunChecks()` 方法，支持程序化访问诊断结果
+- 新增 Web Dashboard Basic Auth 保护，支持通过 `-web-user` 和 `-web-pass` 配置凭据
+- 新增 `go:embed` 集成，将 React SPA 构建产物直接打包到二进制文件中
 - 新增 Prometheus pull 与 OTLP HTTP push 指标导出
 - 新增数据质量断言规则引擎，内置 7 种规则类型
 - 新增守护进程模式，支持配置热重载与健康检查端点

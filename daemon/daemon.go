@@ -15,6 +15,7 @@ import (
 	"db-ferry/config"
 	"db-ferry/database"
 	"db-ferry/processor"
+	"db-ferry/sse"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/robfig/cron/v3"
@@ -27,14 +28,16 @@ type Daemon struct {
 	watchEnabled bool
 	version      string
 
-	mu       sync.Mutex
-	cancel   context.CancelFunc
-	cfgHash  string
-	running  bool
-	stopCh   chan struct{}
-	stopOnce sync.Once
-	lastErr  error
-	cron     *cron.Cron
+	mu        sync.Mutex
+	cancel    context.CancelFunc
+	cfgHash   string
+	running   bool
+	stopCh    chan struct{}
+	stopOnce  sync.Once
+	lastErr   error
+	cron      *cron.Cron
+	sseServer *sse.Server
+	triggerCh chan struct{}
 }
 
 // Options configures the daemon.
@@ -43,6 +46,7 @@ type Options struct {
 	HealthAddr   string
 	WatchEnabled bool
 	Version      string
+	SSEServer    *sse.Server
 }
 
 // New creates a new Daemon.
@@ -53,6 +57,8 @@ func New(opts Options) *Daemon {
 		watchEnabled: opts.WatchEnabled,
 		version:      opts.Version,
 		stopCh:       make(chan struct{}),
+		triggerCh:    make(chan struct{}, 1),
+		sseServer:    opts.SSEServer,
 	}
 }
 
@@ -142,6 +148,21 @@ func (d *Daemon) runWithWatch() error {
 			cancel()
 			return nil
 
+		case <-d.triggerCh:
+			cancel()
+
+			ctx, cancel = context.WithCancel(context.Background())
+			d.mu.Lock()
+			d.cancel = cancel
+			d.mu.Unlock()
+
+			if err := d.executeRound(ctx); err != nil {
+				log.Printf("[daemon] Triggered round failed: %v", err)
+				d.mu.Lock()
+				d.lastErr = err
+				d.mu.Unlock()
+			}
+
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return fmt.Errorf("watcher event channel closed")
@@ -217,6 +238,10 @@ func (d *Daemon) executeRound(ctx context.Context) error {
 	manager := database.NewConnectionManager(cfg)
 	proc := processor.NewProcessorWithVersion(manager, cfg, d.version)
 
+	if d.sseServer != nil {
+		proc.SetProgressNotifier(d.notifySSE())
+	}
+
 	err = proc.ProcessAllTasksContext(ctx)
 
 	if closeErr := proc.Close(); closeErr != nil {
@@ -233,6 +258,52 @@ func (d *Daemon) executeRound(ctx context.Context) error {
 
 	log.Printf("[daemon] Migration round completed successfully")
 	return nil
+}
+
+// notifySSE returns a progress notifier that bridges processor events to the SSE server.
+func (d *Daemon) notifySSE() processor.ProgressNotifier {
+	return func(event processor.ProgressEvent) {
+		var evtType sse.EventType
+		switch event.Type {
+		case "task.start":
+			evtType = sse.EventTaskStart
+		case "task.progress":
+			evtType = sse.EventTaskProgress
+		case "task.complete":
+			evtType = sse.EventTaskComplete
+		case "task.error":
+			evtType = sse.EventTaskError
+		default:
+			return
+		}
+		percentage := 0.0
+		if event.TotalRows > 0 {
+			percentage = float64(event.Processed) / float64(event.TotalRows) * 100
+		}
+		d.sseServer.Send(sse.Event{
+			Type: evtType,
+			Data: sse.TaskProgressData{
+				Task:          event.TaskName,
+				SourceDB:      event.SourceDB,
+				TargetDB:      event.TargetDB,
+				EstimatedRows: event.TotalRows,
+				Processed:     event.Processed,
+				Percentage:    percentage,
+				DurationMs:    event.DurationMs,
+				Error:         event.Error,
+			},
+			Time: time.Now(),
+		})
+	}
+}
+
+// TriggerRound signals the daemon to execute an additional migration round
+// when running in watch mode. It is safe to call concurrently.
+func (d *Daemon) TriggerRound() {
+	select {
+	case d.triggerCh <- struct{}{}:
+	default:
+	}
 }
 
 // Stop signals the daemon to shut down gracefully.

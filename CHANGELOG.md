@@ -1,6 +1,13 @@
 # Changelog
 
 ## [0.9.0] - 2026-04-25
+- Added embedded Web Dashboard (`db-ferry web`) with real-time SSE progress streaming, TOML config editor with live validation, migration history with comparison, connection testing and schema browsing, and diagnostic checks
+- Added `chi` router for dashboard API endpoints (`/api/tasks`, `/api/config`, `/api/history`, `/api/databases`, `/api/doctor`, `/api/daemon/status`)
+- Added `Handler()` method to `sse.Server` for embedding SSE endpoints into existing HTTP routers
+- Added `TriggerRound()` to `daemon.Daemon` for on-demand migration execution from the dashboard
+- Added `RunChecks()` to `doctor.Doctor` for programmatic access to diagnostic results
+- Added Basic Auth protection for the web dashboard with configurable credentials via `-web-user` and `-web-pass`
+- Added `go:embed` integration to bundle the React SPA build artifacts directly into the binary
 - Added Prometheus pull and OTLP HTTP push metrics export
 - Added data quality assertion rule engine with 7 built-in rule types
 - Added daemon mode with config hot-reload and health endpoint

@@ -37,6 +37,7 @@
 - SSE real-time progress streaming
 - Daemon mode with config hot-reload and health endpoint
 - Progress bars for each task, including row counts when available
+- Embedded Web Dashboard (`db-ferry web`) with real-time SSE progress streaming, TOML config editor, migration history, connection testing, and diagnostic checks
 
  ## Installation
 
@@ -271,6 +272,9 @@
 
  # Start MCP server for AI agent integration
  db-ferry mcp serve
+
+ # Start the embedded Web Dashboard
+ db-ferry web -port :8080
  ```
 
  ### Command line options
@@ -278,6 +282,7 @@
  - `config init`: Interactive configuration wizard that creates `task.toml` in the current directory; walks through engine selection, connection details, and table choices. Falls back to the built-in sample if non-interactive. Fails if the file already exists
  - `diff`: Compare source and target data for a given task. Flags: `-task` (required), `-keys`, `-where`, `-limit`, `-output`, `-format` (json/csv/html)
  - `mcp serve`: Start an MCP server with 5 agent-native tools for AI integration
+ - `web`: Start the embedded Web Dashboard. Runs a background daemon with config file watching and SSE real-time progress streaming. Flags: `-port` (default `:8080`), `-web-user` (default `admin`), `-web-pass` (default `admin`). The dashboard includes task monitoring, TOML config editor, migration history, connection testing, and diagnostic checks
  - `-config`: Path to the TOML configuration file (default: `task.toml`)
  - `-v`: Enable verbose logging with file/line prefixes
  - `-version`: Print build version and exit

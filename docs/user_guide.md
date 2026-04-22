@@ -918,6 +918,43 @@ FROM table
 
 ---
 
+## Web Dashboard (可视化监控)
+
+除了命令行, db-ferry 还提供嵌入式 Web Dashboard,方便团队实时查看和管理迁移任务。
+
+### 启动 Dashboard
+
+```bash
+# 默认在 :8080 启动
+db-ferry web
+
+# 指定端口和认证凭据
+db-ferry web -port :3000 -web-user admin -web-pass secret
+```
+
+启动后访问 `http://localhost:8080`,使用设置的凭据登录(默认 admin/admin)。
+
+### Dashboard 功能
+
+1. **任务看板**: 实时查看所有任务状态,通过 SSE 流自动更新进度条和处理行数
+2. **配置编辑器**: 直接编辑 `task.toml`,支持语法高亮、保存前校验;保存后 daemon 自动重载配置
+3. **迁移历史**: 查看每次迁移的执行记录,支持选择两次记录进行字段级对比
+4. **连接管理**: 测试数据库连接、浏览源库表列表、查看表结构和索引信息
+5. **诊断检查**: 一键运行 doctor 检查,查看 TOML 语法、连接状态、权限、列存在性等结果
+
+### 开发模式
+
+前端使用 Vite + React + TypeScript 构建:
+
+```bash
+cd web/dashboard
+npm install
+npm run dev      # 开发服务器在 5173, API 请求自动代理到 8080
+npm run build    # 构建产物输出到 dist/, Go embed 自动打包
+```
+
+---
+
 ## 总结
 
 db-ferry 是一个简单易用的数据迁移工具,核心优势:

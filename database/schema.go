@@ -214,10 +214,46 @@ func GetTableIndexes(source SourceDB, dbType, tableName string) ([]IndexInfo, er
 			ORDER BY i.relname, array_position(ix.indkey, a.attnum)
 		`, tableName)
 	case config.DatabaseTypeSQLite:
-		query = fmt.Sprintf(`
-			SELECT name, origin = 'u' as is_unique
-			FROM pragma_index_list('%s')
-		`, tableName)
+		listQuery := fmt.Sprintf(`SELECT name, "unique" FROM pragma_index_list('%s')`, tableName)
+		rows, err := source.Query(listQuery)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query indexes: %w", err)
+		}
+		defer rows.Close()
+
+		indexMap := make(map[string]*IndexInfo)
+		for rows.Next() {
+			var name string
+			var unique int
+			if err := rows.Scan(&name, &unique); err != nil {
+				return nil, fmt.Errorf("failed to scan index info: %w", err)
+			}
+			indexMap[name] = &IndexInfo{Name: name, Unique: unique == 1}
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+
+		for name, info := range indexMap {
+			colQuery := fmt.Sprintf(`SELECT name FROM pragma_index_info('%s')`, name)
+			colRows, err := source.Query(colQuery)
+			if err != nil {
+				continue
+			}
+			for colRows.Next() {
+				var col string
+				if err := colRows.Scan(&col); err == nil {
+					info.Columns = append(info.Columns, col)
+				}
+			}
+			colRows.Close()
+		}
+
+		result := make([]IndexInfo, 0, len(indexMap))
+		for _, info := range indexMap {
+			result = append(result, *info)
+		}
+		return result, nil
 	case config.DatabaseTypeSQLServer:
 		query = fmt.Sprintf(`
 			SELECT i.name as index_name, c.name as column_name, i.is_unique as is_unique

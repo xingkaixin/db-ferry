@@ -55,9 +55,13 @@ docs-preview:
 	cd docs-site && pnpm preview
 
 
+# Build the dashboard frontend
+web-build:
+    cd web/dashboard && npm ci && npm run build
+
 # Deploy the static web site to Cloudflare Pages
 deploy-web:
     node scripts/generate-web-version.mjs
-    @echo "🌐 Deploying web/ to Cloudflare Pages..."
-    wrangler pages deploy web --project-name=db-ferry --commit-dirty=true
+    @echo "🌐 Deploying web/static/ to Cloudflare Pages..."
+    wrangler pages deploy web/static --project-name=db-ferry --commit-dirty=true
     @echo "✅ Web deployment complete!"

@@ -25,6 +25,7 @@ import (
 	"db-ferry/notify"
 	"db-ferry/processor"
 	"db-ferry/sse"
+	"db-ferry/web"
 )
 
 const (
@@ -37,6 +38,7 @@ const (
 	mcpCommandName     = "mcp"
 	mcpServeCommand    = "serve"
 	daemonCommandName  = "daemon"
+	webCommandName     = "web"
 )
 
 var configTemplateTarget = "task.toml"
@@ -251,6 +253,8 @@ func runCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
 		return runMCPCommand(args[1:], stdout)
 	case daemonCommandName:
 		return runDaemonCommand(args[1:], tomlPath, stdout)
+	case webCommandName:
+		return runWebCommand(args[1:], tomlPath, stdout)
 	default:
 		return 2, fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -500,6 +504,61 @@ func runDaemonCommand(args []string, tomlPath string, stdout io.Writer) (int, er
 		return 1, fmt.Errorf("daemon error: %w", err)
 	}
 	fmt.Fprintln(stdout, "Daemon stopped")
+	return 0, nil
+}
+
+func runWebCommand(args []string, tomlPath string, stdout io.Writer) (int, error) {
+	flags := flag.NewFlagSet("web", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+
+	port := flags.String("port", ":8080", "Web server listen address")
+	webUser := flags.String("web-user", "admin", "Basic auth username for dashboard")
+	webPass := flags.String("web-pass", "admin", "Basic auth password for dashboard")
+
+	if err := flags.Parse(args); err != nil {
+		return 2, err
+	}
+	if len(flags.Args()) > 0 {
+		return 2, fmt.Errorf("unknown web argument: %s", flags.Args()[0])
+	}
+
+	sseServer := sse.NewServer()
+
+	d := daemon.New(daemon.Options{
+		ConfigPath:   tomlPath,
+		WatchEnabled: true,
+		Version:      version,
+		SSEServer:    sseServer,
+	})
+
+	ws := web.New(web.Options{
+		ConfigPath: tomlPath,
+		Daemon:     d,
+		SSEServer:  sseServer,
+		User:       *webUser,
+		Pass:       *webPass,
+	})
+
+	if err := ws.Start(*port); err != nil {
+		return 1, fmt.Errorf("failed to start web server: %w", err)
+	}
+	defer func() { _ = ws.Stop() }()
+
+	fmt.Fprintf(stdout, "Web dashboard started on http://localhost%s (user=%s)\n", ws.Addr(), *webUser)
+
+	go func() {
+		if err := d.Run(); err != nil {
+			log.Printf("Daemon error: %v", err)
+		}
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	<-sigCh
+	log.Println("Received shutdown signal, stopping web server and daemon...")
+	d.Stop()
+	fmt.Fprintln(stdout, "Web dashboard stopped")
 	return 0, nil
 }
 
