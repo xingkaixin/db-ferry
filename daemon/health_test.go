@@ -16,9 +16,11 @@ func TestNewHealthServer(t *testing.T) {
 	if hs == nil {
 		t.Fatal("NewHealthServer returned nil")
 	}
+	//nolint:staticcheck
 	if hs.addr == "" {
 		t.Fatal("expected non-empty addr")
 	}
+	//nolint:staticcheck
 	if hs.daemon != d {
 		t.Fatal("daemon reference mismatch")
 	}

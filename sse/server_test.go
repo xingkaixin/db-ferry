@@ -17,9 +17,11 @@ func TestNewServer(t *testing.T) {
 	if s == nil {
 		t.Fatal("NewServer returned nil")
 	}
+	//nolint:staticcheck
 	if s.clients == nil {
 		t.Fatal("expected clients map to be initialized")
 	}
+	//nolint:staticcheck
 	if s.taskStates == nil {
 		t.Fatal("expected taskStates map to be initialized")
 	}
