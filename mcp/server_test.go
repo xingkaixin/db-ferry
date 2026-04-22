@@ -12,6 +12,7 @@ func TestNewServer(t *testing.T) {
 	if srv == nil {
 		t.Fatal("NewServer() returned nil")
 	}
+	//nolint:staticcheck
 	if srv.mcpServer == nil {
 		t.Fatal("mcpServer not initialized")
 	}
