@@ -44,6 +44,16 @@ build:
 
 check: fmt-check lint test-cover
 
+# Documentation site (VitePress)
+docs-dev:
+	cd docs-site && pnpm dev
+
+docs-build:
+	cd docs-site && pnpm build
+
+docs-preview:
+	cd docs-site && pnpm preview
+
 
 # Deploy the static web site to Cloudflare Pages
 deploy-web:
