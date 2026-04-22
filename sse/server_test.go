@@ -13,6 +13,7 @@ import (
 
 func TestNewServer(t *testing.T) {
 	s := NewServer()
+	//nolint:staticcheck
 	if s == nil {
 		t.Fatal("NewServer returned nil")
 	}

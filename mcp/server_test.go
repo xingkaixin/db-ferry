@@ -8,6 +8,7 @@ import (
 
 func TestNewServer(t *testing.T) {
 	srv := NewServer("test-version")
+	//nolint:staticcheck
 	if srv == nil {
 		t.Fatal("NewServer() returned nil")
 	}
