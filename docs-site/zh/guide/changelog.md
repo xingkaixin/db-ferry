@@ -1,0 +1,62 @@
+# 更新日志
+
+## [0.8.0] - 2026-04-20
+- 新增 PII 脱敏与匿名化规则，内置 8 种规则类型
+- 新增 append/merge 模式下的 schema 演进（自动 ALTER TABLE ADD COLUMN）
+- 新增目标库迁移审计表，用于追溯每次迁移记录
+- 新增自适应批量大小动态调优，基于延迟和内存自动调整
+- 新增数据库读副本与连接池配置
+- 新增列级映射与转换表达式，支持 ETL 式流水线
+- 新增全数据库适配器统一的 TLS/SSL 支持
+- 新增 `diff` 命令，支持源库与目标库数据对比
+- 新增 MCP 服务器与 5 个原生工具，支持 AI 集成
+- 新增基于范围的分片单表并行读取（append/merge 模式）
+- 修复 processor 最终批次中无效的 batchSize 赋值
+- 修复 processShardedTask 中无效的 resumeIndex 赋值
+
+## [0.7.0] - 2026-04-17
+- 新增 DAG 任务调度，支持无依赖任务的并行执行
+- 新增死信队列（DLQ），捕获并持久化多次重试后仍失败的批次数据
+- 新增任务级 `pre_sql`/`post_sql` 钩子，支持在任务执行前后执行自定义 SQL
+- 新增交互式配置向导（`db-ferry config init`），逐步引导选择引擎、填写连接信息、选择迁移表
+- 新增 SQLite 作为源数据库引擎
+- 新增 SQL Server 作为源数据库引擎
+- 新增行级校验能力：`checksum` 与 `sample` 两种校验模式，与现有的 `row_count` 行数校验互补
+- 新增项目落地页（暗色主题、国际化、Cloudflare Web Analytics、AI Skills 集成）
+- 修复 processor 在 rebase 过程中引入的回归问题
+- 修复 Windows 构建下 `MapToDuckDBType` 的可见性问题
+- 修复 dry-run 在开启 `skip_create_table` 时遗漏索引 DDL 的问题
+
+## [0.6.0] - 2026-03-11
+- 新增 npm 二进制分发骨架：主包 `db-ferry` + 平台包 `db-ferry-{os}-{arch}`，支持 `npm install -g db-ferry` 与 `npx db-ferry`
+- 构建工作流改为按平台产出独立二进制，并在 tag 发布时自动发布 npm 包
+- 将 Windows npm 二进制包名调整为 `db-ferry-windows-x64` 以避开 npm spam detection，并让 npm 发布支持同一 tag 的失败重跑补发
+- 修复 npm 平台包发布时显式传入本地目录目标（如 `./npm/db-ferry-windows-x64`），避免 npm 将其误判为 `github.com/npm/...` 这类 Git 包来源
+- `-version` 改为输出可注入的构建版本，统一 Git tag、Go 二进制与 npm 包版本真源
+- 新增独立 GitHub Actions 测试工作流 `test.yml`，对 PR 和非 tag push 执行 `just fmt-check`、`golangci-lint-action` 与 `scripts/coverage-check.sh`
+- 新增 `db-ferry config init`，可在当前目录生成内置 `task.toml` 示例文件，若目标文件已存在则报错退出
+- 新增 `justfile`，统一提供 `fmt`/`fmt-check`/`lint`/`test`/`build`/`check` 开发命令
+- CI 新增质量检查阶段：`gofmt` 格式检查、`golangci-lint`、`go test`
+- 新增覆盖率门禁脚本 `scripts/coverage-check.sh`，并接入 `just test-cover` 与 CI 质量阶段
+- 新增核心模块测试（`main`、`config`、`database`、`processor`、`utils`），覆盖率门槛固定为全局 `>=80%`、分包 `>=70%`
+
+## [0.5.0] - 2025-12-19
+- 增加同库迁移显式开关与跳过建表开关
+- 任务进度统计过滤忽略任务，并新增整体任务进度条
+- 修复列类型扫描空指针与 Oracle 行数统计别名问题
+- Oracle 标识符统一引用，降低保留字/特殊字符风险
+- 更新使用文档与示例配置
+
+## [0.4.0] - 2025-11-16
+- 新增 DuckDB 支持
+- 改进跨平台构建流程
+
+## [0.3.0] - 2025-11-14
+- 增加面向非技术用户的完整使用手册
+
+## [0.2.0] - 2025-10-26
+- 引入别名配置与多数据库路由能力
+- 增强跨平台构建支持
+
+## [0.1.0] - 2025-10-26
+- 初始数据迁移工具搭建

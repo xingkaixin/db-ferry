@@ -27,5 +27,8 @@ skills-lock.json
 .wrangler
 
 
+# docs-site
+/docs-site/node_modules
+
 # worktree
 .worktree
