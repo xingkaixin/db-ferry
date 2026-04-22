@@ -55,7 +55,7 @@ while IFS= read -r pkg; do
   if compare_lt "$pkg_pct" "$package_threshold"; then
     failed_packages+=("$pkg (${pkg_pct}%)")
   fi
-done < <("$go_bin" list ./...)
+done < <("$go_bin" list ./... | grep -v "node_modules")
 
 if ((${#failed_packages[@]} > 0)); then
   echo "[coverage] package coverage check failed:"

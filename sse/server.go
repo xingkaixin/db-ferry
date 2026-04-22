@@ -90,6 +90,27 @@ func (s *Server) Addr() string {
 	return s.addr
 }
 
+// GetStates returns a snapshot of the current task progress states.
+func (s *Server) GetStates() map[string]TaskProgressData {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	states := make(map[string]TaskProgressData, len(s.taskStates))
+	for k, v := range s.taskStates {
+		states[k] = v
+	}
+	return states
+}
+
+// Handler returns an http.Handler with the SSE endpoints mounted at /events and /status.
+// This allows the SSE server to be embedded into an existing router without starting
+// a separate HTTP server.
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/events", s.handleEvents)
+	mux.HandleFunc("/status", s.handleStatus)
+	return mux
+}
+
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

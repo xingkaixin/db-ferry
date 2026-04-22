@@ -73,7 +73,7 @@ func New(tomlPath string) *Doctor {
 // Run executes all diagnostic checks and writes formatted results to stdout.
 // It returns an exit code: 0 if no failures, 1 otherwise.
 func (d *Doctor) Run(stdout io.Writer) int {
-	results := d.runChecks()
+	results := d.RunChecks()
 	d.printResults(stdout, results)
 
 	for _, r := range results {
@@ -82,6 +82,12 @@ func (d *Doctor) Run(stdout io.Writer) int {
 		}
 	}
 	return 0
+}
+
+// RunChecks executes all diagnostic checks and returns the raw results.
+// This is useful for programmatic consumption (e.g., web dashboard API).
+func (d *Doctor) RunChecks() []CheckResult {
+	return d.runChecks()
 }
 
 func (d *Doctor) runChecks() []CheckResult {

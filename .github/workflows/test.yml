@@ -24,6 +24,11 @@ jobs:
         with:
           go-version: "1.25.2"
 
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
       - name: Create cache directories
         run: |
           mkdir -p .cache/go-build
@@ -46,6 +51,9 @@ jobs:
         with:
           version: v2.10.1
           args: --timeout=5m ./...
+
+      - name: Build dashboard frontend
+        run: cd web/dashboard && npm ci && npm run build
 
       - name: Run coverage gate
         run: |

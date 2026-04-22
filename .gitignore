@@ -5,6 +5,10 @@ dist
 *.zip
 .cache
 
+# dashboard
+web/dashboard/node_modules/
+!web/dashboard/dist/
+
 
 # dist
 /db-ferry

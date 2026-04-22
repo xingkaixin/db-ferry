@@ -19,6 +19,14 @@ jobs:
         with:
           go-version: "1.25.2"
 
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Build dashboard frontend
+        run: cd web/dashboard && npm ci && npm run build
+
       - name: Verify formatting
         run: |
           files=$(find . -type f -name '*.go')
@@ -89,6 +97,14 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: "1.25.2"
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Build dashboard frontend
+        run: cd web/dashboard && npm ci && npm run build
 
       - name: Install MSYS2 (Windows)
         if: startsWith(matrix.runner, 'windows')
