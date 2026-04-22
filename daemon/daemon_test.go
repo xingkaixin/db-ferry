@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"db-ferry/config"
+	"db-ferry/sse"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -642,6 +643,51 @@ func TestDaemonRunWithWatchSameHash(t *testing.T) {
 	}
 	if cnt != 2 {
 		t.Fatalf("target row count = %d, want 2", cnt)
+	}
+}
+
+func TestDaemonWithSSE(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	sseServer := sse.NewServer()
+	d := New(Options{ConfigPath: cfgPath, SSEServer: sseServer})
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+
+	// Verify SSE states were populated after task execution
+	states := sseServer.GetStates()
+	if len(states) == 0 {
+		t.Fatal("expected SSE states to be populated")
+	}
+}
+
+func TestDaemonTriggerRound(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath, _, _ := setupTestDBs(t, dir)
+
+	d := New(Options{ConfigPath: cfgPath, WatchEnabled: true})
+
+	// TriggerRound before running should not block or panic
+	d.TriggerRound()
+	d.TriggerRound() // second call hits default branch of select
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		d.Stop()
+	}()
+
+	err := d.Run()
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
 	}
 }
 
