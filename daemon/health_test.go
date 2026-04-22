@@ -12,6 +12,7 @@ import (
 func TestNewHealthServer(t *testing.T) {
 	d := New(Options{ConfigPath: "test.toml"})
 	hs := NewHealthServer(":0", d)
+	//nolint:staticcheck
 	if hs == nil {
 		t.Fatal("NewHealthServer returned nil")
 	}
