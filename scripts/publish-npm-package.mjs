@@ -18,8 +18,19 @@ const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 const spec = `${manifest.name}@${manifest.version}`;
 const publishTarget = packageDir === "." ? "." : `./${packageDir.replace(/^\.?\//, "")}`;
 
+async function packageVersionExists() {
+  try {
+    await execFileAsync("npm", ["view", spec, "version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 try {
-  await execFileAsync("npm", ["view", spec, "version"], { stdio: "ignore" });
+  if (!(await packageVersionExists())) {
+    throw new Error("package version not found");
+  }
   console.log(`[publish] skip existing package ${spec}`);
 } catch {
   console.log(`[publish] publishing ${spec}`);
@@ -36,6 +47,10 @@ try {
   });
 
   if (exitCode !== 0) {
+    if (await packageVersionExists()) {
+      console.log(`[publish] package ${spec} exists after publish failure`);
+      process.exit(0);
+    }
     process.exit(exitCode ?? 1);
   }
 }

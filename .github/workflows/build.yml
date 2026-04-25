@@ -190,8 +190,6 @@ jobs:
           node scripts/prepare-npm-package.mjs npm/db-ferry-windows-x64 .artifacts/db-ferry-windows-x64-artifacts/db-ferry.exe
 
       - name: Publish platform packages
-        env:
-          NODE_AUTH_TOKEN: ""
         run: |
           node scripts/publish-npm-package.mjs npm/db-ferry-linux-x64
           node scripts/publish-npm-package.mjs npm/db-ferry-linux-arm64
@@ -200,6 +198,4 @@ jobs:
           node scripts/publish-npm-package.mjs npm/db-ferry-windows-x64
 
       - name: Publish main package
-        env:
-          NODE_AUTH_TOKEN: ""
         run: node scripts/publish-npm-package.mjs .
