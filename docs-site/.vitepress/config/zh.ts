@@ -8,6 +8,7 @@ export const zh = defineConfig({
     nav: [
       { text: '指南', link: '/zh/guide/' },
       { text: '示例', link: '/zh/examples/full-sync' },
+      { text: '演示', link: '/zh/demo' },
       { text: '更新日志', link: '/zh/guide/changelog' },
     ],
 

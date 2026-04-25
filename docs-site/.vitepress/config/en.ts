@@ -8,6 +8,7 @@ export const en = defineConfig({
     nav: [
       { text: 'Guide', link: '/guide/' },
       { text: 'Examples', link: '/examples/full-sync' },
+      { text: 'Demo', link: '/demo' },
       { text: 'Changelog', link: '/guide/changelog' },
     ],
 
