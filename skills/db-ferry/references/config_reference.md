@@ -177,6 +177,70 @@ columns 格式支持排序指定：
 
 注意：分片需配合 `resume_key` 使用，仅支持 append/merge 模式，不支持 `state_file`。
 
+## CDC 配置字段
+
+`[tasks.cdc]` 配置基于轮询的持续增量同步：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `enabled` | bool | 是 | — | 是否启用 CDC |
+| `cursor_column` | string | 是 | — | 游标列名（单调递增） |
+| `poll_interval` | string | 是 | — | 轮询间隔，Go duration 格式 |
+| `initial_cursor` | string | 否 | — | 初始游标值 |
+| `delete_detection` | bool | 否 | false | 是否启用删除检测 |
+
+CDC 要求 `mode = append/merge`，必须配置 `state_file`，`resume_key` 自动设为 `cursor_column`。不支持联邦任务和分片任务。SQL 中可使用 `{{.LastValue}}` 模板引用上次游标值。
+
+## 插件配置字段
+
+`[tasks.plugin]` 配置行级数据转换插件：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `engine` | string | 是 | 插件引擎: `lua` 或 `javascript` |
+| `script` | string | 是 | 内联脚本内容 |
+| `timeout_ms` | int | 否 | 单条执行超时毫秒，默认 `5000` |
+
+插件在每行数据插入目标前执行，接收当前行数据并返回转换后的行。
+
+## 断言配置字段
+
+`[[tasks.assertions]]` 配置数据质量断言规则：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `column` | string | 条件必填 | 断言列名（`unique` 规则除外） |
+| `columns` | []string | 条件必填 | `unique` 规则必填，多列联合唯一 |
+| `rule` | string | 是 | 规则类型: `not_null` / `range` / `in_set` / `unique` / `regex` / `min_length` / `max_length` |
+| `min` | float64 | 条件必填 | `range` 规则的最小值 |
+| `max` | float64 | 条件必填 | `range` 规则的最大值 |
+| `values` | []string | 条件必填 | `in_set` 规则的允许值列表 |
+| `pattern` | string | 条件必填 | `regex` 规则的正则表达式 |
+| `length` | int | 条件必填 | `min_length` / `max_length` 规则的字符串长度边界 |
+| `on_fail` | string | 否 | 失败动作: `warn` / `abort` / `dlq`，默认 `abort` |
+| `sample` | bool | 否 | 是否仅对采样行执行断言 |
+
+## 跨库 JOIN 配置字段
+
+联邦任务使用 `[[tasks.sources]]` 替代 `source_db`/`sql`：
+
+**Source 配置** `[[tasks.sources]]`：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `alias` | string | 是 | 源表别名（JOIN 中引用） |
+| `db` | string | 是 | 引用 `[[databases]]` 中的 name |
+| `sql` | string | 是 | 该源的查询 SQL |
+
+**Join 配置** `[tasks.join]`：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `keys` | []string | 是 | JOIN 键列名 |
+| `type` | string | 否 | JOIN 类型: `inner` / `left` / `right`，默认 `inner` |
+
+联邦任务需至少 2 个 source，不支持 `resume_key`、`state_file`、`shard`、`cdc`。
+
 ## 迁移审计配置字段
 
 全局 `[history]` 控制目标库迁移审计：
@@ -185,6 +249,42 @@ columns 格式支持排序指定：
 |------|------|------|--------|------|
 | enabled | bool | 否 | false | 是否启用审计 |
 | table_name | string | 否 | `"db_ferry_migrations"` | 审计表名 |
+
+## Metrics 配置字段
+
+全局 `[metrics]` 控制指标收集与导出：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `enabled` | bool | 否 | false | 是否启用指标 |
+| `listen_addr` | string | 否 | — | Prometheus pull 监听地址，如 `:9090` |
+| `endpoint` | string | 否 | — | OTLP HTTP push 端点，如 `http://localhost:4318/v1/metrics` |
+| `interval` | string | 否 | `"30s"` | push 间隔，Go duration 格式 |
+
+## Notify 配置字段
+
+全局 `[notify]` 控制 Webhook 通知：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `on_success` | []string | 否 | — | 成功时调用的 Webhook URL 列表 |
+| `on_failure` | []string | 否 | — | 失败时调用的 Webhook URL 列表 |
+| `timeout` | duration | 否 | `0` | 单次请求超时，Go duration 格式；`0` 表示无超时 |
+| `retry` | int | 否 | `0` | 失败重试次数 |
+
+## Schedule 配置字段
+
+全局 `[schedule]` 控制 daemon 模式的定时调度：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `cron` | string | 否 | — | Cron 表达式或描述符（如 `@every 1h`） |
+| `timezone` | string | 否 | 系统本地时区 | IANA 时区名 |
+| `retry_on_failure` | bool | 否 | false | 执行失败时是否重试 |
+| `max_retry` | int | 否 | `0` | 最大重试次数 |
+| `missed_catchup` | bool | 否 | false | 启动时是否补执行错过的调度 |
+| `start_at` | string | 否 | — | 执行窗口起始时间 |
+| `end_at` | string | 否 | — | 执行窗口结束时间 |
 
 ## 配置验证规则速查
 
@@ -224,6 +324,31 @@ columns 格式支持排序指定：
 | columns source/target 必填 | 列映射必须提供源列和目标列 |
 | columns target 不能重复 | 同一任务的列映射目标列不能重复 |
 | ssl_mode 必须是四种之一 | disable / require / verify-ca / verify-full |
+| plugin.engine 必须是 lua/javascript | 插件引擎不支持 |
+| plugin.script 不能为空 | 启用插件时必须提供脚本 |
+| assertion rule 必须是内置类型 | not_null / range / in_set / unique / regex / min_length / max_length |
+| assertion range 需 min 或 max | rule=range 时至少提供一个边界 |
+| assertion in_set 需 values | rule=in_set 时 values 不能为空 |
+| assertion regex 需 pattern | rule=regex 时 pattern 不能为空 |
+| assertion unique 需 columns | rule=unique 时 columns 不能为空 |
+| assertion on_fail 只能是 warn/abort/dlq | 默认 abort |
+| federated task 需至少 2 个 sources | sources 数量不足 |
+| federated task 不支持 resume_key/state_file/shard | 联邦任务与这些特性互斥 |
+| federated join.type 只能是 inner/left/right | 默认 inner |
+| federated join.keys 不能为空 | 必须指定 JOIN 键 |
+| metrics interval 必须是合法 duration | 如 30s、1m |
+| notify URL 必须合法 | on_success/on_failure 中的 URL 格式 |
+| notify.timeout 必须 >= 0 | 不能为负数 |
+| notify.retry 必须 >= 0 | 不能为负数 |
+| schedule.cron 必须可解析 | 标准 5 字段 cron 或描述符 |
+| schedule.timezone 必须合法 | IANA 时区名 |
+| schedule.max_retry 必须 >= 0 | 不能为负数 |
+| schedule.end_at 必须在 start_at 之后 | 时间窗口边界校验 |
+| cdc 需 cursor_column 和 poll_interval | 启用 CDC 时必填 |
+| cdc 需 mode=append/merge | CDC 不支持 replace 模式 |
+| cdc 需 state_file | 用于游标持久化 |
+| cdc 不支持 federated/shard | 互斥 |
+| cdc resume_key 必须与 cursor_column 一致 | 自动设置，手动指定时需匹配 |
 
 ## 数据类型映射
 

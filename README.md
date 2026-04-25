@@ -28,6 +28,14 @@
 - CDC polling mode for continuous incremental synchronization with cursor-based filtering
 - Built-in cron scheduling for daemon mode with timezone, retry, and missed-catchup support
 - Read replica and connection pool configuration
+- Prometheus pull and OTLP HTTP push metrics export
+- Webhook notification support after migration
+- Data quality assertion rule engine with 7 built-in rule types
+- Lua/JavaScript plugin support for row-level transformation
+- Federated cross-database in-memory JOIN
+- S3 and GCS output support for DLQ
+- SSE real-time progress streaming
+- Daemon mode with config hot-reload and health endpoint
 - Progress bars for each task, including row counts when available
 
  ## Installation
@@ -167,6 +175,9 @@
  - `cdc`: continuous incremental sync via polling (`enabled`, `cursor_column`, `poll_interval`, `initial_cursor`, `delete_detection`); requires `mode = append/merge`, `state_file`, and `resume_key` (auto-set to `cursor_column`); not supported with federated or shard tasks
  - `validate_sample_size`: number of rows to sample when `validate = "sample"`
  - `[[tasks.indexes]]`: optional index creation statements applied after data load (partial indexes via `where` are supported on SQLite targets)
+ - `[[tasks.sources]]` / `[tasks.join]`: federated cross-database in-memory JOIN; define multiple sources with `alias`, `db`, and `sql`, then specify join `keys` and `type` (`inner`/`left`/`right`); not compatible with `resume_key`, `state_file`, or `shard`
+ - `[[tasks.assertions]]`: data quality assertions per task (`column`/`columns`, `rule`, `on_fail`); rules include `not_null`, `range` (with `min`/`max`), `in_set` (with `values`), `unique` (with `columns`), `regex` (with `pattern`), `min_length`/`max_length` (with `length`); `on_fail` defaults to `abort`, can be set to `warn` or `dlq`
+ - `[tasks.plugin]`: row-level transformation plugin (`engine`: `lua` or `javascript`, `script`: inline script, `timeout_ms`); executed per row before insert
 
  ### History configuration
 
@@ -180,6 +191,40 @@
 
  - `enabled`: write an audit record per task to the target database (table auto-created if missing)
  - `table_name`: override the default audit table name
+
+ ### Metrics configuration
+
+ Global `[metrics]` section enables Prometheus pull or OTLP HTTP push metrics export:
+
+ ```toml
+ [metrics]
+ enabled = true
+ listen_addr = ":9090"         # Prometheus pull endpoint, e.g. http://localhost:9090/metrics
+ endpoint = "http://localhost:4318/v1/metrics"  # OTLP HTTP push endpoint
+ interval = "30s"             # Push interval when endpoint is configured
+ ```
+
+ - `enabled`: turn on metrics collection and export
+ - `listen_addr`: optional TCP address for Prometheus scrape endpoint (pull mode)
+ - `endpoint`: optional OTLP HTTP endpoint for push mode
+ - `interval`: push interval, default `30s`; validated as a Go duration
+
+ ### Notify configuration
+
+ Global `[notify]` section defines webhook URLs called after migration completes or fails:
+
+ ```toml
+ [notify]
+ on_success = ["https://hooks.slack.com/services/xxx"]
+ on_failure = ["https://hooks.slack.com/services/xxx"]
+ timeout = "10s"
+ retry = 2
+ ```
+
+ - `on_success`: list of webhook URLs called when all tasks succeed
+ - `on_failure`: list of webhook URLs called when any task fails
+ - `timeout`: per-request timeout (default `0`, meaning no timeout)
+ - `retry`: number of retries for failed webhook requests (default `0`)
 
  ### Schedule configuration
 
@@ -311,6 +356,11 @@
  │   └── sqlite.go           # SQLite source/target implementation
  ├── processor/
  │   └── processor.go        # Task execution engine
+ ├── assertion/              # Data quality assertion engine
+ ├── daemon/                 # Daemon mode, hot-reload, health endpoint
+ ├── metrics/                # Prometheus pull & OTLP push metrics
+ ├── notify/                 # Webhook notifications
+ ├── sse/                    # SSE real-time progress streaming
  └── utils/
      └── progress.go         # Progress bar utilities
  ```

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.0] - 2026-04-25
+- Added Prometheus pull and OTLP HTTP push metrics export
+- Added data quality assertion rule engine with 7 built-in rule types
+- Added daemon mode with config hot-reload and health endpoint
+- Added Lua/JavaScript plugin support for row-level transformation
+- Added S3 and GCS output support for DLQ
+- Added federated cross-database in-memory JOIN
+- Added webhook notification support after migration
+- Added SSE real-time progress streaming
+- Lowered coverage thresholds from 80%/70% to 75%/65%
+
 ## [0.8.0] - 2026-04-20
 - Added PII masking and anonymization rules with 8 built-in rule types
 - Added schema evolution (auto `ALTER TABLE ADD COLUMN`) in append/merge mode

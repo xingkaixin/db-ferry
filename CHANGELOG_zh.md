@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.0] - 2026-04-25
+- 新增 Prometheus pull 与 OTLP HTTP push 指标导出
+- 新增数据质量断言规则引擎，内置 7 种规则类型
+- 新增守护进程模式，支持配置热重载与健康检查端点
+- 新增 Lua/JavaScript 插件支持，用于行级数据转换
+- 新增 DLQ 死信队列输出到 S3 与 GCS
+- 新增跨库内存 JOIN（Federated Query）
+- 新增迁移后 Webhook 通知支持
+- 新增 SSE 实时进度流推送
+- 覆盖率阈值从 80%/70% 下调至 75%/65%
+
 ## [0.8.0] - 2026-04-20
 - 新增 PII 脱敏与匿名化规则，内置 8 种规则类型
 - 新增 append/merge 模式下的 schema 演进（自动 ALTER TABLE ADD COLUMN）
