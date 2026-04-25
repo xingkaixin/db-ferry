@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress'
+import react from '@vitejs/plugin-react'
 
 export const shared = defineConfig({
   title: 'db-ferry',
@@ -35,5 +36,9 @@ export const shared = defineConfig({
     search: {
       provider: 'local',
     },
+  },
+
+  vite: {
+    plugins: [react()],
   },
 })
