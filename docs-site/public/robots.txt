@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://db-ferry.xingkaixin.me/sitemap.xml

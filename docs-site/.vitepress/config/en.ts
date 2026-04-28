@@ -2,7 +2,16 @@ import { defineConfig } from 'vitepress'
 
 export const en = defineConfig({
   lang: 'en-US',
-  description: 'Declarative task-driven cross-database migration CLI',
+  description: 'db-ferry is a declarative, task-driven CLI for cross-database migration. Move data between Oracle, MySQL, PostgreSQL, SQL Server, SQLite, and DuckDB with a single config file — no code, no boilerplate.',
+
+  head: [
+    ['meta', { property: 'og:locale', content: 'en_US' }],
+    ['meta', { property: 'og:title', content: 'db-ferry — Cross-Database Migration CLI' }],
+    ['meta', { property: 'og:description', content: 'Declarative, task-driven CLI for cross-database migration. Supports Oracle, MySQL, PostgreSQL, SQL Server, SQLite, and DuckDB. DAG parallel execution, incremental sync, upsert, PII masking, and data validation — all from one task.toml.' }],
+    ['meta', { name: 'twitter:title', content: 'db-ferry — Cross-Database Migration CLI' }],
+    ['meta', { name: 'twitter:description', content: 'Move data between any two databases with a single task.toml. Oracle, MySQL, PostgreSQL, SQL Server, SQLite, DuckDB. No code required.' }],
+    ['meta', { name: 'keywords', content: 'database migration, cross-database migration, ETL tool, Oracle migration, MySQL migration, PostgreSQL migration, SQL Server migration, DuckDB, SQLite, data pipeline, CLI, Go, open source' }],
+  ],
 
   themeConfig: {
     nav: [
