@@ -40,6 +40,7 @@ export const shared = defineConfig({
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
     ['meta', { name: 'twitter:site', content: '@dbferry' }],
     ['meta', { name: 'twitter:image', content: OG_IMAGE }],
+    ['script', { defer: '', src: 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "da8e71b95633452388bd295d5641c627"}' }],
   ],
 
   appearance: 'dark',

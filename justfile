@@ -61,7 +61,7 @@ web-build:
 
 # Deploy the static web site to Cloudflare Pages
 deploy-web:
-    node scripts/generate-web-version.mjs
-    @echo "🌐 Deploying web/static/ to Cloudflare Pages..."
-    wrangler pages deploy web/static --project-name=db-ferry --commit-dirty=true
+    cd docs-site && pnpm install --frozen-lockfile && pnpm build
+    @echo "🌐 Deploying docs-site/.vitepress/dist/ to Cloudflare Pages..."
+    wrangler pages deploy docs-site/.vitepress/dist --project-name=db-ferry --commit-dirty=true
     @echo "✅ Web deployment complete!"

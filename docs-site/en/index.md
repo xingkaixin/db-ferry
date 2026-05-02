@@ -18,17 +18,20 @@ head:
 hero:
   name: db-ferry
   text: Cross-Database Migration
-  tagline: One task.toml moves data between Oracle, MySQL, PostgreSQL, SQL Server, SQLite, and DuckDB — no code, no boilerplate, fully resumable.
+  tagline: Declare source, target, and write mode once. DAG parallel execution, federated JOIN, sharded reads, resume, DLQ, PII masking, validation, diff, MCP integration, and real-time progress give the team one reusable migration workflow.
   image:
     src: /logo.svg
     alt: db-ferry logo
   actions:
     - theme: brand
       text: Get Started
-      link: /guide/getting-started
+      link: /en/guide/getting-started
     - theme: alt
-      text: View on GitHub
-      link: https://github.com/xingkaixin/db-ferry
+      text: Online Demo
+      link: /demo
+    - theme: alt
+      text: npm install db-ferry
+      link: https://www.npmjs.com/package/db-ferry
 
 features:
   - icon: 🔄
@@ -50,3 +53,5 @@ features:
     title: PII Masking & TLS
     details: Eight built-in anonymization rule types mask sensitive data before it reaches the target. Unified TLS/SSL support across all database adapters.
 ---
+
+<LandingSections locale="en" />

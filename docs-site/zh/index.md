@@ -18,7 +18,7 @@ head:
 hero:
   name: db-ferry
   text: 跨数据库迁移工具
-  tagline: 一份 task.toml，让数据在 Oracle、MySQL、PostgreSQL、SQL Server、SQLite 和 DuckDB 之间自由流动——零代码、可断点续传、生产可用。
+  tagline: 声明源、目标、写入模式。DAG 并行执行、跨库内存 JOIN、分片并行读取、断点续传、死信队列、PII 脱敏、数据质量断言、diff 对比、MCP 集成与 SSE 实时进度，把跨数据库迁移收成一条团队可复用的工作流。
   image:
     src: /logo.svg
     alt: db-ferry logo
@@ -27,8 +27,11 @@ hero:
       text: 快速开始
       link: /zh/guide/getting-started
     - theme: alt
-      text: GitHub
-      link: https://github.com/xingkaixin/db-ferry
+      text: 在线演示
+      link: /zh/demo
+    - theme: alt
+      text: npm install db-ferry
+      link: https://www.npmjs.com/package/db-ferry
 
 features:
   - icon: 🔄
@@ -50,3 +53,5 @@ features:
     title: PII 脱敏与 TLS 加密
     details: 内置 8 种脱敏规则，在数据写入目标库前完成敏感字段匿名化。全数据库适配器统一 TLS/SSL 加密传输支持。
 ---
+
+<LandingSections locale="zh" />

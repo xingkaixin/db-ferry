@@ -15,17 +15,17 @@ export const en = defineConfig({
 
   themeConfig: {
     nav: [
-      { text: 'Guide', link: '/guide/' },
-      { text: 'Examples', link: '/examples/full-sync' },
+      { text: 'Guide', link: '/en/guide/' },
+      { text: 'Examples', link: '/en/examples/full-sync' },
       { text: 'Demo', link: '/demo' },
-      { text: 'Changelog', link: '/guide/changelog' },
+      { text: 'Changelog', link: '/en/guide/changelog' },
     ],
 
     sidebar: {
-      '/guide/': {
-        base: '/guide/',
+      '/en/guide/': {
+        base: '/en/guide/',
         items: [
-          { text: 'Introduction', link: '/' },
+          { text: 'Introduction', link: '/en/' },
           { text: 'Getting Started', link: 'getting-started' },
           { text: 'Configuration', link: 'configuration' },
           { text: 'CLI Reference', link: 'cli-reference' },
@@ -34,8 +34,8 @@ export const en = defineConfig({
           { text: 'Changelog', link: 'changelog' },
         ],
       },
-      '/examples/': {
-        base: '/examples/',
+      '/en/examples/': {
+        base: '/en/examples/',
         items: [
           { text: 'Full Sync', link: 'full-sync' },
         ],
