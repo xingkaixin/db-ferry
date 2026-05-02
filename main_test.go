@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"database/sql"
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -349,13 +350,14 @@ func TestInitConfigTemplateStatError(t *testing.T) {
 }
 
 func TestRunConfigInitInteractiveFlagLong(t *testing.T) {
+	wantErr := errors.New("interactive unavailable")
+	stubHuhSelectError(t, wantErr)
+
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 	code, err := run([]string{"config", "init", "--interactive"}, &out, &errOut)
-	// Interactive wizard requires a terminal; it will fail with a specific error.
-	// We just verify the flag is parsed and the wizard is invoked rather than the template copy.
-	if err == nil {
-		t.Fatalf("expected error when running interactive wizard without terminal")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("run() error = %v, want %v", err, wantErr)
 	}
 	if code != 1 {
 		t.Fatalf("run() code = %d, want 1", code)
@@ -366,11 +368,14 @@ func TestRunConfigInitInteractiveFlagLong(t *testing.T) {
 }
 
 func TestRunConfigInitInteractiveFlagShort(t *testing.T) {
+	wantErr := errors.New("interactive unavailable")
+	stubHuhSelectError(t, wantErr)
+
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 	code, err := run([]string{"config", "init", "-i"}, &out, &errOut)
-	if err == nil {
-		t.Fatalf("expected error when running interactive wizard without terminal")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("run() error = %v, want %v", err, wantErr)
 	}
 	if code != 1 {
 		t.Fatalf("run() code = %d, want 1", code)

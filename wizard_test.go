@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -279,37 +280,52 @@ func TestQuoteSQLIdentifier(t *testing.T) {
 }
 
 func TestCollectSourceDB_ErrorWithoutTTY(t *testing.T) {
+	wantErr := errors.New("interactive unavailable")
+	stubHuhSelectError(t, wantErr)
+
 	state := &wizardState{}
-	if err := collectSourceDB(state); err == nil {
-		t.Fatalf("expected error when running without tty")
+	if err := collectSourceDB(state); !errors.Is(err, wantErr) {
+		t.Fatalf("collectSourceDB() error = %v, want %v", err, wantErr)
 	}
 }
 
 func TestCollectTargetDB_ErrorWithoutTTY(t *testing.T) {
+	wantErr := errors.New("interactive unavailable")
+	stubHuhSelectError(t, wantErr)
+
 	state := &wizardState{SourceDB: config.DatabaseConfig{Name: "src"}}
-	if err := collectTargetDB(state); err == nil {
-		t.Fatalf("expected error when running without tty")
+	if err := collectTargetDB(state); !errors.Is(err, wantErr) {
+		t.Fatalf("collectTargetDB() error = %v, want %v", err, wantErr)
 	}
 }
 
 func TestSelectTables_ErrorWithoutTTY(t *testing.T) {
+	wantErr := errors.New("interactive unavailable")
+	stubHuhMultiSelectError(t, wantErr)
+
 	state := &wizardState{SourceTables: []string{"users", "orders"}}
-	if err := selectTables(state); err == nil {
-		t.Fatalf("expected error when running without tty")
+	if err := selectTables(state); !errors.Is(err, wantErr) {
+		t.Fatalf("selectTables() error = %v, want %v", err, wantErr)
 	}
 }
 
 func TestCollectAdvancedOptions_ErrorWithoutTTY(t *testing.T) {
+	wantErr := errors.New("interactive unavailable")
+	stubHuhSelectError(t, wantErr)
+
 	state := &wizardState{}
-	if err := collectAdvancedOptions(state); err == nil {
-		t.Fatalf("expected error when running without tty")
+	if err := collectAdvancedOptions(state); !errors.Is(err, wantErr) {
+		t.Fatalf("collectAdvancedOptions() error = %v, want %v", err, wantErr)
 	}
 }
 
 func TestRunInteractiveWizard_ErrorWithoutTTY(t *testing.T) {
+	wantErr := errors.New("interactive unavailable")
+	stubHuhSelectError(t, wantErr)
+
 	code, err := runInteractiveWizard(io.Discard)
-	if err == nil {
-		t.Fatalf("expected error when running without tty")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("runInteractiveWizard() error = %v, want %v", err, wantErr)
 	}
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)
@@ -420,11 +436,12 @@ func TestWriteTaskSQLServerIdentifier(t *testing.T) {
 }
 
 func TestRunInteractiveWizard_AbortedByUser(t *testing.T) {
-	// This test cannot drive huh interactively, but we can at least exercise
-	// the error path for TTY absence which covers the top of the function.
+	wantErr := errors.New("interactive unavailable")
+	stubHuhSelectError(t, wantErr)
+
 	code, err := runInteractiveWizard(io.Discard)
-	if err == nil {
-		t.Fatalf("expected error")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("runInteractiveWizard() error = %v, want %v", err, wantErr)
 	}
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
@@ -653,4 +670,20 @@ func TestRunInteractiveWizard_Aborted(t *testing.T) {
 	if !strings.Contains(out.String(), "Aborted.") {
 		t.Fatalf("expected aborted message, got: %s", out.String())
 	}
+}
+
+func stubHuhSelectError(t *testing.T, err error) {
+	t.Helper()
+
+	orig := runHuhSelect
+	runHuhSelect = func(*huh.Select[string]) error { return err }
+	t.Cleanup(func() { runHuhSelect = orig })
+}
+
+func stubHuhMultiSelectError(t *testing.T, err error) {
+	t.Helper()
+
+	orig := runHuhMultiSelect
+	runHuhMultiSelect = func(*huh.MultiSelect[string]) error { return err }
+	t.Cleanup(func() { runHuhMultiSelect = orig })
 }
